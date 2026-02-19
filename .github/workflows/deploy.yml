@@ -8,8 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
+  BACKEND_IMAGE: ghcr.io/senjay2580/mutiexpert/backend
+  FRONTEND_IMAGE: ghcr.io/senjay2580/mutiexpert/frontend
 
 jobs:
   frontend-check:
@@ -89,12 +89,8 @@ jobs:
               git clone https://github.com/${{ github.repository }}.git .
             fi
 
-            # Login to GHCR
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # Pull latest images and restart
-            docker compose pull
-            docker compose up -d --remove-orphans
+            # Build and restart locally
+            docker compose up -d --build --remove-orphans
 
             # Cleanup old images
             docker image prune -f
