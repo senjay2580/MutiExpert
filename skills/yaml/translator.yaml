@@ -1,0 +1,19 @@
+# Translator Skill
+name: translator
+description: 将知识库内容翻译为目标语言
+version: "1.0"
+
+prompt: |
+  请将以下内容翻译为{target_language}，保持专业术语准确：
+
+  {content}
+
+params:
+  - name: target_language
+    type: string
+    default: "English"
+    description: 目标语言
+
+tools: []
+
+output: markdown

@@ -1,0 +1,13 @@
+# Skills Registry
+# 所有已注册的 skill 列表
+
+skills:
+  - name: summarizer
+    type: yaml
+    path: yaml/summarizer.yaml
+    description: 文档摘要生成
+
+  - name: translator
+    type: yaml
+    path: yaml/translator.yaml
+    description: 多语言翻译

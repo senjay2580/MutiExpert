@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Build
+frontend/dist/
+backend/*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase
+supabase/.temp/
+
+# Python
+*.egg
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# Logs
+*.log
+
+# Cache
+.cache/
+*/.cache/
+**/.cache/
+.claude/commands/web-search-plus/config.json
+.github/workflows/

@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mutiexpert-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mutiexpert}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mutiexpert_secure_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-mutiexpert}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./supabase/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mutiexpert}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mutiexpert-api
+    restart: always
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mutiexpert}:${POSTGRES_PASSWORD:-mutiexpert_secure_2024}@postgres:5432/${POSTGRES_DB:-mutiexpert}
+    volumes:
+      - uploads:/app/uploads
+      - ./skills:/app/skills:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://backend:8000
+    container_name: mutiexpert-web
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    container_name: mutiexpert-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  pgdata:
+  uploads:

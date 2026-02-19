@@ -1,0 +1,19 @@
+# Summarizer Skill
+name: summarizer
+description: 对知识库文档进行智能摘要
+version: "1.0"
+
+prompt: |
+  请对以下内容进行结构化摘要，提取关键信息：
+
+  {content}
+
+  输出格式：
+  - 核心观点（3-5条）
+  - 关键数据/事实
+  - 行动建议
+
+tools:
+  - rag
+
+output: markdown
