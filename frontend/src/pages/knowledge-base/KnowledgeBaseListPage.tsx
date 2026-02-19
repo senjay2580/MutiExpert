@@ -58,24 +58,29 @@ export default function KnowledgeBaseListPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">知识库</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-          新建知识库
-        </Button>
+      <div style={{ marginBottom: 24 }}>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="page-header" style={{ margin: 0 }}>知识库</h2>
+            <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 4 }}>管理多行业知识资产</p>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+            新建知识库
+          </Button>
+        </div>
       </div>
-      <div className="flex gap-3 mb-4">
+      <div className="flex gap-3" style={{ marginBottom: 16 }}>
         <Input
           placeholder="搜索知识库..."
           prefix={<SearchOutlined />}
-          className="max-w-xs"
+          style={{ maxWidth: 280, borderRadius: 8 }}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <Select
           placeholder="行业筛选"
           allowClear
-          className="min-w-[140px]"
+          style={{ minWidth: 140 }}
           value={industryFilter}
           onChange={setIndustryFilter}
           options={industries.map((i) => ({ value: i.id, label: i.name }))}

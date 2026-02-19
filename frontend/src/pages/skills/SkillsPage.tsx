@@ -63,21 +63,26 @@ export default function SkillsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Skills 管理</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建 Skill</Button>
+      <div style={{ marginBottom: 24 }}>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="page-header" style={{ margin: 0 }}>Skills 管理</h2>
+            <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 4 }}>AI 技能编排与执行</p>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建 Skill</Button>
+        </div>
       </div>
       {registrySkills.length > 0 && (
-        <Card title="注册表 Skills (registry.yaml)" className="mb-4">
+        <Card title="注册表 Skills (registry.yaml)" style={{ borderRadius: 16, marginBottom: 16 }}>
           <List dataSource={registrySkills} renderItem={(item: any) => (
             <List.Item>
-              <List.Item.Meta title={item.name} description={item.description || item.path} />
-              <Tag color="blue">{item.type}</Tag>
+              <List.Item.Meta title={<span style={{ fontWeight: 600 }}>{item.name}</span>} description={item.description || item.path} />
+              <Tag color="purple">{item.type}</Tag>
             </List.Item>
           )} />
         </Card>
       )}
-      <Card title="数据库 Skills">
+      <Card title="数据库 Skills" style={{ borderRadius: 16 }}>
         <List loading={loading} dataSource={skills}
           locale={{ emptyText: '暂无数据库 Skill，点击上方按钮创建' }}
           renderItem={(item) => (

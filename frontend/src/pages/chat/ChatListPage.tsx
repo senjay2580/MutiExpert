@@ -44,13 +44,18 @@ export default function ChatListPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">智能问答</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-          新建对话
-        </Button>
+      <div style={{ marginBottom: 24 }}>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="page-header" style={{ margin: 0 }}>智能问答</h2>
+            <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 4 }}>基于知识库的 AI 对话</p>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+            新建对话
+          </Button>
+        </div>
       </div>
-      <Card>
+      <Card style={{ borderRadius: 16 }}>
         <List
           loading={isLoading}
           dataSource={conversations}

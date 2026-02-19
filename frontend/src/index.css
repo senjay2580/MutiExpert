@@ -1,10 +1,125 @@
 @import "tailwindcss";
 
+:root {
+  --primary: #6366f1;
+  --primary-light: #818cf8;
+  --primary-dark: #4f46e5;
+  --accent: #06b6d4;
+  --accent-light: #22d3ee;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --bg-base: #f0f2f5;
+  --bg-card: #ffffff;
+  --bg-sidebar: linear-gradient(180deg, #1e1b4b 0%, #312e81 50%, #3730a3 100%);
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.08);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+* { box-sizing: border-box; }
+
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--bg-base);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-#root {
-  min-height: 100vh;
+#root { min-height: 100vh; }
+
+/* Ant Design overrides */
+.ant-card {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-card) !important;
+  border: 1px solid rgba(0,0,0,0.04) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
+.ant-card:hover {
+  box-shadow: var(--shadow-md) !important;
+  transform: translateY(-2px);
+}
+.ant-card .ant-card-head {
+  border-bottom: 1px solid rgba(0,0,0,0.04) !important;
+  font-weight: 600;
+}
+
+.ant-btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.3) !important;
+  border-radius: var(--radius-sm) !important;
+  font-weight: 500;
+  transition: all 0.2s ease !important;
+}
+.ant-btn-primary:hover {
+  box-shadow: 0 4px 16px rgba(99,102,241,0.4) !important;
+  transform: translateY(-1px);
+}
+
+.ant-statistic .ant-statistic-title {
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+.ant-statistic .ant-statistic-content-value {
+  font-weight: 700 !important;
+}
+
+.ant-menu-light .ant-menu-item-selected {
+  background: rgba(99,102,241,0.08) !important;
+  color: var(--primary) !important;
+  font-weight: 600;
+}
+
+.ant-tag {
+  border-radius: 6px !important;
+  font-weight: 500;
+}
+
+.ant-list-item {
+  border-radius: var(--radius-sm) !important;
+  transition: background 0.2s ease;
+}
+.ant-list-item:hover {
+  background: rgba(99,102,241,0.03);
+}
+
+/* Page header style */
+.page-header {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+/* Stat card gradient backgrounds */
+.stat-card-1 { background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); border: none !important; }
+.stat-card-2 { background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); border: none !important; }
+.stat-card-3 { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border: none !important; }
+.stat-card-4 { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: none !important; }
+
+.stat-card-1:hover, .stat-card-2:hover, .stat-card-3:hover, .stat-card-4:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Smooth transitions */
+* { transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
