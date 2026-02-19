@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.network import Insight
 from app.services.network_scanner import scan_cross_kb_links, get_graph_data
 from app.services.insight_generator import generate_insights
+from app.services.feishu_service import get_feishu_service
 
 router = APIRouter()
 
@@ -47,7 +48,13 @@ async def push_insight_to_feishu(insight_id: UUID, db: AsyncSession = Depends(ge
     insight = result.scalar_one_or_none()
     if not insight:
         raise HTTPException(status_code=404, detail="Insight not found")
-    # TODO: integrate with feishu_service to push
+    svc = get_feishu_service()
+    result = await svc.send_webhook_message(
+        title=f"💡 创意洞察: {insight.title}",
+        content=insight.content,
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to push to Feishu"))
     insight.status = "pushed_to_feishu"
     await db.commit()
     return {"message": "Pushed to Feishu", "insight_id": str(insight_id)}

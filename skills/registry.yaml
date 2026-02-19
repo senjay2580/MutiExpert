@@ -11,3 +11,23 @@ skills:
     type: yaml
     path: yaml/translator.yaml
     description: 多语言翻译
+
+  - name: data_analyzer
+    type: yaml
+    path: yaml/data_analyzer.yaml
+    description: 知识库数据深度分析（主题/实体/趋势/关联）
+
+  - name: cross_industry_linker
+    type: yaml
+    path: yaml/cross_industry_linker.yaml
+    description: 跨行业知识关联发现与创意洞察
+
+  - name: report_generator
+    type: yaml
+    path: yaml/report_generator.yaml
+    description: 基于知识库内容生成结构化报告
+
+  - name: qa_enhancer
+    type: yaml
+    path: yaml/qa_enhancer.yaml
+    description: 问答质量增强（深度解析+追问建议）

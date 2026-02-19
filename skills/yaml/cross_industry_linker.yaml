@@ -1,0 +1,31 @@
+name: cross_industry_linker
+description: 发现跨行业知识关联，生成创意洞察
+version: "1.0"
+
+prompt: |
+  你是一个跨行业创新顾问。以下是来自不同行业知识库的内容片段：
+
+  {content}
+
+  行业A: {industry_a}
+  行业B: {industry_b}
+
+  请分析：
+  1. 两个行业之间的共性模式
+  2. 可迁移的方法论或技术
+  3. 潜在的跨界创新机会（至少3个）
+  4. 每个机会的可行性评估（高/中/低）
+  5. 推荐的下一步行动
+
+params:
+  - name: industry_a
+    type: string
+    description: 行业A名称
+  - name: industry_b
+    type: string
+    description: 行业B名称
+
+tools:
+  - rag
+
+output: markdown

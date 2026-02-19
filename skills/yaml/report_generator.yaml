@@ -1,0 +1,29 @@
+name: report_generator
+description: 基于知识库内容生成结构化报告
+version: "1.0"
+
+prompt: |
+  你是一个专业报告撰写者。请基于以下知识库内容生成一份{report_type}报告：
+
+  {content}
+
+  报告要求：
+  - 标题和摘要
+  - 背景与目的
+  - 核心发现（带数据支撑）
+  - 分析与讨论
+  - 结论与建议
+  - 附录（引用来源）
+
+  语言风格：专业、简洁、有数据支撑
+
+params:
+  - name: report_type
+    type: string
+    default: "综合分析"
+    description: 报告类型（综合分析/行业洞察/竞品分析/技术调研）
+
+tools:
+  - rag
+
+output: markdown

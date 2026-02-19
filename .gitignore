@@ -42,4 +42,3 @@ build/
 */.cache/
 **/.cache/
 .claude/commands/web-search-plus/config.json
-.github/workflows/
