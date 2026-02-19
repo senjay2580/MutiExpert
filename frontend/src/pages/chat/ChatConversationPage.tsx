@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, Bot, User } from 'lucide-react';
 
 interface Message {
@@ -22,7 +22,6 @@ const mockMessages: Message[] = [
 ];
 
 export default function ChatConversationPage() {
-  const { id } = useParams();
   const navigate = useNavigate();
   const [input, setInput] = useState('');
   const [messages] = useState<Message[]>(mockMessages);
