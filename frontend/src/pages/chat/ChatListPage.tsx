@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, Trash2, Search } from 'lucide-react';
-import clsx from 'clsx';
+import { Plus, MessageSquare, Search } from 'lucide-react';
 
 interface Conversation {
   id: string;
