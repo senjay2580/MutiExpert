@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -9,7 +10,7 @@ class ConversationCreate(BaseModel):
 
 
 class ConversationResponse(BaseModel):
-    id: str
+    id: UUID
     title: str | None
     knowledge_base_ids: list[str]
     model_provider: str
@@ -24,8 +25,8 @@ class MessageCreate(BaseModel):
 
 
 class MessageResponse(BaseModel):
-    id: str
-    conversation_id: str
+    id: UUID
+    conversation_id: UUID
     role: str
     content: str
     sources: list[dict]

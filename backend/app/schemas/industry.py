@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -17,7 +18,7 @@ class IndustryUpdate(BaseModel):
 
 
 class IndustryResponse(BaseModel):
-    id: str
+    id: UUID
     name: str
     description: str | None
     icon: str | None

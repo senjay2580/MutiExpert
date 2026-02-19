@@ -1,161 +1,129 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
-import { Card, Input, Button, Select, Tag, Collapse, Empty } from 'antd';
-import { SendOutlined, SwapOutlined, LoadingOutlined } from '@ant-design/icons';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { chatService, streamMessage } from '../../services/chatService';
-import { useAppStore } from '../../stores/useAppStore';
-import type { Message, SourceReference } from '../../types';
+import { useState, useRef, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Send, Bot, User } from 'lucide-react';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  sources?: { title: string; industry: string }[];
+}
+
+const mockMessages: Message[] = [
+  { id: '1', role: 'user', content: '请分析一下医疗AI在诊断领域的最新发展趋势' },
+  {
+    id: '2', role: 'assistant',
+    content: '根据医疗健康知识库的资料，医疗AI诊断领域近期有以下关键趋势：\n\n1. **多模态融合诊断** — 结合影像、病历文本、基因组数据的综合分析能力显著提升\n2. **可解释性增强** — 监管要求推动AI诊断结果必须提供可解释的推理路径\n3. **边缘部署** — 轻量化模型使得AI诊断可以在基层医疗机构本地运行\n\n从金融投资角度看，医疗AI赛道2024年融资额同比增长47%，头部企业估值持续走高。',
+    sources: [
+      { title: '医疗AI诊断系统白皮书', industry: '医疗健康' },
+      { title: '2024医疗科技投资报告', industry: '金融投资' },
+    ],
+  },
+];
 
 export default function ChatConversationPage() {
-  const { id } = useParams<{ id: string }>();
-  const queryClient = useQueryClient();
-  const { currentModel, setCurrentModel } = useAppStore();
+  const { id } = useParams();
+  const navigate = useNavigate();
   const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
-  const [streamText, setStreamText] = useState('');
-  const [streamSources, setStreamSources] = useState<SourceReference[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<(() => void) | null>(null);
-
-  const { data: conv } = useQuery({
-    queryKey: ['conversation', id],
-    queryFn: () => chatService.getConversation(id!),
-    enabled: !!id,
-  });
-
-  const { data: messages = [] } = useQuery({
-    queryKey: ['messages', id],
-    queryFn: () => chatService.listMessages(id!),
-    enabled: !!id,
-  });
+  const [messages] = useState<Message[]>(mockMessages);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamText]);
-
-  useEffect(() => {
-    if (conv?.model_provider) setCurrentModel(conv.model_provider as 'claude' | 'codex');
-  }, [conv?.model_provider, setCurrentModel]);
-
-  const handleSend = useCallback(() => {
-    if (!input.trim() || !id || streaming) return;
-    const content = input.trim();
-    setInput('');
-    setStreaming(true);
-    setStreamText('');
-    setStreamSources([]);
-
-    abortRef.current = streamMessage(
-      id, content,
-      (chunk) => setStreamText((prev) => prev + chunk),
-      (sources) => setStreamSources(sources as unknown as SourceReference[]),
-      () => {
-        setStreaming(false);
-        setStreamText('');
-        setStreamSources([]);
-        queryClient.invalidateQueries({ queryKey: ['messages', id] });
-        queryClient.invalidateQueries({ queryKey: ['conversation', id] });
-      },
-      (error) => {
-        setStreaming(false);
-        setStreamText(`Error: ${error}`);
-      },
-    );
-  }, [input, id, streaming, queryClient]);
-
-  const handleModelSwitch = async (model: 'claude' | 'codex') => {
-    setCurrentModel(model);
-    if (id) {
-      await chatService.switchModel(id, model);
-      queryClient.invalidateQueries({ queryKey: ['conversation', id] });
-    }
-  };
-
-  const renderMessage = (msg: Message) => {
-    const isUser = msg.role === 'user';
-    return (
-      <div key={msg.id} className={`flex mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
-        <div className={`max-w-[75%] rounded-lg px-4 py-2 ${isUser ? 'bg-blue-500 text-white' : 'bg-white border'}`}>
-          <div className="whitespace-pre-wrap">{msg.content}</div>
-          {!isUser && msg.sources && msg.sources.length > 0 && (
-            <Collapse ghost size="small" className="mt-2"
-              items={[{
-                key: '1', label: <span className="text-xs text-gray-400">来源引用 ({msg.sources.length})</span>,
-                children: msg.sources.map((s: SourceReference, i: number) => (
-                  <div key={i} className="text-xs text-gray-500 mb-1">
-                    <Tag color="blue" className="text-xs">{s.document_title}</Tag>
-                    <span className="text-gray-400">相关度: {(s.score * 100).toFixed(0)}%</span>
-                    <p className="mt-1 text-gray-400 truncate">{s.snippet}</p>
-                  </div>
-                )),
-              }]}
-            />
-          )}
-          {!isUser && msg.model_used && (
-            <div className="text-xs text-gray-400 mt-1">{msg.model_used === 'claude' ? 'Claude' : 'Codex'}</div>
-          )}
-        </div>
-      </div>
-    );
-  };
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-128px)]">
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="text-xl font-semibold">{conv?.title || '新对话'}</h2>
-        <Select
-          value={currentModel}
-          onChange={handleModelSwitch}
-          options={[
-            { value: 'claude', label: 'Claude (Anthropic)' },
-            { value: 'codex', label: 'Codex (OpenAI)' },
-          ]}
-          suffixIcon={<SwapOutlined />}
-          className="min-w-[180px]"
-        />
-      </div>
-      <Card className="flex-1 overflow-y-auto mb-3" styles={{ body: { padding: 16 } }}>
-        {messages.length === 0 && !streaming ? (
-          <Empty description="开始提问，AI 将基于知识库回答" className="py-20" />
-        ) : (
-          <>
-            {messages.map(renderMessage)}
-            {streaming && (
-              <div className="flex justify-start mb-4">
-                <div className="max-w-[75%] rounded-lg px-4 py-2 bg-white border">
-                  <div className="whitespace-pre-wrap">{streamText || <LoadingOutlined />}</div>
-                  {streamSources.length > 0 && (
-                    <div className="mt-2 text-xs text-gray-400">
-                      {streamSources.map((s, i) => <Tag key={i} color="blue">{s.document_title}</Tag>)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-        <div ref={messagesEndRef} />
-      </Card>
-      <div className="flex gap-2">
-        <Input.TextArea
-          placeholder="输入你的问题..."
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          className="flex-1"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
-          disabled={streaming}
-        />
-        <Button
-          type="primary"
-          icon={streaming ? <LoadingOutlined /> : <SendOutlined />}
-          className="self-end"
-          onClick={handleSend}
-          disabled={streaming || !input.trim()}
+    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-var(--content-padding)*2)]">
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-4" style={{ borderBottom: '1px solid var(--border-default)' }}>
+        <button
+          onClick={() => navigate('/chat')}
+          className="p-1.5 rounded-md cursor-pointer transition-colors"
+          style={{ color: 'var(--text-muted)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
         >
-          发送
-        </Button>
+          <ArrowLeft size={18} strokeWidth={1.8} />
+        </button>
+        <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          医疗AI发展趋势分析
+        </span>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto py-6 space-y-6">
+        {messages.map((msg) => (
+          <div key={msg.id} className="flex gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+              style={{
+                background: msg.role === 'assistant' ? 'var(--accent-subtle)' : 'var(--bg-sunken)',
+                color: msg.role === 'assistant' ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              {msg.role === 'assistant' ? <Bot size={16} strokeWidth={1.8} /> : <User size={16} strokeWidth={1.8} />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div
+                className="text-[13px] leading-relaxed whitespace-pre-wrap"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {msg.content}
+              </div>
+              {msg.sources && msg.sources.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {msg.sources.map((src, i) => (
+                    <span
+                      key={i}
+                      className="text-[11px] font-medium px-2 py-1 rounded-md cursor-pointer transition-colors"
+                      style={{
+                        background: 'var(--bg-sunken)',
+                        border: '1px solid var(--border-default)',
+                        color: 'var(--text-secondary)',
+                        transitionDuration: 'var(--duration-fast)',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+                    >
+                      {src.industry} · {src.title}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div
+        className="flex items-center gap-3 pt-4"
+        style={{ borderTop: '1px solid var(--border-default)' }}
+      >
+        <div
+          className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-lg"
+          style={{ background: 'var(--bg-sunken)', border: '1px solid var(--border-default)' }}
+        >
+          <input
+            type="text"
+            placeholder="输入你的问题... 支持 @ 选择行业专家"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="flex-1 bg-transparent border-none outline-none text-[13px]"
+            style={{ color: 'var(--text-primary)' }}
+          />
+        </div>
+        <button
+          className="p-2.5 rounded-lg cursor-pointer transition-colors"
+          style={{
+            background: input.trim() ? 'var(--accent)' : 'var(--bg-sunken)',
+            color: input.trim() ? 'var(--text-inverse)' : 'var(--text-muted)',
+            transitionDuration: 'var(--duration-fast)',
+          }}
+        >
+          <Send size={18} strokeWidth={1.8} />
+        </button>
       </div>
     </div>
   );

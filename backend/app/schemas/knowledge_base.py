@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -15,10 +16,10 @@ class KnowledgeBaseUpdate(BaseModel):
 
 
 class KnowledgeBaseResponse(BaseModel):
-    id: str
+    id: UUID
     name: str
     description: str | None
-    industry_id: str | None
+    industry_id: UUID | None
     document_count: int
     created_at: datetime
     updated_at: datetime
@@ -27,8 +28,8 @@ class KnowledgeBaseResponse(BaseModel):
 
 
 class DocumentResponse(BaseModel):
-    id: str
-    knowledge_base_id: str
+    id: UUID
+    knowledge_base_id: UUID
     title: str
     file_type: str
     file_url: str | None

@@ -1,138 +1,95 @@
-import { Card, Col, Row, Statistic, List, Tag, Empty } from 'antd';
-import { BookOutlined, FileTextOutlined, MessageOutlined, BulbOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { dashboardService } from '../../services/dashboardService';
+import { BookOpen, FileText, TrendingUp, MessageSquare } from 'lucide-react';
 
-const PIE_COLORS = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b'];
+const stats = [
+  { label: '知识库总数', value: '12', icon: BookOpen, color: 'var(--accent)' },
+  { label: '文档数量', value: '248', icon: FileText, color: 'var(--info)' },
+  { label: '本月问答', value: '86', icon: MessageSquare, color: 'var(--success)' },
+  { label: '知识增长', value: '+23%', icon: TrendingUp, color: 'var(--warning)' },
+];
 
-const statCards = [
-  { key: 'total_knowledge_bases', title: '知识库', icon: <BookOutlined style={{ fontSize: 28, color: '#6366f1' }} />, cls: 'stat-card-1' },
-  { key: 'total_documents', title: '文档', icon: <FileTextOutlined style={{ fontSize: 28, color: '#0ea5e9' }} />, cls: 'stat-card-2' },
-  { key: 'total_conversations', title: '对话', icon: <MessageOutlined style={{ fontSize: 28, color: '#10b981' }} />, cls: 'stat-card-3' },
-  { key: 'total_insights', title: '创意洞察', icon: <BulbOutlined style={{ fontSize: 28, color: '#f59e0b' }} />, cls: 'stat-card-4' },
+const recentActivities = [
+  { text: '上传了《金融风控模型分析》', time: '10 分钟前', type: '文档上传' },
+  { text: '与 AI 讨论了医疗行业趋势', time: '1 小时前', type: 'AI 对话' },
+  { text: '新增了科技行业知识笔记', time: '3 小时前', type: '手动笔记' },
+  { text: '收藏了法律法规解读链接', time: '昨天', type: '链接收藏' },
+  { text: '上传了《教育行业白皮书》', time: '昨天', type: '文档上传' },
 ];
 
 export default function DashboardPage() {
-  const { data: overview } = useQuery({
-    queryKey: ['dashboard-overview'],
-    queryFn: dashboardService.getOverview,
-  });
-  const { data: aiUsage } = useQuery({
-    queryKey: ['dashboard-ai-usage'],
-    queryFn: dashboardService.getAIUsage,
-  });
-  const { data: timeline = [] } = useQuery({
-    queryKey: ['dashboard-timeline'],
-    queryFn: dashboardService.getActivityTimeline,
-  });
-  const { data: heatmap = [] } = useQuery({
-    queryKey: ['dashboard-heatmap'],
-    queryFn: dashboardService.getKnowledgeHeatmap,
-  });
-
-  const pieData = aiUsage ? [
-    { name: 'Claude', value: aiUsage.claude_calls },
-    { name: 'Codex', value: aiUsage.openai_calls },
-  ].filter((d) => d.value > 0) : [];
-
   return (
-    <div>
-      <div style={{ marginBottom: 24 }}>
-        <h2 className="page-header" style={{ margin: 0 }}>仪表盘</h2>
-        <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 4 }}>多行业知识资产概览</p>
-      </div>
-      <Row gutter={[16, 16]}>
-        {statCards.map((sc) => (
-          <Col xs={24} sm={12} lg={6} key={sc.key}>
-            <Card className={sc.cls} style={{ borderRadius: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 14,
-                  background: 'rgba(255,255,255,0.7)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                }}>
-                  {sc.icon}
-                </div>
-                <Statistic
-                  title={sc.title}
-                  value={(overview as unknown as Record<string, number>)?.[sc.key] ?? 0}
-                  valueStyle={{ fontSize: 28, fontWeight: 700, color: '#1e293b' }}
-                />
+    <div className="space-y-6">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-4 gap-4">
+        {stats.map((stat) => (
+          <div
+            key={stat.label}
+            className="flex items-center gap-4 p-5 rounded-lg transition-colors"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-default)',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'var(--accent-subtle)', color: stat.color }}
+            >
+              <stat.icon size={20} strokeWidth={1.8} />
+            </div>
+            <div>
+              <div className="text-[12px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                {stat.label}
               </div>
-            </Card>
-          </Col>
+              <div className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                {stat.value}
+              </div>
+            </div>
+          </div>
         ))}
-      </Row>
+      </div>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card title="知识库文档分布" style={{ borderRadius: 16 }}>
-            {heatmap.length > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={heatmap} barCategoryGap="20%">
-                  <XAxis dataKey="name" fontSize={12} axisLine={false} tickLine={false} />
-                  <YAxis axisLine={false} tickLine={false} fontSize={12} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: 10, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}
-                  />
-                  <Bar dataKey="count" fill="url(#barGradient)" radius={[6, 6, 0, 0]} />
-                  <defs>
-                    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#818cf8" />
-                      <stop offset="100%" stopColor="#6366f1" />
-                    </linearGradient>
-                  </defs>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : <Empty description="暂无数据" />}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title="AI 使用统计" style={{ borderRadius: 16 }}>
-            {pieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                    outerRadius={90} innerRadius={50} paddingAngle={4} label
-                    strokeWidth={0}>
-                    {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ borderRadius: 10, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <Empty description="暂无使用数据" />}
-          </Card>
-        </Col>
-      </Row>
-
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24}>
-          <Card title="最近活动" style={{ borderRadius: 16 }}>
-            <List
-              dataSource={timeline}
-              locale={{ emptyText: <Empty description="暂无活动记录" /> }}
-              renderItem={(item) => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={
-                      <span>
-                        <Tag color={item.type === 'document' ? 'purple' : 'cyan'}
-                          style={{ borderRadius: 6 }}>
-                          {item.type === 'document' ? '文档' : '对话'}
-                        </Tag>
-                        {item.title}
-                      </span>
-                    }
-                    description={new Date(item.time).toLocaleString()}
-                  />
-                </List.Item>
-              )}
-            />
-          </Card>
-        </Col>
-      </Row>
+      {/* Recent Activity */}
+      <div
+        className="rounded-lg"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
+      >
+        <div
+          className="px-5 py-3.5 text-[13px] font-semibold"
+          style={{ color: 'var(--text-primary)', borderBottom: '1px solid var(--border-default)' }}
+        >
+          最近活动
+        </div>
+        <div>
+          {recentActivities.map((activity, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between px-5 py-3 transition-colors"
+              style={{
+                borderBottom: i < recentActivities.length - 1 ? '1px solid var(--border-default)' : 'none',
+                transitionDuration: 'var(--duration-fast)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className="text-[11px] font-medium px-2 py-0.5 rounded"
+                  style={{ background: 'var(--accent-subtle)', color: 'var(--accent-text)' }}
+                >
+                  {activity.type}
+                </span>
+                <span className="text-[13px]" style={{ color: 'var(--text-primary)' }}>
+                  {activity.text}
+                </span>
+              </div>
+              <span className="text-[12px] shrink-0" style={{ color: 'var(--text-muted)' }}>
+                {activity.time}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
