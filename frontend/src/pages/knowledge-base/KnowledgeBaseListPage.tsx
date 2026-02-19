@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { knowledgeBaseService } from '../../services/knowledgeBaseService';
 import { industryService } from '../../services/industryService';
-import type { KnowledgeBase, Industry } from '../../types';
 
 export default function KnowledgeBaseListPage() {
   const navigate = useNavigate();

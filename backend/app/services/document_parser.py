@@ -1,6 +1,5 @@
 """文档解析服务 - 支持 PDF/Word/Markdown"""
 import io
-from pathlib import Path
 
 
 async def parse_document(file_content: bytes, file_type: str) -> str:

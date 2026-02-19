@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 from sqlalchemy import String, Text, Integer, Float, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB, TIMESTAMP
 from pgvector.sqlalchemy import Vector
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.knowledge import Document
 
 
 class DocumentChunk(Base):
@@ -50,8 +56,3 @@ class Insight(Base):
     related_link_ids = mapped_column(JSONB, default=list)
     status: Mapped[str] = mapped_column(String(20), default="new")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
-
-
-# Forward reference fix
-from app.models.knowledge import Document
-DocumentChunk.document = relationship(Document, back_populates="chunks")

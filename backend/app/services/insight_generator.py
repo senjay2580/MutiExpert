@@ -1,10 +1,8 @@
 """创意洞察生成器 - AI 分析跨行业关联，生成创意思路"""
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
-from app.models.network import KnowledgeLink, Insight
-from app.models.knowledge import KnowledgeBase
+from sqlalchemy import text
+from app.models.network import Insight
 from app.services.ai_service import stream_chat
-from app.config import get_settings
 
 
 async def generate_insights(db: AsyncSession) -> list[dict]:

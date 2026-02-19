@@ -1,10 +1,8 @@
 """文档处理管线 - 上传 → 解析 → 分块 → 向量化 → 存储"""
 import uuid
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.knowledge import Document, KnowledgeBase
 from app.models.network import DocumentChunk
-from app.services.document_parser import parse_document
 from app.services.embedding_service import generate_embeddings
 from app.core.chunking import chunk_text
 from app.database import AsyncSessionLocal

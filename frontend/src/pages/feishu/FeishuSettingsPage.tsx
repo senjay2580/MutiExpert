@@ -2,12 +2,6 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Form, Input, Switch, message } from 'antd';
 import api from '../../services/api';
 
-interface FeishuConfigData {
-  app_id: string;
-  webhook_url: string;
-  bot_enabled: boolean;
-}
-
 export default function FeishuSettingsPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);

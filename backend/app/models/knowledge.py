@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Integer, Float, Boolean, BigInteger, ForeignKey, ARRAY, Index
+from typing import TYPE_CHECKING
+from sqlalchemy import String, Text, Integer, BigInteger, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB, TIMESTAMP
-from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.network import DocumentChunk
 
 
 class Industry(Base):

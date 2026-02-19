@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from app.models.knowledge import KnowledgeBase
-from app.models.network import DocumentChunk, KnowledgeLink
+from app.models.network import KnowledgeLink
 
 
 async def scan_cross_kb_links(db: AsyncSession, threshold: float = 0.6, max_links: int = 100):

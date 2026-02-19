@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select
 from app.database import get_db
 from app.models.knowledge import Industry
 from app.schemas.industry import IndustryCreate, IndustryUpdate, IndustryResponse
