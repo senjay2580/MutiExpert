@@ -10,6 +10,8 @@ import AnalyticsPage from '../pages/analytics/AnalyticsPage';
 import AIModelsPage from '../pages/settings/AIModelsPage';
 import IntegrationsPage from '../pages/settings/IntegrationsPage';
 import DataManagementPage from '../pages/settings/DataManagementPage';
+import SkillsPage from '../pages/skills/SkillsPage';
+import ScheduledTasksPage from '../pages/scheduler/ScheduledTasksPage';
 
 export const router = createBrowserRouter([
   {
@@ -22,6 +24,8 @@ export const router = createBrowserRouter([
       { path: 'knowledge/:industryId', element: <KnowledgeDetailPage /> },
       { path: 'chat', element: <ChatListPage /> },
       { path: 'chat/:id', element: <ChatConversationPage /> },
+      { path: 'skills', element: <SkillsPage /> },
+      { path: 'scheduler', element: <ScheduledTasksPage /> },
       { path: 'analytics', element: <AnalyticsPage /> },
       {
         path: 'settings',

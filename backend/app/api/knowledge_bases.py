@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
 from app.models.knowledge import KnowledgeBase, Document
-from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse, DocumentResponse
+from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse, DocumentResponse, LinkDocumentCreate, ArticleDocumentCreate
 from app.services.document_parser import parse_document
 from app.services.document_pipeline import process_document
 
@@ -118,6 +118,66 @@ async def upload_document(
     # Trigger background processing (chunking + embedding)
     background_tasks.add_task(process_document, doc.id)
 
+    return doc
+
+
+@router.post("/{kb_id}/documents/link", response_model=DocumentResponse, status_code=201)
+async def create_link_document(
+    kb_id: UUID,
+    data: LinkDocumentCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
+    kb = result.scalar_one_or_none()
+    if not kb:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+    doc = Document(
+        knowledge_base_id=kb_id,
+        title=data.title,
+        file_type="link",
+        source_url=data.source_url,
+        status="processing",
+    )
+    db.add(doc)
+    kb.document_count += 1
+    await db.commit()
+    await db.refresh(doc)
+    background_tasks.add_task(process_document, doc.id)
+    return doc
+
+
+@router.post("/{kb_id}/documents/article", response_model=DocumentResponse, status_code=201)
+async def create_article_document(
+    kb_id: UUID,
+    data: ArticleDocumentCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
+    kb = result.scalar_one_or_none()
+    if not kb:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+    # Strip HTML tags for plain text (used by RAG)
+    import re
+    plain_text = re.sub(r"<[^>]+>", "", data.content_html)
+
+    doc = Document(
+        knowledge_base_id=kb_id,
+        title=data.title,
+        file_type="article",
+        content_html=data.content_html,
+        content_text=plain_text,
+        file_size=len(data.content_html.encode("utf-8")),
+        status="processing",
+    )
+    db.add(doc)
+    kb.document_count += 1
+    await db.commit()
+    await db.refresh(doc)
+    background_tasks.add_task(process_document, doc.id)
     return doc
 
 

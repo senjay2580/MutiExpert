@@ -1,143 +1,89 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Search,
-  Plus,
-  Heart,
-  Banknote,
-  Scale,
-  Cpu,
-  GraduationCap,
-  HardHat,
-  Megaphone,
-  FolderOpen,
-  ChevronRight,
-  FileText,
-  Link as LinkIcon,
-  StickyNote,
-  BookOpen,
+  Search, Plus, FolderOpen, ChevronRight, Loader2, BookOpen, Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
-
-interface Industry {
-  id: string;
-  name: string;
-  icon: typeof Heart;
-  color: string;
-  knowledgeCount: number;
-  description: string;
-}
-
-const industries: Industry[] = [
-  { id: 'medical', name: '医疗健康', icon: Heart, color: 'var(--industry-medical)', knowledgeCount: 42, description: '医疗AI、健康管理、药物研发' },
-  { id: 'finance', name: '金融投资', icon: Banknote, color: 'var(--industry-finance)', knowledgeCount: 38, description: '风控模型、量化交易、区块链' },
-  { id: 'legal', name: '法律法规', icon: Scale, color: 'var(--industry-legal)', knowledgeCount: 25, description: '合规审查、合同分析、法律条文' },
-  { id: 'tech', name: '科技互联', icon: Cpu, color: 'var(--industry-tech)', knowledgeCount: 56, description: 'AI技术、云计算、软件工程' },
-  { id: 'education', name: '教育学术', icon: GraduationCap, color: 'var(--industry-education)', knowledgeCount: 31, description: '在线教育、学术研究、教学方法' },
-  { id: 'engineering', name: '建筑工程', icon: HardHat, color: 'var(--industry-engineering)', knowledgeCount: 18, description: '建筑设计、工程管理、BIM技术' },
-  { id: 'marketing', name: '市场营销', icon: Megaphone, color: 'var(--industry-marketing)', knowledgeCount: 29, description: '品牌策略、数字营销、用户增长' },
-  { id: 'general', name: '通用知识', icon: FolderOpen, color: 'var(--industry-general)', knowledgeCount: 15, description: '跨行业通用方法论与工具' },
-];
-
-const knowledgeItems = [
-  { id: '1', title: '金融风控模型深度解析', type: 'article', industry: 'finance', time: '2 小时前' },
-  { id: '2', title: '医疗AI诊断系统白皮书.pdf', type: 'document', industry: 'medical', time: '昨天' },
-  { id: '3', title: 'https://arxiv.org/abs/2024.xxxxx', type: 'link', industry: 'tech', time: '3 天前' },
-  { id: '4', title: '合同审查要点笔记', type: 'note', industry: 'legal', time: '上周' },
-  { id: '5', title: '数字营销ROI计算方法', type: 'article', industry: 'marketing', time: '上周' },
-  { id: '6', title: '在线教育平台架构设计.docx', type: 'document', industry: 'education', time: '2 周前' },
-];
-
-const typeIcons: Record<string, typeof FileText> = {
-  article: BookOpen,
-  document: FileText,
-  link: LinkIcon,
-  note: StickyNote,
-};
-
-const typeLabels: Record<string, string> = {
-  article: '文章',
-  document: '文档',
-  link: '链接',
-  note: '笔记',
-};
+import { industryService } from '../../services/industryService';
+import { knowledgeBaseService } from '../../services/knowledgeBaseService';
+import type { KnowledgeBase } from '../../types';
 
 export default function KnowledgePage() {
   const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showCreateKB, setShowCreateKB] = useState(false);
+  const [newKBName, setNewKBName] = useState('');
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const filtered = selectedIndustry
-    ? knowledgeItems.filter((k) => k.industry === selectedIndustry)
-    : knowledgeItems;
+  const { data: industries = [], isLoading: loadingInd } = useQuery({
+    queryKey: ['industries'],
+    queryFn: industryService.list,
+  });
+
+  const { data: knowledgeBases = [], isLoading: loadingKB } = useQuery({
+    queryKey: ['knowledge-bases', selectedIndustry],
+    queryFn: () => knowledgeBaseService.list(selectedIndustry ?? undefined),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: { name: string; industry_id?: string }) => knowledgeBaseService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge-bases'] });
+      setShowCreateKB(false);
+      setNewKBName('');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: knowledgeBaseService.delete,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['knowledge-bases'] }),
+  });
+
+  const filtered = knowledgeBases.filter((kb) =>
+    !searchQuery || kb.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-var(--topbar-height)-var(--content-padding)*2)]">
+    <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 h-full">
       {/* Left: Industry Tree */}
       <div
-        className="w-56 shrink-0 rounded-lg overflow-y-auto"
+        className="sm:w-52 shrink-0 rounded-xl overflow-y-auto"
         style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
       >
         <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border-default)' }}>
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            行业分类
-          </span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>行业分类</span>
         </div>
-        <div className="py-1">
-          <button
-            onClick={() => setSelectedIndustry(null)}
-            className={clsx(
-              'w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium cursor-pointer transition-colors',
-              !selectedIndustry ? 'text-[var(--accent-text)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            )}
-            style={{
-              background: !selectedIndustry ? 'var(--accent-subtle)' : 'transparent',
-              transitionDuration: 'var(--duration-fast)',
-            }}
-          >
-            <FolderOpen size={16} strokeWidth={1.8} />
-            <span>全部行业</span>
-            <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              {knowledgeItems.length}
-            </span>
-          </button>
-          {industries.map((ind) => (
-            <button
-              key={ind.id}
-              onClick={() => setSelectedIndustry(ind.id)}
-              className={clsx(
-                'w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium cursor-pointer transition-colors',
-                selectedIndustry === ind.id
-                  ? 'text-[var(--accent-text)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              )}
-              style={{
-                background: selectedIndustry === ind.id ? 'var(--accent-subtle)' : 'transparent',
-                transitionDuration: 'var(--duration-fast)',
-              }}
-            >
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ background: ind.color }} />
-              <span>{ind.name}</span>
-              <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                {ind.knowledgeCount}
-              </span>
-            </button>
-          ))}
-        </div>
+        {loadingInd ? (
+          <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
+        ) : (
+          <div className="py-1">
+            <IndustryBtn label="全部" count={knowledgeBases.length} active={!selectedIndustry} onClick={() => setSelectedIndustry(null)} />
+            {industries.map((ind) => (
+              <IndustryBtn
+                key={ind.id}
+                label={ind.name}
+                color={ind.color}
+                active={selectedIndustry === ind.id}
+                onClick={() => setSelectedIndustry(ind.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Right: Knowledge Content */}
+      {/* Right: Knowledge Bases */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Toolbar */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-4 flex-wrap sm:flex-nowrap">
           <div
-            className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg"
+            className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-sunken)', border: '1px solid var(--border-default)' }}
           >
-            <Search size={16} strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
+            <Search size={15} strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
             <input
               type="text"
-              placeholder="搜索知识..."
+              placeholder="搜索知识库..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1 bg-transparent border-none outline-none text-[13px]"
@@ -145,61 +91,127 @@ export default function KnowledgePage() {
             />
           </div>
           <button
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium cursor-pointer transition-colors"
-            style={{
-              background: 'var(--accent)',
-              color: 'var(--text-inverse)',
-              transitionDuration: 'var(--duration-fast)',
-            }}
+            onClick={() => setShowCreateKB(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium cursor-pointer transition-colors shrink-0"
+            style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-hover)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
           >
-            <Plus size={16} strokeWidth={2} />
-            添加知识
+            <Plus size={15} strokeWidth={2} />
+            <span className="hidden sm:inline">新建知识库</span>
           </button>
         </div>
 
-        {/* Knowledge List */}
-        <div
-          className="flex-1 rounded-lg overflow-y-auto"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
-        >
-          {filtered.map((item, i) => {
-            const TypeIcon = typeIcons[item.type] ?? FileText;
-            return (
-              <div
-                key={item.id}
-                className="flex items-center gap-4 px-5 py-3.5 cursor-pointer transition-colors"
-                style={{
-                  borderBottom: i < filtered.length - 1 ? '1px solid var(--border-default)' : 'none',
-                  transitionDuration: 'var(--duration-fast)',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                onClick={() => navigate(`/knowledge/${item.industry}`)}
-              >
-                <TypeIcon size={18} strokeWidth={1.8} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                    {item.title}
-                  </div>
-                </div>
-                <span
-                  className="text-[11px] font-medium px-2 py-0.5 rounded shrink-0"
-                  style={{ background: 'var(--bg-sunken)', color: 'var(--text-muted)' }}
-                >
-                  {typeLabels[item.type]}
-                </span>
-                <span className="text-[12px] shrink-0" style={{ color: 'var(--text-muted)' }}>
-                  {item.time}
-                </span>
-                <ChevronRight size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-              </div>
-            );
-          })}
-        </div>
+        {/* Create KB inline form */}
+        {showCreateKB && (
+          <div
+            className="flex items-center gap-2 mb-4 p-3 rounded-xl"
+            style={{ background: 'var(--bg-surface)', border: '1px solid var(--accent)' }}
+          >
+            <input
+              autoFocus
+              placeholder="知识库名称..."
+              value={newKBName}
+              onChange={(e) => setNewKBName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && newKBName.trim()) createMutation.mutate({ name: newKBName.trim(), industry_id: selectedIndustry ?? undefined }); }}
+              className="flex-1 bg-transparent border-none outline-none text-[13px]"
+              style={{ color: 'var(--text-primary)' }}
+            />
+            <button
+              onClick={() => { if (newKBName.trim()) createMutation.mutate({ name: newKBName.trim(), industry_id: selectedIndustry ?? undefined }); }}
+              disabled={!newKBName.trim() || createMutation.isPending}
+              className="px-3 py-1.5 rounded-lg text-[12px] font-medium cursor-pointer disabled:opacity-50"
+              style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
+            >
+              {createMutation.isPending ? '创建中...' : '创建'}
+            </button>
+            <button
+              onClick={() => { setShowCreateKB(false); setNewKBName(''); }}
+              className="px-3 py-1.5 rounded-lg text-[12px] cursor-pointer"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              取消
+            </button>
+          </div>
+        )}
+
+        {/* List */}
+        {loadingKB ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 size={24} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <KBEmptyState />
+        ) : (
+          <div className="flex-1 rounded-xl overflow-y-auto divide-y" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderColor: 'var(--border-default)' }}>
+            {filtered.map((kb) => (
+              <KBRow key={kb.id} kb={kb} onOpen={() => navigate(`/knowledge/${kb.id}`)} onDelete={() => { if (confirm('确定删除？')) deleteMutation.mutate(kb.id); }} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+function IndustryBtn({ label, color, count, active, onClick }: { label: string; color?: string; count?: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium cursor-pointer transition-colors',
+        active ? 'text-[var(--accent-text)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+      )}
+      style={{ background: active ? 'var(--accent-subtle)' : 'transparent', transitionDuration: 'var(--duration-fast)' }}
+    >
+      {color ? <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} /> : <FolderOpen size={15} strokeWidth={1.8} />}
+      <span className="truncate">{label}</span>
+      {count !== undefined && <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>{count}</span>}
+    </button>
+  );
+}
+
+function KBEmptyState() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
+      <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+        <BookOpen size={24} strokeWidth={1.5} />
+      </div>
+      <p className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>还没有知识库</p>
+      <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>点击上方按钮创建第一个知识库</p>
+    </div>
+  );
+}
+
+function KBRow({ kb, onOpen, onDelete }: { kb: KnowledgeBase; onOpen: () => void; onDelete: () => void }) {
+  return (
+    <div
+      className="flex items-center gap-3 sm:gap-4 px-4 py-3 sm:px-5 sm:py-4 cursor-pointer transition-colors group"
+      style={{ transitionDuration: 'var(--duration-fast)' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+      onClick={onOpen}
+    >
+      <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+        <BookOpen size={16} strokeWidth={1.8} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{kb.name}</div>
+        {kb.description && <div className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{kb.description}</div>}
+      </div>
+      <span className="text-[11px] shrink-0 px-2 py-0.5 rounded" style={{ background: 'var(--bg-sunken)', color: 'var(--text-muted)' }}>
+        {kb.document_count} 篇
+      </span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+        style={{ color: 'var(--text-muted)' }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
+      >
+        <Trash2 size={14} strokeWidth={1.8} />
+      </button>
+      <ChevronRight size={16} className="hidden sm:block" style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+    </div>
+  );
+}

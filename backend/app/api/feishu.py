@@ -1,10 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.models.extras import FeishuConfig
+from app.models.knowledge import KnowledgeBase
 from app.services.feishu_service import get_feishu_service
+from app.services.rag_service import retrieve_context, build_rag_prompt
+from app.services.ai_service import stream_chat
+from app.services.skill_executor import load_registry
 
 router = APIRouter()
 
@@ -22,14 +26,52 @@ class FeishuMessageRequest(BaseModel):
 
 
 @router.post("/webhook")
-async def feishu_webhook(request: Request):
+async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
     svc = get_feishu_service()
     parsed = svc.parse_webhook_event(body)
     if parsed["type"] == "challenge":
         return {"challenge": parsed["challenge"]}
-    # 收到消息事件时可扩展自动回复逻辑
-    return {"code": 0, "msg": "ok", "event": parsed}
+    if parsed["type"] == "message" and parsed.get("text"):
+        background_tasks.add_task(_handle_feishu_question, parsed)
+    return {"code": 0, "msg": "ok"}
+
+
+async def _handle_feishu_question(parsed: dict):
+    """后台任务：用 RAG + AI 回答飞书消息并回复"""
+    svc = get_feishu_service()
+    question = parsed["text"]
+    message_id = parsed.get("message_id")
+    if not message_id:
+        return
+
+    try:
+        async with AsyncSessionLocal() as db:
+            # 获取所有知识库 ID 用于检索
+            result = await db.execute(select(KnowledgeBase.id))
+            kb_ids = [row[0] for row in result.all()]
+
+            context, sources = await retrieve_context(db, question, kb_ids) if kb_ids else ("", [])
+
+            # 加载 Skills 信息
+            skills_info = ""
+            try:
+                registry = load_registry()
+                if registry:
+                    skills_info = "\n".join(f"- {s['name']}: {s.get('description', '')}" for s in registry)
+            except Exception:
+                pass
+
+            system_prompt = build_rag_prompt(context, question, skills_info) if context else ""
+            messages = [{"role": "user", "content": question}]
+
+            full_response = ""
+            async for chunk in stream_chat(messages, "claude", system_prompt):
+                full_response += chunk
+
+        await svc.reply_message(message_id, full_response or "抱歉，暂时无法回答这个问题。")
+    except Exception as e:
+        await svc.reply_message(message_id, f"处理出错: {str(e)}")
 
 
 @router.get("/config")

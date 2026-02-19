@@ -31,6 +31,12 @@ export const knowledgeBaseService = {
 
   getStats: (kbId: string) =>
     api.get<{ total_documents: number; ready_documents: number }>(`/knowledge-bases/${kbId}/stats`).then((r) => r.data),
+
+  createLinkDocument: (kbId: string, data: { title: string; source_url: string }) =>
+    api.post<DocType>(`/knowledge-bases/${kbId}/documents/link`, data).then((r) => r.data),
+
+  createArticleDocument: (kbId: string, data: { title: string; content_html: string }) =>
+    api.post<DocType>(`/knowledge-bases/${kbId}/documents/article`, data).then((r) => r.data),
 };
 
 export const documentService = {

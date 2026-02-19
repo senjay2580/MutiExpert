@@ -1,6 +1,13 @@
-import { Download, Upload, Database, RefreshCw } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Download, Upload, Database, RefreshCw, Loader2 } from 'lucide-react';
+import { dashboardService } from '../../services/dashboardService';
 
 export default function DataManagementPage() {
+  const { data: overview, isLoading } = useQuery({
+    queryKey: ['dashboard-overview'],
+    queryFn: dashboardService.getOverview,
+  });
+
   return (
     <div className="space-y-4">
       <div>
@@ -10,29 +17,29 @@ export default function DataManagementPage() {
 
       {/* Database Status */}
       <div
-        className="rounded-lg p-5"
+        className="rounded-xl p-5"
         style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
       >
         <div className="flex items-center gap-3 mb-4">
           <Database size={18} strokeWidth={1.8} style={{ color: 'var(--accent)' }} />
           <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>数据库状态</span>
         </div>
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: '知识库', value: '8 个行业' },
-            { label: '文档总数', value: '248 篇' },
-            { label: '向量索引', value: '12,480 条' },
-          ].map((item) => (
-            <div key={item.label} className="p-3 rounded-md" style={{ background: 'var(--bg-sunken)' }}>
-              <div className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>{item.label}</div>
-              <div className="text-[16px] font-bold mt-1" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
-            </div>
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 size={20} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard label="知识库" value={overview?.total_knowledge_bases ?? 0} />
+            <StatCard label="文档总数" value={overview?.total_documents ?? 0} />
+            <StatCard label="对话数" value={overview?.total_conversations ?? 0} />
+            <StatCard label="洞察数" value={overview?.total_insights ?? 0} />
+          </div>
+        )}
       </div>
 
       {/* Actions */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { icon: Download, label: '导出数据', desc: '导出所有知识库数据为 JSON', color: 'var(--info)' },
           { icon: Upload, label: '导入数据', desc: '从 JSON 文件导入知识库', color: 'var(--success)' },
@@ -40,7 +47,7 @@ export default function DataManagementPage() {
         ].map((action) => (
           <button
             key={action.label}
-            className="flex flex-col items-center gap-3 p-6 rounded-lg cursor-pointer transition-colors text-center"
+            className="flex flex-col items-center gap-3 p-6 rounded-xl cursor-pointer transition-colors text-center"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', transitionDuration: 'var(--duration-fast)' }}
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-strong)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; }}
@@ -53,6 +60,15 @@ export default function DataManagementPage() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="p-3 rounded-lg" style={{ background: 'var(--bg-sunken)' }}>
+      <div className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>{label}</div>
+      <div className="text-[18px] font-bold mt-1" style={{ color: 'var(--text-primary)' }}>{value}</div>
     </div>
   );
 }

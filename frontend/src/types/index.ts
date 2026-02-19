@@ -23,9 +23,11 @@ export interface Document {
   id: string;
   knowledge_base_id: string;
   title: string;
-  file_type: 'pdf' | 'docx' | 'md';
+  file_type: 'pdf' | 'docx' | 'md' | 'link' | 'article';
   file_url: string;
   file_size: number;
+  source_url?: string;
+  content_html?: string;
   content_text: string;
   chunk_count: number;
   status: 'uploading' | 'processing' | 'ready' | 'error';
@@ -126,4 +128,18 @@ export interface AIModel {
   id: string;
   name: string;
   provider: string;
+}
+
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  description: string | null;
+  cron_expression: string;
+  task_type: 'skill_exec' | 'ai_query' | 'feishu_push';
+  task_config: Record<string, unknown>;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  created_at: string;
+  updated_at: string;
 }

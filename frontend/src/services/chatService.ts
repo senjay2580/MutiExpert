@@ -25,7 +25,7 @@ export function streamMessage(
   convId: string,
   content: string,
   onChunk: (text: string) => void,
-  onSources: (sources: Array<{ chunk_id: string; document_title: string; snippet: string; score: number }>) => void,
+  onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) => void,
   onDone: (messageId: string) => void,
   onError: (error: string) => void,
 ): () => void {

@@ -9,6 +9,7 @@ from app.models.extras import Conversation, Message
 from app.schemas.chat import ConversationCreate, ConversationResponse, MessageCreate, MessageResponse, ModelSwitch
 from app.services.rag_service import retrieve_context, build_rag_prompt
 from app.services.ai_service import stream_chat
+from app.services.skill_executor import load_registry
 
 router = APIRouter()
 
@@ -76,7 +77,19 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
 
     kb_ids = [UUID(kid) for kid in (conv.knowledge_base_ids or [])]
     context, sources = await retrieve_context(db, data.content, kb_ids)
-    system_prompt = build_rag_prompt(context, data.content) if context else ""
+
+    # 加载 Skills 信息，让 AI 知道可用技能
+    skills_info = ""
+    try:
+        registry = load_registry()
+        if registry:
+            skills_info = "\n".join(
+                f"- {s['name']}: {s.get('description', '')}" for s in registry
+            )
+    except Exception:
+        pass
+
+    system_prompt = build_rag_prompt(context, data.content, skills_info) if context else ""
 
     history_result = await db.execute(
         select(Message).where(Message.conversation_id == conv_id).order_by(Message.created_at.desc()).limit(10)

@@ -34,6 +34,8 @@ class DocumentResponse(BaseModel):
     file_type: str
     file_url: str | None
     file_size: int | None
+    source_url: str | None = None
+    content_html: str | None = None
     chunk_count: int
     status: str
     error_message: str | None
@@ -41,3 +43,13 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class LinkDocumentCreate(BaseModel):
+    title: str
+    source_url: str
+
+
+class ArticleDocumentCreate(BaseModel):
+    title: str
+    content_html: str

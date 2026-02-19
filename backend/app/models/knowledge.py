@@ -47,10 +47,12 @@ class Document(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     knowledge_base_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    file_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(20), nullable=False)  # pdf/docx/md/link/article
     file_url: Mapped[str | None] = mapped_column(Text)
     file_size: Mapped[int | None] = mapped_column(BigInteger)
-    content_text: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text)  # 链接类资料的原始 URL
+    content_text: Mapped[str | None] = mapped_column(Text)  # 纯文本（用于 RAG 检索）
+    content_html: Mapped[str | None] = mapped_column(Text)  # 富文本 HTML（文章类）
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="uploading")
     error_message: Mapped[str | None] = mapped_column(Text)
