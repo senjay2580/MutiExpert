@@ -57,7 +57,7 @@ export default function DashboardPage() {
                 </div>
                 <Statistic
                   title={sc.title}
-                  value={(overview as Record<string, number>)?.[sc.key] ?? 0}
+                  value={(overview as unknown as Record<string, number>)?.[sc.key] ?? 0}
                   valueStyle={{ fontSize: 28, fontWeight: 700, color: '#1e293b' }}
                 />
               </div>
