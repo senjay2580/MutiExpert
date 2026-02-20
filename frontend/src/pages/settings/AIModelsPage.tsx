@@ -9,10 +9,13 @@ import { PageHeader } from '@/components/composed/page-header';
 import { EmptyState } from '@/components/composed/empty-state';
 import { illustrationPresets } from '@/lib/illustrations';
 import { CardSkeleton } from '@/components/composed/loading-skeleton';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { ProviderIconWithBg } from '@/components/composed/provider-icon';
+import type { ModelProvider } from '@/types';
+
+type AvailableModel = { id: string; name: string };
 
 type ModelConfig = {
   id: string;
@@ -26,6 +29,7 @@ type ModelConfig = {
   preferred_auth_method?: string | null;
   wire_api?: string | null;
   requires_openai_auth?: boolean | null;
+  available_models?: AvailableModel[];
 };
 
 type ModelForm = {
@@ -36,29 +40,25 @@ type ModelForm = {
   preferred_auth_method: string;
 };
 
-type TestResult = {
-  ok: boolean;
-  message: string;
-};
+type TestResult = { ok: boolean; message: string };
 
 export default function AIModelsPage() {
   const currentModel = useAppStore((s) => s.currentModel);
+  const setCurrentModel = useAppStore((s) => s.setCurrentModel);
   const normalizedCurrent = currentModel === 'codex' ? 'openai' : currentModel;
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [forms, setForms] = useState<Record<string, ModelForm>>({});
-  const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>();
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
 
-  const { data: rawModels = [], isLoading, refetch } = useQuery({
+  const { data: models = [], isLoading, refetch } = useQuery({
     queryKey: ['ai-models'],
-    queryFn: () =>
-      api
-        .get<ModelConfig[]>('/config/models')
-        .then((r) => r.data),
+    queryFn: () => api.get<ModelConfig[]>('/config/models').then((r) => r.data),
   });
-  const models = rawModels;
 
   useEffect(() => {
     setForms((prev) => {
@@ -92,9 +92,7 @@ export default function AIModelsPage() {
         disable_response_storage: form.disable_response_storage,
         preferred_auth_method: form.preferred_auth_method || null,
       };
-      if (keys[model.id]) {
-        payload.api_key = keys[model.id];
-      }
+      if (keys[model.id]) payload.api_key = keys[model.id];
       await api.put(`/config/models/${model.id}`, payload);
       setKeys((prev) => ({ ...prev, [model.id]: '' }));
       await refetch();
@@ -107,28 +105,25 @@ export default function AIModelsPage() {
     setTesting((prev) => ({ ...prev, [model.id]: true }));
     setTestResults((prev) => ({ ...prev, [model.id]: { ok: false, message: '测试中...' } }));
     try {
-      const response = await api.post<{ ok: boolean; message: string }>(
-        `/config/models/${model.id}/test`,
-      );
+      const response = await api.post<{ ok: boolean; message: string }>(`/config/models/${model.id}/test`);
       setTestResults((prev) => ({ ...prev, [model.id]: response.data }));
     } catch (error) {
       const message =
         error && typeof error === 'object' && 'response' in error
           ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
           : '连接失败';
-      setTestResults((prev) => ({
-        ...prev,
-        [model.id]: { ok: false, message: message || '连接失败' },
-      }));
+      setTestResults((prev) => ({ ...prev, [model.id]: { ok: false, message: message || '连接失败' } }));
     } finally {
       setTesting((prev) => ({ ...prev, [model.id]: false }));
     }
   };
 
+  const isRelay = (id: string) => id === 'openai' || id === 'claude';
+
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <PageHeader title="AI 模型配置" description="选择默认模型，配置 API Key" />
+        <PageHeader title="AI 模型配置" description="配置模型参数与 API Key" />
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -139,157 +134,204 @@ export default function AIModelsPage() {
     <div className="space-y-4">
       <PageHeader title="AI 模型配置" description="配置模型参数与 API Key" />
 
-      {models.map((model) => {
-        const isSelected = normalizedCurrent === model.id;
-        const form = forms[model.id];
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {models.map((model) => {
+          const isExpanded = expandedId === model.id;
+          const isSelected = normalizedCurrent === model.id;
+          const form = forms[model.id];
+          const hasModels = (model.available_models?.length ?? 0) > 0;
 
-        return (
-          <Card
-            key={model.id}
-            className={cn(
-              'gap-4 py-5',
-              isSelected && 'border-2 border-primary'
-            )}
-          >
-            <CardHeader className="py-0">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm">{model.name}</CardTitle>
-                  <CardDescription className="text-xs">{model.provider}</CardDescription>
-                </div>
-                {isSelected && (
-                  <span className="rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-primary">
-                    当前使用
-                  </span>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {model.id === 'openai' && (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Base URL（如：https://ls.xingchentech.asia/openai）"
-                      value={form?.base_url || ''}
-                      onChange={(e) =>
-                        setForms((prev) => ({
-                          ...prev,
-                          [model.id]: { ...(prev[model.id] || {}), base_url: e.target.value },
-                        }))
-                      }
-                      className="flex-1 text-xs"
-                    />
+          return (
+            <div
+              key={model.id}
+              className={cn(
+                'rounded-xl border bg-card shadow-sm overflow-hidden transition-all',
+                isExpanded && 'lg:col-span-2 border-primary/30',
+                !isExpanded && isSelected && 'border-primary/40',
+                !isExpanded && !isSelected && 'border-border',
+              )}
+            >
+              {/* Header */}
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : model.id)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <ProviderIconWithBg provider={model.id} size="md" />
+                  <div className="text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{model.name}</span>
+                      {model.api_key_set && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 rounded">
+                          已配置
+                        </span>
+                      )}
+                      {isSelected && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary rounded">
+                          当前使用
+                        </span>
+                      )}
+                      {isRelay(model.id) && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 rounded">
+                          中转
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {hasModels
+                        ? model.available_models!.slice(0, 3).map((m) => m.name).join(', ') +
+                          (model.available_models!.length > 3 ? '...' : '')
+                        : model.model || model.provider}
+                    </p>
                   </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="模型名称（如：gpt-5.3-codex / claude-sonnet-4-20250514）"
-                    value={form?.model || ''}
-                    onChange={(e) =>
-                      setForms((prev) => ({
-                        ...prev,
-                        [model.id]: { ...(prev[model.id] || {}), model: e.target.value },
-                      }))
-                    }
-                    className="flex-1 text-xs"
-                  />
                 </div>
-                {model.id === 'openai' && (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Reasoning Effort（如：xhigh）"
-                      value={form?.reasoning_effort || ''}
-                      onChange={(e) =>
-                        setForms((prev) => ({
-                          ...prev,
-                          [model.id]: { ...(prev[model.id] || {}), reasoning_effort: e.target.value },
-                        }))
-                      }
-                      className="flex-1 text-xs"
-                    />
-                    <Input
-                      placeholder="Auth Method（apikey 或 bearer）"
-                      value={form?.preferred_auth_method || ''}
-                      onChange={(e) =>
-                        setForms((prev) => ({
-                          ...prev,
-                          [model.id]: { ...(prev[model.id] || {}), preferred_auth_method: e.target.value },
-                        }))
-                      }
-                      className="flex-1 text-xs"
-                    />
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>禁用存储</span>
-                      <Switch
-                        checked={Boolean(form?.disable_response_storage)}
-                        onCheckedChange={(checked) =>
-                          setForms((prev) => ({
-                            ...prev,
-                            [model.id]: { ...(prev[model.id] || {}), disable_response_storage: checked },
-                          }))
+                <Icon icon="lucide:chevron-down" width={16} height={16} className={cn('text-muted-foreground transition-transform', isExpanded && 'rotate-180')} />
+              </button>
+
+              {/* Expanded config form */}
+              {isExpanded && form && (
+                <div className="px-4 pb-4 pt-2 bg-muted/20 border-t">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* API Key */}
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">API Key</label>
+                      <div className="relative">
+                        <Input
+                          type={showKeys[model.id] ? 'text' : 'password'}
+                          placeholder={model.api_key_set ? '已配置，留空不改' : 'sk-...'}
+                          value={keys[model.id] || ''}
+                          onChange={(e) => setKeys((prev) => ({ ...prev, [model.id]: e.target.value }))}
+                          className="pr-10 font-mono text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowKeys((prev) => ({ ...prev, [model.id]: !prev[model.id] }))}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                        >
+                          <Icon icon={showKeys[model.id] ? 'lucide:eye-off' : 'lucide:eye'} width={14} height={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Model selector */}
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                        {hasModels ? '默认模型' : '模型名称'}
+                      </label>
+                      {hasModels ? (
+                        <select
+                          value={form.model}
+                          onChange={(e) =>
+                            setForms((prev) => ({ ...prev, [model.id]: { ...prev[model.id], model: e.target.value } }))
+                          }
+                          className="w-full h-9 px-3 rounded-md border border-input bg-background text-xs focus:ring-2 ring-primary/20 outline-none"
+                        >
+                          {model.available_models!.map((m) => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          placeholder="模型名称"
+                          value={form.model}
+                          onChange={(e) =>
+                            setForms((prev) => ({ ...prev, [model.id]: { ...prev[model.id], model: e.target.value } }))
+                          }
+                          className="text-xs"
+                        />
+                      )}
+                    </div>
+
+                    {/* Base URL - full width */}
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                        Base URL {isRelay(model.id) ? '（中转地址）' : '（可选）'}
+                      </label>
+                      <Input
+                        placeholder={model.base_url || 'https://api.example.com/v1'}
+                        value={form.base_url}
+                        onChange={(e) =>
+                          setForms((prev) => ({ ...prev, [model.id]: { ...prev[model.id], base_url: e.target.value } }))
                         }
+                        className="text-xs"
                       />
                     </div>
+
+                    {/* OpenAI-specific fields */}
+                    {model.id === 'openai' && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Reasoning Effort</label>
+                          <Input
+                            placeholder="xhigh"
+                            value={form.reasoning_effort}
+                            onChange={(e) =>
+                              setForms((prev) => ({ ...prev, [model.id]: { ...prev[model.id], reasoning_effort: e.target.value } }))
+                            }
+                            className="text-xs"
+                          />
+                        </div>
+                        <div className="flex items-end gap-4">
+                          <div className="flex-1">
+                            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Auth Method</label>
+                            <Input
+                              placeholder="apikey 或 bearer"
+                              value={form.preferred_auth_method}
+                              onChange={(e) =>
+                                setForms((prev) => ({
+                                  ...prev,
+                                  [model.id]: { ...prev[model.id], preferred_auth_method: e.target.value },
+                                }))
+                              }
+                              className="text-xs"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 pb-1">
+                            <span className="text-xs text-muted-foreground">禁用存储</span>
+                            <Switch
+                              checked={form.disable_response_storage}
+                              onCheckedChange={(checked) =>
+                                setForms((prev) => ({
+                                  ...prev,
+                                  [model.id]: { ...prev[model.id], disable_response_storage: checked },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <Input
-                    type={showKeys[model.id] ? 'text' : 'password'}
-                    placeholder={model.api_key_set ? 'API Key（已配置，可留空不改）' : 'API Key（必填）'}
-                    value={keys[model.id] || ''}
-                    onChange={(e) =>
-                      setKeys((prev) => ({ ...prev, [model.id]: e.target.value }))
-                    }
-                    className="flex-1 font-mono text-xs"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      setShowKeys((prev) => ({
-                        ...prev,
-                        [model.id]: !prev[model.id],
-                      }))
-                    }
-                  >
-                    {showKeys[model.id] ? <Icon icon="streamline-color:invisible-1" width={14} height={14} /> : <Icon icon="streamline-color:visible" width={14} height={14} />}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => saveConfig(model)}
-                    disabled={saving[model.id]}
-                  >
-                    {saving[model.id] ? '保存中...' : '保存'}
-                  </Button>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                    <Button size="sm" onClick={() => saveConfig(model)} disabled={saving?.[model.id]}>
+                      {saving?.[model.id] ? '保存中...' : '保存'}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => testConnection(model)} disabled={testing[model.id]}>
+                      {testing[model.id] ? '测试中...' : '测试连接'}
+                    </Button>
+                    {!isSelected && model.api_key_set && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setCurrentModel(model.id as ModelProvider)}
+                      >
+                        设为当前
+                      </Button>
+                    )}
+                    {testResults[model.id] && (
+                      <span className={cn('text-xs ml-2', testResults[model.id].ok ? 'text-emerald-500' : 'text-destructive')}>
+                        {testResults[model.id].message}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => testConnection(model)}
-                    disabled={testing[model.id]}
-                  >
-                    {testing[model.id] ? '测试中...' : '测试链接'}
-                  </Button>
-                  {testResults[model.id] && (
-                    <span
-                      className={cn(
-                        'text-xs',
-                        testResults[model.id].ok ? 'text-emerald-500' : 'text-destructive',
-                      )}
-                    >
-                      {testResults[model.id].message}
-                    </span>
-                  )}
-                  <span className="text-muted-foreground">
-                    需先保存配置后再测试。
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {models.length === 0 && (
         <EmptyState

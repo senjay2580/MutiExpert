@@ -30,6 +30,32 @@ DEFAULT_MODEL_CONFIGS: dict[str, dict[str, Any]] = {
             "model_migrations": {"gpt-5.2-codex": "gpt-5.3-codex"},
         },
     },
+    "deepseek": {
+        "name": "DeepSeek",
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "extras": {
+            "available_models": [
+                {"id": "deepseek-chat", "name": "DeepSeek-V3"},
+                {"id": "deepseek-reasoner", "name": "DeepSeek-R1"},
+            ],
+        },
+    },
+    "qwen": {
+        "name": "通义千问 (Qwen)",
+        "provider": "qwen",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen-plus",
+        "extras": {
+            "available_models": [
+                {"id": "qwen-plus", "name": "Qwen Plus"},
+                {"id": "qwen-turbo", "name": "Qwen Turbo"},
+                {"id": "qwen-max", "name": "Qwen Max"},
+                {"id": "qwen-long", "name": "Qwen Long"},
+            ],
+        },
+    },
 }
 
 
@@ -107,10 +133,13 @@ async def get_provider_config(
     if config and config.api_key:
         api_key = config.api_key
     else:
-        if provider_id == "claude":
-            api_key = settings.anthropic_api_key or None
-        elif provider_id == "openai":
-            api_key = settings.openai_api_key or None
+        env_key_map = {
+            "claude": settings.anthropic_api_key,
+            "openai": settings.openai_api_key,
+            "deepseek": settings.deepseek_api_key,
+            "qwen": settings.qwen_api_key,
+        }
+        api_key = env_key_map.get(provider_id) or None
 
     return ProviderConfig(
         provider_id=provider_id,

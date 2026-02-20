@@ -12,6 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { chatService, streamMessage } from '@/services/chatService';
 import { useAppStore } from '@/stores/useAppStore';
+import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
 import ReactMarkdown from 'react-markdown';
 
 /* ================================================================ */
@@ -46,8 +47,7 @@ interface ChatPanelProps {
 export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProps) {
   const currentModel = useAppStore((s) => s.currentModel);
   const normalizedModel = currentModel === 'codex' ? 'openai' : currentModel;
-  const providerLabel = normalizedModel === 'openai' ? 'OpenAI' : 'Claude';
-  const providerSubLabel = normalizedModel === 'openai' ? 'Responses' : 'Sonnet';
+  const providerLabel = getProviderLabel(normalizedModel);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -180,10 +180,9 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
       <div className="flex items-center justify-between border-b border-[var(--cc-border)] px-4 py-2.5">
         <div className="flex items-center gap-2">
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--cc-accent)]/15">
-            <Icon icon="lucide:sparkles" width={13} height={13} className="text-[var(--cc-accent)]" />
+            <ProviderIcon provider={normalizedModel} size={14} />
           </div>
           <span className="text-[13px] font-semibold text-[var(--cc-fg)]">{providerLabel}</span>
-          <span className="text-[10px] text-[var(--cc-fg-muted)] font-medium">{providerSubLabel}</span>
         </div>
         <div className="flex items-center gap-0.5">
           <Button
@@ -222,7 +221,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
             <WelcomeState />
           ) : (
             messages.map((msg) => (
-              <CCMessage key={msg.id} message={msg} providerLabel={providerLabel} />
+              <CCMessage key={msg.id} message={msg} providerLabel={providerLabel} provider={normalizedModel} />
             ))
           )}
         </div>
@@ -312,7 +311,7 @@ function WelcomeState() {
 /*  Claude Code Style Message                                        */
 /* ================================================================ */
 
-function CCMessage({ message, providerLabel }: { message: ChatMessage; providerLabel: string }) {
+function CCMessage({ message, providerLabel, provider }: { message: ChatMessage; providerLabel: string; provider: string }) {
   const isUser = message.role === 'user';
 
   return (
@@ -330,6 +329,7 @@ function CCMessage({ message, providerLabel }: { message: ChatMessage; providerL
           {/* Role label */}
           <div className="flex items-center gap-1.5">
             <Icon icon="lucide:sparkles" width={12} height={12} className="text-[var(--cc-accent)]" />
+            <ProviderIcon provider={provider} size={12} />
             <span className="text-[11px] font-semibold text-[var(--cc-accent)]">{providerLabel}</span>
           </div>
 

@@ -36,11 +36,13 @@ export interface Document {
   updated_at: string;
 }
 
+export type ModelProvider = 'claude' | 'openai' | 'codex' | 'deepseek' | 'qwen';
+
 export interface Conversation {
   id: string;
   title: string;
   knowledge_base_ids: string[];
-  model_provider: 'claude' | 'openai' | 'codex';
+  model_provider: ModelProvider;
   is_pinned: boolean;
   pinned_at: string | null;
   created_at: string;

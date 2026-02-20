@@ -175,6 +175,75 @@ class OpenAIResponsesStrategy:
                     yield pending_final
 
 
+class OpenAIChatCompletionsStrategy:
+    """OpenAI-compatible /chat/completions strategy for DeepSeek, Qwen, etc."""
+
+    def __init__(self, config: ProviderConfig):
+        self.config = config
+
+    async def stream(self, messages: list[dict], system_prompt: str) -> AsyncGenerator[str, None]:
+        if not self.config.api_key:
+            yield f"Error: {self.config.provider_id} API key not configured"
+            return
+
+        model = self.config.model
+        if not model:
+            yield f"Error: {self.config.provider_id} model not configured"
+            return
+
+        base_url = (self.config.base_url or "").rstrip("/")
+        if not base_url:
+            yield f"Error: {self.config.provider_id} base_url not configured"
+            return
+
+        url = f"{base_url}/chat/completions"
+
+        api_messages: list[dict[str, Any]] = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+        api_messages.extend(messages)
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": api_messages,
+            "stream": True,
+        }
+
+        headers = {
+            "content-type": "application/json",
+            "authorization": f"Bearer {self.config.api_key}",
+        }
+
+        timeout = httpx.Timeout(60.0, read=3600.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                if resp.status_code >= 400:
+                    body = await resp.aread()
+                    detail = body.decode("utf-8", "replace") if body else ""
+                    yield f"Error: {self.config.provider_id} request failed ({resp.status_code}) {detail}"
+                    return
+
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        data = line[5:].strip()
+                    else:
+                        continue
+                    if data == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = event.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content")
+                        if content:
+                            yield content
+
+
 async def stream_chat(
     messages: list[dict],
     provider: str = "claude",
@@ -190,6 +259,9 @@ async def stream_chat(
     elif provider == "openai":
         config = await get_provider_config(db, "openai")
         strategy = OpenAIResponsesStrategy(config)
+    elif provider in ("deepseek", "qwen"):
+        config = await get_provider_config(db, provider)
+        strategy = OpenAIChatCompletionsStrategy(config)
     else:
         yield f"Unknown provider: {provider}"
         return

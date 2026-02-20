@@ -19,7 +19,11 @@ import { knowledgeBaseService } from '@/services/knowledgeBaseService';
 import { chatService, streamEditMessage, streamMessage, streamRegenerate } from '@/services/chatService';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/useAppStore';
+import type { ModelProvider } from '@/types';
+import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
 import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark-dimmed.css';
 import { illustrations } from '@/lib/illustrations';
 
 type ModelConfig = { id: string; name: string; provider: string };
@@ -47,6 +51,75 @@ type ChatMessage = {
 
 type LocationState = { initialPrompt?: string };
 type FocusMode = 'knowledge' | 'model';
+
+/* ── Code block with copy button ── */
+function CodeBlock({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const code = String(children).replace(/\n$/, '');
+  const lang = className?.replace('hljs language-', '')?.replace('language-', '') || '';
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="group/code relative my-3 overflow-hidden rounded-lg border border-border/50 bg-[#22272e]">
+      <div className="flex items-center justify-between border-b border-white/5 px-4 py-1.5 text-[11px] text-zinc-400">
+        <span>{lang || 'code'}</span>
+        <button onClick={handleCopy} className="flex items-center gap-1 transition-colors hover:text-zinc-200">
+          <Icon icon={copied ? 'lucide:check' : 'lucide:copy'} width={12} height={12} />
+          {copied ? '已复制' : '复制'}
+        </button>
+      </div>
+      <pre className="!m-0 !rounded-none !border-0 !bg-transparent p-4"><code className={className} {...props}>{children}</code></pre>
+    </div>
+  );
+}
+
+/* ── Source references collapsible ── */
+function SourceReferences({ sources }: { sources: MessageSource[] }) {
+  const [open, setOpen] = useState(false);
+  if (!sources.length) return null;
+  return (
+    <div className="mt-2.5">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Icon icon="lucide:file-text" width={12} height={12} />
+        <span>引用了 {sources.length} 个来源</span>
+        <Icon icon={open ? 'lucide:chevron-up' : 'lucide:chevron-down'} width={12} height={12} />
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {sources.map((s, i) => (
+            <div key={i} className="rounded-md border border-border/40 bg-muted/30 px-3 py-2 text-[11px]">
+              <div className="flex items-center gap-1.5 font-medium text-foreground">
+                <Icon icon="lucide:file" width={11} height={11} className="shrink-0 text-primary/70" />
+                {s.document_name}
+                <span className="ml-auto text-[10px] text-muted-foreground">{(s.relevance_score * 100).toFixed(0)}% 相关</span>
+              </div>
+              <p className="mt-1 line-clamp-2 text-muted-foreground">{s.content_preview}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const markdownComponents = {
+  code({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
+    const isBlock = className?.includes('language-') || className?.includes('hljs');
+    if (isBlock) return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
+    return <code className={cn('rounded bg-muted/60 px-1.5 py-0.5 text-[12px] font-mono', className)} {...props}>{children}</code>;
+  },
+  pre({ children }: { children?: React.ReactNode }) {
+    return <>{children}</>;
+  },
+};
 
 export default function AIAssistantChatPage() {
   const { conversationId } = useParams();
@@ -77,6 +150,7 @@ export default function AIAssistantChatPage() {
   const currentConvIdRef = useRef<string | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const copyTimeoutRef = useRef<number | null>(null);
+  const creatingConvRef = useRef(false);
 
   const { data: knowledgeBases = [], isLoading: loadingKnowledge } = useQuery({
     queryKey: ['knowledge-bases', 'all'],
@@ -161,8 +235,12 @@ export default function AIAssistantChatPage() {
   useEffect(() => { setActiveConvId(conversationId ?? null); }, [conversationId]);
 
   useEffect(() => {
-    if (!activeConvId) { setMessages([]); currentConvIdRef.current = null; return; }
-    if (currentConvIdRef.current === activeConvId && messages.length > 0) return;
+    if (!activeConvId) {
+      // Don't clear messages while a conversation is being created
+      if (!creatingConvRef.current) { setMessages([]); currentConvIdRef.current = null; }
+      return;
+    }
+    if (currentConvIdRef.current === activeConvId) return;
     let cancelled = false;
     setLoadingMessages(true);
     chatService.listMessages(activeConvId).then((items) => {
@@ -191,7 +269,7 @@ export default function AIAssistantChatPage() {
     }).catch(() => { if (!cancelled) setMessages([]); })
       .finally(() => { if (!cancelled) setLoadingMessages(false); });
     return () => { cancelled = true; };
-  }, [activeConvId, messages.length]);
+  }, [activeConvId]);
 
   useEffect(() => {
     if (!activeConvId) return;
@@ -416,6 +494,7 @@ export default function AIAssistantChatPage() {
     try {
       let convId = activeConvId;
       if (!convId) {
+        creatingConvRef.current = true;
         const shouldUseKb = focusMode === 'knowledge';
         const fallbackIds = knowledgeBases.map((kb) => kb.id);
         const kbIds = shouldUseKb ? (selectedKbIds.length ? selectedKbIds : fallbackIds) : [];
@@ -423,13 +502,14 @@ export default function AIAssistantChatPage() {
         const conv = await chatService.createConversation({ knowledge_base_ids: kbIds, model_provider: normalizedCurrent });
         convId = conv.id;
         currentConvIdRef.current = convId;
+        creatingConvRef.current = false;
         setActiveConvId(convId);
         navigate(`/assistant/chat/${convId}`, { replace: true });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else { currentConvIdRef.current = convId; }
       const cb = streamCallbacks(assistantMsg.id);
       abortRef.current = streamMessage(convId, text, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
-    } catch (e) { setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
+    } catch (e) { creatingConvRef.current = false; setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
   }, [activeConvId, editingMessageId, focusMode, input, isSending, knowledgeBases, navigate, normalizedCurrent, queryClient, selectedKbIds]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -527,39 +607,72 @@ export default function AIAssistantChatPage() {
           ) : (
             <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
               {messages.map((msg) => (
-                <div key={msg.id} className={cn('flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                <div key={msg.id} className={cn('group/msg flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                   {msg.role === 'assistant' && (
-                    <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <Icon icon="lucide:sparkles" width={14} height={14} />
+                    <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted/60 ring-1 ring-border/20">
+                      <ProviderIcon provider={msg.model_used || normalizedCurrent} size={16} />
                     </div>
                   )}
                   <div className={cn(
                     'max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
-                    msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted/50',
+                    msg.role === 'user'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-muted/40 ring-1 ring-border/30',
                   )}>
                     {msg.role === 'assistant' ? (
                       <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                        {msg.isStreaming && <span className="ml-1 inline-block h-4 w-[2px] animate-pulse rounded-sm bg-current" />}
+                        <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={markdownComponents}>{msg.content}</ReactMarkdown>
+                        {msg.isStreaming && (
+                          <span className="ml-0.5 inline-flex items-center gap-0.5">
+                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:0ms]" />
+                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:150ms]" />
+                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:300ms]" />
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <p className="whitespace-pre-wrap">{msg.content}</p>
                     )}
+                    {msg.role === 'assistant' && msg.sources?.length ? <SourceReferences sources={msg.sources} /> : null}
                     {!msg.isStreaming && (
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                      <div className={cn(
+                        'mt-2 flex flex-wrap items-center gap-1',
+                        msg.role === 'user' ? 'justify-end' : '',
+                      )}>
                         {msg.role === 'assistant' && (
-                          <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="transition-colors hover:text-foreground" disabled={isSending}>
-                            {copiedMessageId === msg.id ? '已复制' : '复制'}
-                          </button>
-                        )}
-                        {msg.role === 'user' && msg.id === lastUserMessageId && (
-                          <button onClick={() => handleStartEditMessage(msg.id, msg.content)} className="transition-colors hover:text-foreground" disabled={isSending}>编辑</button>
+                          <TooltipProvider>
+                            <Tooltip><TooltipTrigger asChild>
+                              <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
+                                <Icon icon={copiedMessageId === msg.id ? 'lucide:check' : 'lucide:copy'} width={13} height={13} />
+                              </button>
+                            </TooltipTrigger><TooltipContent side="bottom" className="text-xs">{copiedMessageId === msg.id ? '已复制' : '复制'}</TooltipContent></Tooltip>
+                          </TooltipProvider>
                         )}
                         {msg.role === 'assistant' && msg.id === lastAssistantMessageId && (
-                          <button onClick={handleRegenerate} className="transition-colors hover:text-foreground" disabled={isSending}>重新生成</button>
+                          <TooltipProvider>
+                            <Tooltip><TooltipTrigger asChild>
+                              <button onClick={handleRegenerate} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
+                                <Icon icon="lucide:refresh-cw" width={13} height={13} />
+                              </button>
+                            </TooltipTrigger><TooltipContent side="bottom" className="text-xs">重新生成</TooltipContent></Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {msg.role === 'user' && msg.id === lastUserMessageId && (
+                          <TooltipProvider>
+                            <Tooltip><TooltipTrigger asChild>
+                              <button onClick={() => handleStartEditMessage(msg.id, msg.content)} className="rounded-md p-1 text-primary-foreground/70 transition-colors hover:text-primary-foreground" disabled={isSending}>
+                                <Icon icon="lucide:pencil" width={13} height={13} />
+                              </button>
+                            </TooltipTrigger><TooltipContent side="bottom" className="text-xs">编辑</TooltipContent></Tooltip>
+                          </TooltipProvider>
                         )}
                         {msg.role === 'assistant' && (
-                          <span className="text-[10px] opacity-60">{formatModelLabel(msg.model_used || normalizedCurrent)} · {formatLatency(msg.latency_ms)}</span>
+                          <span className="ml-1 flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+                            <span>{getProviderLabel(msg.model_used || normalizedCurrent)}</span>
+                            <span>·</span>
+                            <span>{formatLatency(msg.latency_ms)}</span>
+                            {msg.tokens_used ? <><span>·</span><span>{msg.tokens_used} tokens</span></> : null}
+                          </span>
                         )}
                       </div>
                     )}
@@ -578,36 +691,56 @@ export default function AIAssistantChatPage() {
         )}
 
         {/* Input */}
-        <div className="border-t border-border/40 bg-background">
+        <div className="border-t border-border/40 bg-background/80 backdrop-blur-sm">
           <div className="mx-auto max-w-3xl px-4 py-3">
             {editingMessageId && (
-              <div className="mb-2 flex items-center justify-between text-[11px] text-muted-foreground">
-                <span>正在编辑上一条消息</span>
-                <button onClick={handleCancelEdit} className="transition-colors hover:text-foreground">取消编辑</button>
+              <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                <span className="flex items-center gap-1.5">
+                  <Icon icon="lucide:pencil" width={12} height={12} />
+                  正在编辑上一条消息
+                </span>
+                <button onClick={handleCancelEdit} className="rounded px-1.5 py-0.5 transition-colors hover:bg-amber-500/20">取消</button>
               </div>
             )}
-            <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+            <div className="overflow-hidden rounded-xl border border-border/60 bg-muted/20 shadow-sm transition-colors focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20">
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="输入问题，Enter 发送，Shift+Enter 换行..."
-                className="!min-h-[40px] !max-h-[200px] resize-none !border-0 !bg-transparent !px-0 !py-1.5 !text-sm !leading-relaxed !shadow-none !ring-0 focus-visible:!ring-0 focus-visible:!bg-transparent"
+                className="!min-h-[44px] !max-h-[200px] resize-none !border-0 !bg-transparent !px-4 !py-3 !text-sm !leading-relaxed !shadow-none !ring-0 focus-visible:!ring-0 focus-visible:!bg-transparent"
               />
-              <div className="mt-1.5 flex items-center gap-1.5">
-                <Button variant={focusMode === 'knowledge' ? 'secondary' : 'ghost'} size="sm" className="h-7 rounded-full px-2.5 text-[10px]" onClick={() => handleFocusModeChange('knowledge')}>
-                  知识库
-                </Button>
-                <Button variant={focusMode === 'model' ? 'secondary' : 'ghost'} size="sm" className="h-7 rounded-full px-2.5 text-[10px]" onClick={() => handleFocusModeChange('model')}>
-                  纯模型
-                </Button>
+              <div className="flex items-center gap-1.5 border-t border-border/30 px-3 py-2">
+                <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-0.5">
+                  <Button
+                    variant={focusMode === 'knowledge' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', focusMode === 'knowledge' && 'shadow-sm')}
+                    onClick={() => handleFocusModeChange('knowledge')}
+                  >
+                    <Icon icon="lucide:book-open" width={12} height={12} className="mr-1" />
+                    知识库
+                  </Button>
+                  <Button
+                    variant={focusMode === 'model' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', focusMode === 'model' && 'shadow-sm')}
+                    onClick={() => handleFocusModeChange('model')}
+                  >
+                    <Icon icon="lucide:brain" width={12} height={12} className="mr-1" />
+                    纯模型
+                  </Button>
+                </div>
+                {focusMode === 'knowledge' && (
+                  <span className="text-[10px] text-muted-foreground">{effectiveKbCount} 个知识库</span>
+                )}
                 <div className="ml-auto flex items-center gap-1.5">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-full px-2 text-[10px]">
-                        <Icon icon="lucide:cpu" width={10} height={10} />
+                      <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-full px-2.5 text-[11px]">
+                        <Icon icon="lucide:cpu" width={12} height={12} />
                         {currentModelName}
-                        <Icon icon="lucide:chevron-down" width={10} height={10} />
+                        <Icon icon="lucide:chevron-down" width={10} height={10} className="opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56">
@@ -617,14 +750,14 @@ export default function AIAssistantChatPage() {
                         { id: 'claude', name: 'Claude', provider: 'anthropic' },
                         { id: 'openai', name: 'OpenAI', provider: 'openai' },
                       ]).map((model) => (
-                        <DropdownMenuItem key={model.id} className="justify-between" onClick={() => setCurrentModel(model.id as 'claude' | 'openai' | 'codex')}>
+                        <DropdownMenuItem key={model.id} className="justify-between" onClick={() => setCurrentModel(model.id as ModelProvider)}>
                           <span>{model.name}</span>
-                          {model.id === normalizedCurrent && <Icon icon="lucide:check" width={14} height={14} />}
+                          {model.id === normalizedCurrent && <Icon icon="lucide:check" width={14} height={14} className="text-primary" />}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <Button variant="default" size="icon-sm" className="size-7 rounded-full" disabled={!input.trim() && !isSending} onClick={handlePrimaryAction}>
+                  <Button variant="default" size="icon-sm" className="size-7 rounded-full shadow-sm" disabled={!input.trim() && !isSending} onClick={handlePrimaryAction}>
                     {isSending ? <Icon icon="lucide:square" width={14} height={14} /> : <Icon icon="lucide:arrow-up" width={14} height={14} />}
                   </Button>
                 </div>
@@ -701,13 +834,14 @@ export default function AIAssistantChatPage() {
                 <div
                   key={conv.id}
                   className={cn(
-                    'group flex items-start gap-2 rounded-lg border px-3 py-2 transition-colors hover:bg-muted/50',
+                    'group flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors hover:bg-muted/50',
                     activeConvId === conv.id ? 'border-primary/30 bg-muted/50' : 'border-transparent',
                   )}
+                  onClick={() => { if (renamingId !== conv.id) handleSelectConversation(conv.id); }}
                 >
                   <div className="min-w-0 flex-1">
                     {renamingId === conv.id ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
                         <Input
                           value={renameDraft}
                           onChange={(e) => setRenameDraft(e.target.value)}
@@ -721,7 +855,7 @@ export default function AIAssistantChatPage() {
                         </div>
                       </div>
                     ) : (
-                      <button className="min-w-0 text-left" onClick={() => handleSelectConversation(conv.id)}>
+                      <div className="min-w-0 text-left">
                         <div className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
                           {conv.is_pinned && <Icon icon="lucide:pin" width={11} height={11} className="shrink-0 text-muted-foreground" />}
                           <span className="truncate">{conv.title || '未命名会话'}</span>
@@ -729,10 +863,11 @@ export default function AIAssistantChatPage() {
                         <div className="mt-0.5 text-[11px] text-muted-foreground">
                           {formatRelativeTime(conv.updated_at)}
                         </div>
-                      </button>
+                      </div>
                     )}
                   </div>
                   {renamingId !== conv.id && (
+                    <div onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon-xs" className="opacity-0 group-hover:opacity-100">
@@ -746,6 +881,7 @@ export default function AIAssistantChatPage() {
                         <DropdownMenuItem onClick={() => deleteConversation.mutate(conv.id)} className="text-destructive">删除</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   )}
                 </div>
               ))
@@ -775,12 +911,4 @@ function formatRelativeTime(dateStr: string): string {
 function formatLatency(ms: number | null | undefined): string {
   if (!ms) return '--';
   return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function formatModelLabel(provider: string | null | undefined): string {
-  if (!provider) return '未知';
-  if (provider === 'openai') return 'OpenAI';
-  if (provider === 'claude') return 'Claude';
-  if (provider === 'codex') return 'OpenAI';
-  return provider;
 }

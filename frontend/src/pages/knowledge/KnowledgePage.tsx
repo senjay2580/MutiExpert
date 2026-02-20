@@ -248,9 +248,9 @@ export default function KnowledgePage() {
       <KnowledgeStatsCard
         loading={loadingKB || loadingInd}
         data={[
-          { label: '知识库', value: knowledgeBases.length, color: '#6366F1' },
-          { label: '文档总量', value: totalDocs, color: '#3B82F6' },
-          { label: '行业覆盖', value: industries.length, color: '#10B981' },
+          { label: '知识库', value: knowledgeBases.length, color: '#6366F1', icon: 'lucide:database' },
+          { label: '文档总量', value: totalDocs, color: '#3B82F6', icon: 'lucide:file-text' },
+          { label: '行业覆盖', value: industries.length, color: '#10B981', icon: 'lucide:layers' },
         ]}
       />
 
@@ -632,73 +632,37 @@ function KnowledgeStatsCard({
   data,
   loading,
 }: {
-  data: { label: string; value: number; color: string }[];
+  data: { label: string; value: number; color: string; icon: string }[];
   loading?: boolean;
 }) {
-  const maxValue = Math.max(1, ...data.map((item) => item.value));
-  const chartHeight = 56;
-  const chartWidth = 100;
-  const step = data.length > 1 ? chartWidth / (data.length - 1) : 0;
-  const points = data.map((item, index) => {
-    const x = step * index;
-    const y = chartHeight - (item.value / maxValue) * chartHeight;
-    return { x, y };
-  });
-  const polyline = points.map((p) => `${p.x},${p.y}`).join(' ');
-
   return (
     <Card className="gap-0 py-0">
-      <CardContent className="flex flex-col gap-4 px-5 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="text-sm font-semibold text-foreground">知识库统计</div>
-            <div className="text-[12px] text-muted-foreground">一个坐标图展示关键指标</div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-            {data.map((item) => (
-              <div key={item.label} className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="tabular-nums">{item.label} {item.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      <CardContent className="px-5 py-4">
+        <div className="text-sm font-semibold text-foreground mb-3">知识库统计</div>
         {loading ? (
           <Skeleton className="h-[88px] w-full" />
         ) : (
-          <div className="relative rounded-lg border border-border bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950/50 dark:via-card dark:to-slate-900/30 px-4 py-3">
-            <div className="absolute inset-0 pointer-events-none">
-              <div className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.06)_1px,transparent_1px)] [background-size:18px_18px]" />
-            </div>
-            <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="relative h-[72px] w-full">
-              <polyline
-                fill="none"
-                stroke="url(#kbStatsGradient)"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={polyline}
-              />
-              {points.map((p, index) => (
-                <circle key={`${p.x}-${p.y}`} cx={p.x} cy={p.y} r="3.4" fill={data[index].color} />
-              ))}
-              <defs>
-                <linearGradient id="kbStatsGradient" x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
-                  {data.map((item, index) => (
-                    <stop
-                      key={item.label}
-                      offset={`${(index / Math.max(1, data.length - 1)) * 100}%`}
-                      stopColor={item.color}
-                    />
-                  ))}
-                </linearGradient>
-              </defs>
-            </svg>
-            <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
-              {data.map((item) => (
-                <span key={item.label}>{item.label}</span>
-              ))}
-            </div>
+          <div className="grid grid-cols-3 gap-3">
+            {data.map((item) => (
+              <div
+                key={item.label}
+                className="flex flex-col items-center gap-1.5 px-3 py-3.5"
+              >
+                <div
+                  className="flex size-9 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: `${item.color}15` }}
+                >
+                  <Icon icon={item.icon} width={18} height={18} style={{ color: item.color }} />
+                </div>
+                <span
+                  className="text-2xl font-bold tabular-nums leading-none"
+                  style={{ color: item.color }}
+                >
+                  {item.value}
+                </span>
+                <span className="text-[11px] text-muted-foreground">{item.label}</span>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>

@@ -20,12 +20,16 @@ async def health():
 def _config_to_out(config: AIModelConfig) -> AIModelConfigOut:
     extras = config.extras or {}
     provider = DEFAULT_MODEL_CONFIGS.get(config.provider_id, {}).get("provider", config.provider_id)
-    settings = get_settings()
     api_key_set = bool(config.api_key)
     if not api_key_set:
-        if config.provider_id == "claude" and settings.anthropic_api_key:
-            api_key_set = True
-        if config.provider_id == "openai" and settings.openai_api_key:
+        settings = get_settings()
+        env_key_map = {
+            "claude": settings.anthropic_api_key,
+            "openai": settings.openai_api_key,
+            "deepseek": settings.deepseek_api_key,
+            "qwen": settings.qwen_api_key,
+        }
+        if env_key_map.get(config.provider_id):
             api_key_set = True
     return AIModelConfigOut(
         id=config.provider_id,
@@ -39,6 +43,7 @@ def _config_to_out(config: AIModelConfig) -> AIModelConfigOut:
         preferred_auth_method=extras.get("preferred_auth_method"),
         wire_api=extras.get("wire_api"),
         requires_openai_auth=extras.get("requires_openai_auth"),
+        available_models=extras.get("available_models", []),
     )
 
 
@@ -109,7 +114,7 @@ async def test_model_connection(
     db: AsyncSession = Depends(get_db),
 ):
     provider = "openai" if provider_id == "codex" else provider_id
-    if provider not in {"openai", "claude"}:
+    if provider not in {"openai", "claude", "deepseek", "qwen"}:
         raise HTTPException(status_code=400, detail="Unsupported provider")
 
     generator = stream_chat([{"role": "user", "content": "ping"}], provider, "", db=db)

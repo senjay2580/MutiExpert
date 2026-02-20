@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { ModelProvider } from '@/types';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -14,7 +15,7 @@ interface AppState {
   mobileMenuOpen: boolean;
   theme: Theme;
   resolvedTheme: 'light' | 'dark';
-  currentModel: 'claude' | 'openai' | 'codex';
+  currentModel: ModelProvider;
   commandPaletteOpen: boolean;
   customQuickActions: CustomQuickAction[];
 
@@ -22,7 +23,7 @@ interface AppState {
   setMobileMenuOpen: (open: boolean) => void;
   setTheme: (theme: Theme) => void;
   setResolvedTheme: (resolved: 'light' | 'dark') => void;
-  setCurrentModel: (model: 'claude' | 'openai' | 'codex') => void;
+  setCurrentModel: (model: ModelProvider) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   addQuickAction: (action: CustomQuickAction) => void;
   removeQuickAction: (route: string) => void;

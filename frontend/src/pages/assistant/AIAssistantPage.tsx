@@ -21,6 +21,7 @@ import { chatService } from '@/services/chatService';
 import { cn } from '@/lib/utils';
 import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import { useAppStore } from '@/stores/useAppStore';
+import type { ModelProvider } from '@/types';
 import { illustrationPresets } from '@/lib/illustrations';
 
 type ModelConfig = {
@@ -230,7 +231,7 @@ export default function AIAssistantPage() {
                                 <DropdownMenuItem
                                   key={model.id}
                                   className="justify-between"
-                                  onClick={() => setCurrentModel(model.id as 'claude' | 'openai' | 'codex')}
+                                  onClick={() => setCurrentModel(model.id as ModelProvider)}
                                 >
                                   <span>{model.name}</span>
                                   {isActive && <Icon icon="lucide:check" width={14} height={14} />}
