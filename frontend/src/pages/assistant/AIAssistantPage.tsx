@@ -1,10 +1,12 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -15,6 +17,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import api from '@/services/api';
 import { knowledgeBaseService } from '@/services/knowledgeBaseService';
+import { chatService } from '@/services/chatService';
+import { cn } from '@/lib/utils';
 import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import { useAppStore } from '@/stores/useAppStore';
 import { illustrationPresets } from '@/lib/illustrations';
@@ -36,7 +40,12 @@ const quickPrompts = [
 
 export default function AIAssistantPage() {
   const [question, setQuestion] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const siteName = useSiteSettingsStore((s) => s.siteName);
   const brandName = siteName?.trim() ? siteName : 'MutiExpert';
   const currentModel = useAppStore((s) => s.currentModel);
@@ -52,6 +61,54 @@ export default function AIAssistantPage() {
     queryKey: ['ai-models'],
     queryFn: () => api.get<ModelConfig[]>('/config/models').then((r) => r.data),
   });
+
+  const { data: rawConversations = [], isLoading: loadingConversations } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: chatService.listConversations,
+  });
+
+  const trimmedSearch = searchTerm.trim();
+  const { data: searchedConversations = [], isFetching: searchingConversations } = useQuery({
+    queryKey: ['conversations-search', trimmedSearch],
+    queryFn: () => chatService.searchConversations(trimmedSearch),
+    enabled: trimmedSearch.length > 0,
+  });
+
+  const deleteConversation = useMutation({
+    mutationFn: chatService.deleteConversation,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+  });
+
+  const updateConversation = useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; title?: string | null; is_pinned?: boolean }) =>
+      chatService.updateConversation(id, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+  });
+
+  const conversations = useMemo(() => {
+    return [...rawConversations].sort((a, b) => {
+      if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+      if (a.is_pinned && b.is_pinned) {
+        const aPinned = a.pinned_at ? new Date(a.pinned_at).getTime() : 0;
+        const bPinned = b.pinned_at ? new Date(b.pinned_at).getTime() : 0;
+        if (aPinned !== bPinned) return bPinned - aPinned;
+      }
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+  }, [rawConversations]);
+
+  const filteredConversations = useMemo(() => {
+    if (!trimmedSearch) return conversations;
+    return [...searchedConversations].sort((a, b) => {
+      if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+  }, [conversations, searchedConversations, trimmedSearch]);
+
+  const handleStartRename = (id: string, title: string | null) => { setRenamingId(id); setRenameDraft(title || ''); };
+  const handleRenameCancel = () => { setRenamingId(null); setRenameDraft(''); };
+  const handleRenameSave = () => { if (renamingId) { updateConversation.mutate({ id: renamingId, title: renameDraft.trim() || null }); } handleRenameCancel(); };
+  const handleTogglePin = (id: string, pin: boolean) => updateConversation.mutate({ id, is_pinned: pin });
 
   const randomKnowledgeBases = useMemo(() => {
     const names = knowledgeBases
@@ -94,9 +151,27 @@ export default function AIAssistantPage() {
     || (loadingModels ? '加载模型中...' : '请选择模型');
 
   return (
-    <div className="relative min-h-[calc(100svh-var(--topbar-height))] pb-6 pt-6">
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-orange-50/80 via-amber-50/80 to-yellow-100/80 dark:from-slate-950/70 dark:via-slate-900/40 dark:to-slate-950/80" />
-      <div className="pointer-events-none absolute inset-0 -z-10 opacity-70 [background:radial-gradient(circle_at_15%_12%,rgba(251,191,36,0.28),transparent_58%),radial-gradient(circle_at_82%_18%,rgba(251,146,60,0.20),transparent_58%),radial-gradient(circle_at_78%_60%,rgba(248,113,113,0.18),transparent_60%),radial-gradient(circle_at_52%_85%,rgba(250,204,21,0.16),transparent_60%)] dark:opacity-40" />
+    <div className="flex h-[calc(100svh-var(--topbar-height))]">
+      {/* ── Main content ── */}
+      <div className="relative flex-1 overflow-y-auto pb-6 pt-6">
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-orange-50/80 via-amber-50/80 to-yellow-100/80 dark:from-slate-950/70 dark:via-slate-900/40 dark:to-slate-950/80" />
+        <div className="pointer-events-none absolute inset-0 -z-10 opacity-70 [background:radial-gradient(circle_at_15%_12%,rgba(251,191,36,0.28),transparent_58%),radial-gradient(circle_at_82%_18%,rgba(251,146,60,0.20),transparent_58%),radial-gradient(circle_at_78%_60%,rgba(248,113,113,0.18),transparent_60%),radial-gradient(circle_at_52%_85%,rgba(250,204,21,0.16),transparent_60%)] dark:opacity-40" />
+
+        {/* Sidebar toggle in top-right */}
+        {!sidebarOpen && (
+          <div className="absolute right-4 top-4 z-10">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(true)} className="rounded-full">
+                    <Icon icon="lucide:panel-right-open" width={16} height={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">展开侧栏</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
 
       <div className="px-6 sm:px-8">
         <div className="space-y-6">
@@ -246,6 +321,132 @@ export default function AIAssistantPage() {
           </section>
         </div>
       </div>
+      </div>
+
+      {/* ── Right sidebar: conversation history ── */}
+      <div className={cn(
+        'h-full w-[300px] shrink-0 border-l border-border/40 bg-background/50 backdrop-blur-sm transition-all duration-300',
+        sidebarOpen ? 'translate-x-0' : 'hidden',
+      )}>
+        <div className="flex h-full flex-col p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground">
+                <Icon icon="lucide:message-square" width={16} height={16} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-foreground">会话历史</div>
+                <div className="text-[11px] text-muted-foreground">管理最近对话</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-xs" onClick={() => queryClient.invalidateQueries({ queryKey: ['conversations'] })}>
+                      <Icon icon="lucide:refresh-cw" width={14} height={14} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">刷新</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-xs" onClick={() => setSidebarOpen(false)}>
+                      <Icon icon="lucide:x" width={14} height={14} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">关闭</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="搜索会话..."
+              className="h-8 rounded-full text-xs"
+            />
+          </div>
+          {searchingConversations && trimmedSearch && <div className="mt-2 text-[11px] text-muted-foreground">搜索中...</div>}
+
+          <div className="mt-3 flex-1 space-y-1.5 overflow-y-auto pr-1">
+            {loadingConversations ? (
+              <div className="text-xs text-muted-foreground">加载会话中...</div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="py-6 text-center text-xs text-muted-foreground">
+                {trimmedSearch ? '未找到匹配会话' : '暂无会话记录'}
+              </div>
+            ) : (
+              filteredConversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  className="group flex items-start gap-2 rounded-lg border border-transparent px-3 py-2 transition-colors hover:bg-muted/50"
+                >
+                  <div className="min-w-0 flex-1">
+                    {renamingId === conv.id ? (
+                      <div className="space-y-1.5">
+                        <Input
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleRenameSave(); if (e.key === 'Escape') handleRenameCancel(); }}
+                          className="h-7 text-xs"
+                          placeholder="输入会话标题"
+                        />
+                        <div className="flex gap-1">
+                          <Button variant="outline" size="sm" className="h-6 rounded-full text-[10px]" onClick={handleRenameSave}>保存</Button>
+                          <Button variant="ghost" size="sm" className="h-6 rounded-full text-[10px]" onClick={handleRenameCancel}>取消</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button className="min-w-0 text-left" onClick={() => navigate(`/assistant/chat/${conv.id}`)}>
+                        <div className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
+                          {conv.is_pinned && <Icon icon="lucide:pin" width={11} height={11} className="shrink-0 text-muted-foreground" />}
+                          <span className="truncate">{conv.title || '未命名会话'}</span>
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
+                          {formatRelativeTime(conv.updated_at)}
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                  {renamingId !== conv.id && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-xs" className="opacity-0 group-hover:opacity-100">
+                          <Icon icon="lucide:more-vertical" width={12} height={12} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-36">
+                        <DropdownMenuItem onClick={() => handleStartRename(conv.id, conv.title)}>重命名</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleTogglePin(conv.id, !conv.is_pinned)}>{conv.is_pinned ? '取消置顶' : '置顶'}</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => deleteConversation.mutate(conv.id)} className="text-destructive">删除</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
+}
+
+function formatRelativeTime(dateStr: string): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return '刚刚';
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} 小时前`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay} 天前`;
+  return `${Math.floor(diffDay / 30)} 个月前`;
 }
