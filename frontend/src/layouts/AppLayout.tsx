@@ -9,6 +9,7 @@ const FULL_WIDTH_PATTERNS = [
   /^\/knowledge\/[^/]+$/, // /knowledge/:id  detail page
   /^\/boards\/[^/]+$/,    // /boards/:id     board editor
   /^\/assistant$/,        // /assistant      AI Q&A full-bleed
+  /^\/assistant\/chat(?:\/[^/]+)?$/, // /assistant/chat(/:id)
 ];
 
 export default function AppLayout() {

@@ -10,4 +10,5 @@ export const scheduledTaskService = {
     api.put<ScheduledTask>(`/scheduled-tasks/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/scheduled-tasks/${id}`),
   toggle: (id: string) => api.post<ScheduledTask>(`/scheduled-tasks/${id}/toggle`).then((r) => r.data),
+  run: (id: string) => api.post<{ message: string; status: string }>(`/scheduled-tasks/${id}/run`).then((r) => r.data),
 };

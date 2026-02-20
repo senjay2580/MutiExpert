@@ -613,18 +613,25 @@ h1, h2, h3, h4, h5, h6 {
     font-weight: 800;
     letter-spacing: -0.03em;
     line-height: 1;
-    background: linear-gradient(120deg, #ffffff 0%, #3b82f6 50%, #ffffff 100%);
+    background: linear-gradient(120deg, #1e293b 0%, #475569 40%, #0f172a 100%);
     background-size: 200% 200%;
     animation: hero-brand-gradient 6s ease-in-out infinite;
     -webkit-background-clip: text;
     background-clip: text;
-    color: #e2e8f0;
+    color: #1e293b;
     -webkit-text-fill-color: transparent;
-    text-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+    filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.08));
   }
 
   .dark .hero-brand-title {
-    text-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+    background: linear-gradient(120deg, #f8fafc 0%, #94a3b8 40%, #f1f5f9 100%);
+    background-size: 200% 200%;
+    animation: hero-brand-gradient 6s ease-in-out infinite;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: #f8fafc;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.06));
   }
 
   @keyframes hero-brand-gradient {
@@ -1233,10 +1240,142 @@ h1, h2, h3, h4, h5, h6 {
   .ai-input-shell .glow::before,
   .ai-input-shell .white::before,
   .ai-input-shell .border::before,
-  .filterBorder::before {
+  .filterBorder::before,
+  .ai-knowledge-track {
     animation: none;
     transition: none;
   }
+}
+
+/* AI knowledge ticker */
+.ai-knowledge-ticker {
+  --ai-knowledge-bg: rgba(8, 10, 24, 0.7);
+  --ai-knowledge-border: rgba(255, 255, 255, 0.12);
+  --ai-knowledge-fade: rgba(8, 10, 24, 0.9);
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid var(--ai-knowledge-border);
+  background: var(--ai-knowledge-bg);
+  padding: 10px 0;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.ai-knowledge-empty-mode {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 22px 20px;
+  border-radius: 24px;
+}
+
+.ai-knowledge-empty-mode::before,
+.ai-knowledge-empty-mode::after {
+  display: none;
+}
+
+.ai-knowledge-ticker::before,
+.ai-knowledge-ticker::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 72px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ai-knowledge-ticker::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--ai-knowledge-fade), transparent);
+}
+
+.ai-knowledge-ticker::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--ai-knowledge-fade), transparent);
+}
+
+.ai-knowledge-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  width: max-content;
+  padding: 0 16px;
+  animation: ai-knowledge-marquee 22s linear infinite;
+  will-change: transform;
+}
+
+.ai-knowledge-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-knowledge-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 160px;
+  width: 100%;
+  text-align: center;
+  font-size: 14px;
+  color: #cbd5f5;
+}
+
+.ai-knowledge-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 120px;
+}
+
+.ai-knowledge-empty-text {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.ai-knowledge-empty-illustration {
+  width: 90px;
+  height: 90px;
+  opacity: 0.9;
+  filter: drop-shadow(0 8px 14px rgba(15, 23, 42, 0.25));
+}
+
+:root:not(.dark) .ai-knowledge-ticker {
+  --ai-knowledge-bg: rgba(255, 255, 255, 0.85);
+  --ai-knowledge-border: rgba(148, 163, 184, 0.35);
+  --ai-knowledge-fade: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+:root:not(.dark) .ai-knowledge-chip {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.9);
+  color: #0f172a;
+}
+
+:root:not(.dark) .ai-knowledge-empty { color: #475569; }
+
+:root:not(.dark) .ai-knowledge-empty-icon { }
+
+@keyframes ai-knowledge-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
 /* Claude Chat prose — minimal markdown rendering */

@@ -3,10 +3,12 @@ import {
   useCallback,
   useRef,
   useEffect,
+  useMemo,
   forwardRef,
   useImperativeHandle,
   type DragEvent,
   type ClipboardEvent,
+  type MouseEvent,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -30,6 +32,13 @@ import {
 import '@xyflow/react/dist/style.css';
 import { Icon } from '@iconify/react';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
 import {
   Dialog,
   DialogContent,
@@ -352,6 +361,7 @@ function BoardEditorInner() {
   const setDynamicLabel = useBreadcrumbStore((s) => s.setDynamicLabel);
 
   const store = useBoardEditorStore();
+  const [spacePanning, setSpacePanning] = useState(false);
 
   const { data: fetchedBoard, isLoading } = useQuery({
     queryKey: ['board', boardId],
@@ -386,6 +396,11 @@ function BoardEditorInner() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
+  const selectedNodeIds = useMemo(
+    () => new Set(selectedNodes.map((n) => n.id)),
+    [selectedNodes],
+  );
 
   // Initialize from board data
   useEffect(() => {
@@ -407,6 +422,39 @@ function BoardEditorInner() {
       setDynamicLabel(null);
     };
   }, [board]);
+
+  /* ---- Space to pan ---- */
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      if (isEditableTarget(e.target)) return;
+      e.preventDefault();
+      setSpacePanning(true);
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      setSpacePanning(false);
+    };
+
+    const handleBlur = () => setSpacePanning(false);
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
 
   /* ---- Node data change handler ---- */
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -497,6 +545,84 @@ function BoardEditorInner() {
     [reactFlowInstance, setNodes, nodes, edges, store, handleNodeDataChange],
   );
 
+  /* ---- Context menu actions ---- */
+  const handleNodeContextMenu = useCallback(
+    (event: MouseEvent, node: Node) => {
+      event.preventDefault();
+      if (node.selected) return;
+      setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === node.id })));
+    },
+    [setNodes],
+  );
+
+  const handleCopySelected = useCallback(() => {
+    if (!selectedNodes.length) return;
+    const timestamp = Date.now();
+    let index = 0;
+    const idMap = new Map<string, string>();
+
+    const newNodes: Node[] = selectedNodes.map((node) => {
+      const newId = `${node.id}-copy-${timestamp}-${index++}`;
+      idMap.set(node.id, newId);
+      const data = node.data as Record<string, unknown>;
+      const { onDataChange: onDataChangeUnused, __editTrigger: editTriggerUnused, ...rest } = data;
+      void onDataChangeUnused;
+      void editTriggerUnused;
+      return {
+        id: newId,
+        type: node.type,
+        position: {
+          x: node.position.x + 40,
+          y: node.position.y + 40,
+        },
+        data: { ...rest, onDataChange: handleNodeDataChange },
+        selected: true,
+      };
+    });
+
+    const newEdges: Edge[] = edges
+      .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+      .map((edge, edgeIndex) => ({
+        ...edge,
+        id: `${edge.id}-copy-${timestamp}-${edgeIndex}`,
+        source: idMap.get(edge.source)!,
+        target: idMap.get(edge.target)!,
+        selected: true,
+      }));
+
+    store.pushHistory({ nodes, edges });
+    setNodes((nds) => [
+      ...nds.map((n) => (selectedNodeIds.has(n.id) ? { ...n, selected: false } : n)),
+      ...newNodes,
+    ]);
+    setEdges((eds) => [...eds, ...newEdges]);
+    store.setDirty(true);
+  }, [selectedNodes, selectedNodeIds, nodes, edges, setNodes, setEdges, store, handleNodeDataChange]);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (!selectedNodes.length) return;
+    store.pushHistory({ nodes, edges });
+    setNodes((nds) => nds.filter((n) => !selectedNodeIds.has(n.id)));
+    setEdges((eds) => eds.filter((e) => !selectedNodeIds.has(e.source) && !selectedNodeIds.has(e.target)));
+    store.setDirty(true);
+  }, [selectedNodes, selectedNodeIds, nodes, edges, setNodes, setEdges, store]);
+
+  const handleEditSelected = useCallback(() => {
+    if (selectedNodes.length !== 1) return;
+    const targetId = selectedNodes[0].id;
+    const trigger = Date.now();
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === targetId
+          ? {
+            ...n,
+            data: { ...n.data, __editTrigger: trigger, onDataChange: handleNodeDataChange },
+          }
+          : n,
+      ),
+    );
+  }, [selectedNodes, setNodes, handleNodeDataChange]);
+
   /* ---- Image paste ---- */
   const onPaste = useCallback(
     (e: ClipboardEvent) => {
@@ -558,8 +684,9 @@ function BoardEditorInner() {
     if (!boardId) return;
     store.setSaving(true);
     const cleanNodes = nodes.map((n) => {
-      const { onDataChange: onDataChangeUnused, ...rest } = n.data as Record<string, unknown>;
+      const { onDataChange: onDataChangeUnused, __editTrigger: editTriggerUnused, ...rest } = n.data as Record<string, unknown>;
       void onDataChangeUnused;
+      void editTriggerUnused;
       return { id: n.id, type: n.type ?? 'text', position: n.position, data: rest };
     });
     const cleanEdges = edges.map((e) => ({
@@ -609,8 +736,9 @@ function BoardEditorInner() {
   /* ---- Export / Import ---- */
   const handleExport = useCallback(() => {
     const cleanNodes = nodes.map((n) => {
-      const { onDataChange: onDataChangeUnused, ...rest } = n.data as Record<string, unknown>;
+      const { onDataChange: onDataChangeUnused, __editTrigger: editTriggerUnused, ...rest } = n.data as Record<string, unknown>;
       void onDataChangeUnused;
+      void editTriggerUnused;
       return { id: n.id, type: n.type ?? 'text', position: n.position, data: rest };
     });
     const cleanEdges = edges.map((e) => ({
@@ -728,56 +856,87 @@ function BoardEditorInner() {
       <div className="relative flex-1">
         {store.showToolbar && <BoardToolbar />}
 
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={handleNodesChange}
-          onEdgesChange={handleEdgesChange}
-          onConnect={onConnect}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          onNodesDelete={onDelete}
-          onEdgesDelete={onDelete}
-          selectionOnDrag
-          panOnDrag
-          panActivationKeyCode="Space"
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
-          deleteKeyCode={['Backspace', 'Delete']}
-          className="bg-background"
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={20}
-            size={1}
-            className="!bg-background"
-          />
-          <Controls className="!rounded-xl !border !bg-background/95 !shadow-lg [&>button]:!rounded-lg [&>button]:!border-0 [&>button]:!bg-transparent [&>button]:!text-muted-foreground hover:[&>button]:!bg-accent hover:[&>button]:!text-foreground" />
-          {store.showMiniMap && (
-            <MiniMap
-              className="!rounded-xl !border !bg-background/95 !shadow-lg"
-              nodeColor={(n) => {
-                switch (n.type) {
-                  case 'sticky':
-                    return '#fbbf24';
-                  case 'task':
-                    return '#34d399';
-                  case 'text':
-                    return '#94a3b8';
-                  case 'image':
-                    return '#a78bfa';
-                  default:
-                    return '#94a3b8';
-                }
-              }}
-              maskColor="rgba(0,0,0,0.08)"
-              pannable
-              zoomable
-            />
-          )}
-        </ReactFlow>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div className="h-full">
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={nodeTypes}
+                onNodesChange={handleNodesChange}
+                onEdgesChange={handleEdgesChange}
+                onConnect={onConnect}
+                onDragOver={onDragOver}
+                onDrop={onDrop}
+                onNodesDelete={onDelete}
+                onEdgesDelete={onDelete}
+                onNodeContextMenu={handleNodeContextMenu}
+                selectionOnDrag={!spacePanning}
+                panOnDrag={spacePanning}
+                fitView
+                fitViewOptions={{ padding: 0.2 }}
+                deleteKeyCode={['Backspace', 'Delete']}
+                className="bg-background"
+                proOptions={{ hideAttribution: true }}
+              >
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={20}
+                  size={1}
+                  className="!bg-background"
+                />
+                <Controls className="!rounded-xl !border !bg-background/95 !shadow-lg [&>button]:!rounded-lg [&>button]:!border-0 [&>button]:!bg-transparent [&>button]:!text-muted-foreground hover:[&>button]:!bg-accent hover:[&>button]:!text-foreground" />
+                {store.showMiniMap && (
+                  <MiniMap
+                    className="!rounded-xl !border !bg-background/95 !shadow-lg"
+                    nodeColor={(n) => {
+                      switch (n.type) {
+                        case 'sticky':
+                          return '#fbbf24';
+                        case 'task':
+                          return '#34d399';
+                        case 'text':
+                          return '#94a3b8';
+                        case 'image':
+                          return '#a78bfa';
+                        default:
+                          return '#94a3b8';
+                      }
+                    }}
+                    maskColor="rgba(0,0,0,0.08)"
+                    pannable
+                    zoomable
+                  />
+                )}
+              </ReactFlow>
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-44">
+            <ContextMenuItem
+              disabled={selectedNodes.length !== 1}
+              onClick={handleEditSelected}
+            >
+              <Icon icon="lucide:pencil" width={14} height={14} />
+              编辑
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={!selectedNodes.length}
+              onClick={handleCopySelected}
+            >
+              <Icon icon="lucide:copy" width={14} height={14} />
+              复制
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              variant="destructive"
+              disabled={!selectedNodes.length}
+              onClick={handleDeleteSelected}
+            >
+              <Icon icon="lucide:trash-2" width={14} height={14} />
+              删除
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
 
         {store.showGuide && <GuideOverlay onClose={() => store.setShowGuide(false)} />}
       </div>

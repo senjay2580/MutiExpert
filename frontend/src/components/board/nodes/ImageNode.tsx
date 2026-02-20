@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Icon } from '@iconify/react';
 import { cn } from '@/lib/utils';
@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 export type ImageNodeData = {
   src?: string;
   alt?: string;
+  __editTrigger?: number;
   onDataChange?: (id: string, data: Partial<ImageNodeData>) => void;
 };
 
@@ -14,6 +15,12 @@ type ImageNodeType = Node<ImageNodeData, 'image'>;
 export function ImageNode({ id, data, selected }: NodeProps<ImageNodeType>) {
   const [editUrl, setEditUrl] = useState(false);
   const [urlInput, setUrlInput] = useState(data.src ?? '');
+
+  useEffect(() => {
+    if (!data.__editTrigger) return;
+    setUrlInput(data.src ?? '');
+    setEditUrl(true);
+  }, [data.__editTrigger, data.src]);
 
   const commitUrl = useCallback(() => {
     setEditUrl(false);

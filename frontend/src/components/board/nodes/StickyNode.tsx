@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { cn } from '@/lib/utils';
 
@@ -13,6 +13,7 @@ const COLORS: Record<string, { bg: string; border: string; handle: string }> = {
 export type StickyNodeData = {
   text?: string;
   color?: string;
+  __editTrigger?: number;
   onDataChange?: (id: string, data: Partial<StickyNodeData>) => void;
 };
 
@@ -22,6 +23,12 @@ export function StickyNode({ id, data, selected }: NodeProps<StickyNodeType>) {
   const color = COLORS[data.color ?? 'yellow'] ?? COLORS.yellow;
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(data.text ?? '');
+
+  useEffect(() => {
+    if (!data.__editTrigger) return;
+    setText(data.text ?? '');
+    setEditing(true);
+  }, [data.__editTrigger, data.text]);
 
   const commitText = useCallback(() => {
     setEditing(false);

@@ -147,7 +147,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
           }));
           setMessages((p) => p.map((m) => m.id === aId ? { ...m, sources: mapped } : m));
         },
-        (messageId) => {
+        (messageId, _meta) => {
           setMessages((p) => p.map((m) => m.id === aId ? { ...m, id: messageId, isStreaming: false } : m));
           setIsSending(false);
           abortRef.current = null;

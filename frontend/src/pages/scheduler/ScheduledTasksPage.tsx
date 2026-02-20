@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -12,11 +13,19 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { PageHeader } from '@/components/composed/page-header';
 import { StatCard } from '@/components/composed/stat-card';
 import { CreateButton, SolidButton, CancelButton } from '@/components/composed/solid-button';
 import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
 import { illustrationPresets } from '@/lib/illustrations';
+import { scheduledTaskService } from '@/services/scheduledTaskService';
 import type { ScheduledTask } from '@/types';
 
 // ======================== Config ========================
@@ -28,11 +37,34 @@ const CRON_PRESETS = [
   { label: '每天 18:00', value: '0 18 * * *' },
 ];
 
+type TaskType = 'ai_query' | 'feishu_push' | 'skill_exec';
+
 type FormData = {
   name: string;
   description: string;
   cron_expression: string;
+  task_type: TaskType;
   prompt: string;
+  push_to_feishu: boolean;
+  feishu_title: string;
+  feishu_chat_id: string;
+  feishu_content: string;
+  skill_name: string;
+  skill_params: string;
+};
+
+const EMPTY_FORM: FormData = {
+  name: '',
+  description: '',
+  cron_expression: '0 9 * * *',
+  task_type: 'ai_query',
+  prompt: '',
+  push_to_feishu: false,
+  feishu_title: '',
+  feishu_chat_id: '',
+  feishu_content: '',
+  skill_name: '',
+  skill_params: '{}',
 };
 
 // ======================== Columns ========================
@@ -66,6 +98,16 @@ const buildColumns = (
         <div className="text-xs text-foreground">{describeCron(task.cron_expression)}</div>
         <div className="text-[10px] font-mono text-muted-foreground">{task.cron_expression}</div>
       </div>
+    ),
+  },
+  {
+    key: 'type',
+    header: '类型',
+    width: '120px',
+    render: (task) => (
+      <Badge variant="outline" className="text-[10px] capitalize">
+        {task.task_type}
+      </Badge>
     ),
   },
   {
@@ -128,48 +170,125 @@ const buildColumns = (
 // ======================== Main Component ========================
 
 export default function ScheduledTasksPage() {
+  const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [form, setForm] = useState<FormData>({
-    name: '',
-    description: '',
-    cron_expression: '0 9 * * *',
-    prompt: '',
+  const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
+  const [form, setForm] = useState<FormData>(EMPTY_FORM);
+
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey: ['scheduled-tasks'],
+    queryFn: scheduledTaskService.list,
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: scheduledTaskService.toggle,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: scheduledTaskService.delete,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+  });
+
+  const runMutation = useMutation({
+    mutationFn: scheduledTaskService.run,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: { id?: string; data: Partial<ScheduledTask> }) =>
+      payload.id
+        ? scheduledTaskService.update(payload.id, payload.data)
+        : scheduledTaskService.create(payload.data as { name: string; cron_expression: string; task_type: string; task_config?: Record<string, unknown>; description?: string }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] });
+      setShowCreate(false);
+      setEditingTask(null);
+      setForm(EMPTY_FORM);
+    },
   });
 
   const handleToggle = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, enabled: !t.enabled } : t)),
-    );
+    toggleMutation.mutate(id);
   };
 
   const handleDelete = (task: ScheduledTask) => {
     if (confirm(`确定删除「${task.name}」？`)) {
-      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+      deleteMutation.mutate(task.id);
     }
   };
 
-  const handleCreate = () => {
+  const openCreate = () => {
+    setEditingTask(null);
+    setForm(EMPTY_FORM);
+    setShowCreate(true);
+  };
+
+  const openEdit = (task: ScheduledTask) => {
+    const config = (task.task_config || {}) as Record<string, unknown>;
+    setEditingTask(task);
+    setForm({
+      name: task.name,
+      description: task.description || '',
+      cron_expression: task.cron_expression,
+      task_type: task.task_type as TaskType,
+      prompt: String(config.prompt || ''),
+      push_to_feishu: Boolean(config.push_to_feishu),
+      feishu_title: String(config.feishu_title || config.title || ''),
+      feishu_chat_id: String(config.feishu_chat_id || config.chat_id || ''),
+      feishu_content: String(config.content || ''),
+      skill_name: String(config.skill_name || ''),
+      skill_params: JSON.stringify(config.params || {}, null, 2),
+    });
+    setShowCreate(true);
+  };
+
+  const handleCreateOrUpdate = () => {
     if (!form.name.trim()) return;
-    const newTask: ScheduledTask = {
-      id: String(Date.now()),
+    const taskConfig: Record<string, unknown> = {};
+
+    if (form.task_type === 'ai_query') {
+      taskConfig.prompt = form.prompt;
+      if (form.push_to_feishu) {
+        taskConfig.push_to_feishu = true;
+        if (form.feishu_title) taskConfig.feishu_title = form.feishu_title;
+        if (form.feishu_chat_id) taskConfig.feishu_chat_id = form.feishu_chat_id;
+      }
+    }
+
+    if (form.task_type === 'feishu_push') {
+      if (form.feishu_title) taskConfig.title = form.feishu_title;
+      taskConfig.content = form.feishu_content;
+      if (form.feishu_chat_id) taskConfig.chat_id = form.feishu_chat_id;
+    }
+
+    if (form.task_type === 'skill_exec') {
+      taskConfig.skill_name = form.skill_name;
+      try {
+        taskConfig.params = JSON.parse(form.skill_params || '{}');
+      } catch {
+        taskConfig.params = {};
+      }
+      if (form.push_to_feishu) {
+        taskConfig.push_to_feishu = true;
+        if (form.feishu_title) taskConfig.feishu_title = form.feishu_title;
+        if (form.feishu_chat_id) taskConfig.feishu_chat_id = form.feishu_chat_id;
+      }
+    }
+
+    const payload: Partial<ScheduledTask> = {
       name: form.name,
       description: form.description || null,
       cron_expression: form.cron_expression,
-      task_type: 'ai_query',
-      task_config: { prompt: form.prompt },
+      task_type: form.task_type,
+      task_config: taskConfig,
       enabled: true,
-      last_run_at: null,
-      last_run_status: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
-    setTasks((prev) => [newTask, ...prev]);
-    setShowCreate(false);
-    setForm({ name: '', description: '', cron_expression: '0 9 * * *', prompt: '' });
+
+    saveMutation.mutate({ id: editingTask?.id, data: payload });
   };
 
-  const columns = buildColumns(handleToggle);
+  const columns = useMemo(() => buildColumns(handleToggle), [handleToggle]);
   const totalTasks = tasks.length;
   const activeTasks = tasks.filter((task) => task.enabled).length;
   const pausedTasks = totalTasks - activeTasks;
@@ -178,12 +297,12 @@ export default function ScheduledTasksPage() {
     {
       label: '立即执行',
       icon: 'lucide:play',
-      onClick: () => { /* TODO */ },
+      onClick: (task) => runMutation.mutate(task.id),
     },
     {
       label: '编辑',
       icon: 'lucide:pencil',
-      onClick: () => { /* TODO */ },
+      onClick: (task) => openEdit(task),
     },
     {
       label: '删除',
@@ -195,14 +314,13 @@ export default function ScheduledTasksPage() {
 
   return (
     <div className="flex flex-col gap-6 h-full">
-      {/* Page Header — title left, + Add New right (like screenshot) */}
       <PageHeader
         title="定时任务"
         description="配置自动执行的周期性任务，让 AI 定期为你工作"
         icon="lucide:clock"
         iconClassName="text-cyan-500"
       >
-        <CreateButton onClick={() => setShowCreate(true)}>
+        <CreateButton onClick={openCreate}>
           新建任务
         </CreateButton>
       </PageHeader>
@@ -231,7 +349,6 @@ export default function ScheduledTasksPage() {
         />
       </div>
 
-      {/* DataTable — search + View inside card, no create button */}
       <DataTable<ScheduledTask>
         data={tasks}
         columns={columns}
@@ -241,20 +358,19 @@ export default function ScheduledTasksPage() {
         actions={actions}
         emptyIcon="lucide:clock"
         emptyIllustration={illustrationPresets.emptySchedule}
-        emptyTitle="还没有定时任务"
+        emptyTitle={isLoading ? '加载中...' : '还没有定时任务'}
         emptyDescription="创建自动化任务，让系统帮你定时处理工作"
         emptyActionLabel="创建第一个任务"
-        emptyActionClick={() => setShowCreate(true)}
+        emptyActionClick={openCreate}
         emptyActionColor="create"
         defaultRowsPerPage={10}
         cardClassName="card-glow-cyan"
       />
 
-      {/* Create Dialog — no type selector */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新建定时任务</DialogTitle>
+            <DialogTitle>{editingTask ? '编辑定时任务' : '新建定时任务'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <Input
@@ -267,6 +383,22 @@ export default function ScheduledTasksPage() {
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">任务类型</label>
+              <Select
+                value={form.task_type}
+                onValueChange={(value) => setForm({ ...form, task_type: value as TaskType })}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="选择任务类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ai_query">AI 问答</SelectItem>
+                  <SelectItem value="feishu_push">飞书推送</SelectItem>
+                  <SelectItem value="skill_exec">技能执行</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">执行频率</label>
               <div className="flex flex-wrap gap-1.5 mb-2">
@@ -288,21 +420,112 @@ export default function ScheduledTasksPage() {
                 className="font-mono"
               />
             </div>
-            <Textarea
-              placeholder="任务内容 / Prompt"
-              value={form.prompt}
-              onChange={(e) => setForm({ ...form, prompt: e.target.value })}
-              rows={3}
-            />
+
+            {form.task_type === 'ai_query' && (
+              <div className="space-y-2">
+                <Textarea
+                  placeholder="任务内容 / Prompt"
+                  value={form.prompt}
+                  onChange={(e) => setForm({ ...form, prompt: e.target.value })}
+                  rows={3}
+                />
+                <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">推送到飞书</div>
+                    <div className="text-[11px] text-muted-foreground">执行后自动发送结果</div>
+                  </div>
+                  <Switch
+                    checked={form.push_to_feishu}
+                    onCheckedChange={(checked) => setForm({ ...form, push_to_feishu: checked })}
+                  />
+                </div>
+                {form.push_to_feishu && (
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="飞书消息标题（可选）"
+                      value={form.feishu_title}
+                      onChange={(e) => setForm({ ...form, feishu_title: e.target.value })}
+                    />
+                    <Input
+                      placeholder="飞书 Chat ID（可选）"
+                      value={form.feishu_chat_id}
+                      onChange={(e) => setForm({ ...form, feishu_chat_id: e.target.value })}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {form.task_type === 'feishu_push' && (
+              <div className="space-y-2">
+                <Input
+                  placeholder="飞书消息标题"
+                  value={form.feishu_title}
+                  onChange={(e) => setForm({ ...form, feishu_title: e.target.value })}
+                />
+                <Textarea
+                  placeholder="飞书消息内容"
+                  value={form.feishu_content}
+                  onChange={(e) => setForm({ ...form, feishu_content: e.target.value })}
+                  rows={3}
+                />
+                <Input
+                  placeholder="飞书 Chat ID（可选）"
+                  value={form.feishu_chat_id}
+                  onChange={(e) => setForm({ ...form, feishu_chat_id: e.target.value })}
+                />
+              </div>
+            )}
+
+            {form.task_type === 'skill_exec' && (
+              <div className="space-y-2">
+                <Input
+                  placeholder="技能名称"
+                  value={form.skill_name}
+                  onChange={(e) => setForm({ ...form, skill_name: e.target.value })}
+                />
+                <Textarea
+                  placeholder="技能参数 JSON"
+                  value={form.skill_params}
+                  onChange={(e) => setForm({ ...form, skill_params: e.target.value })}
+                  rows={3}
+                  className="font-mono"
+                />
+                <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">推送到飞书</div>
+                    <div className="text-[11px] text-muted-foreground">执行后自动发送结果</div>
+                  </div>
+                  <Switch
+                    checked={form.push_to_feishu}
+                    onCheckedChange={(checked) => setForm({ ...form, push_to_feishu: checked })}
+                  />
+                </div>
+                {form.push_to_feishu && (
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="飞书消息标题（可选）"
+                      value={form.feishu_title}
+                      onChange={(e) => setForm({ ...form, feishu_title: e.target.value })}
+                    />
+                    <Input
+                      placeholder="飞书 Chat ID（可选）"
+                      value={form.feishu_chat_id}
+                      onChange={(e) => setForm({ ...form, feishu_chat_id: e.target.value })}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <CancelButton onClick={() => setShowCreate(false)} />
             <SolidButton
               color="cyan"
-              onClick={handleCreate}
-              disabled={!form.name.trim()}
+              onClick={handleCreateOrUpdate}
+              disabled={!form.name.trim() || saveMutation.isPending}
             >
-              创建任务
+              {editingTask ? '保存修改' : '创建任务'}
             </SolidButton>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Integer, Boolean, ForeignKey, Index
+from sqlalchemy import String, Text, Integer, Boolean, ForeignKey, Index, Float
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID, JSONB, TIMESTAMP
 from app.database import Base
@@ -13,6 +13,10 @@ class Conversation(Base):
     title: Mapped[str | None] = mapped_column(String(500))
     knowledge_base_ids = mapped_column(JSONB, default=list)
     model_provider: Mapped[str] = mapped_column(String(20), default="claude")
+    memory_summary: Mapped[str | None] = mapped_column(Text)
+    memory_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    pinned_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -27,6 +31,10 @@ class Message(Base):
     sources = mapped_column(JSONB, default=list)
     model_used: Mapped[str | None] = mapped_column(String(50))
     tokens_used: Mapped[int | None] = mapped_column(Integer)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[float | None] = mapped_column(Float)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
 
     __table_args__ = (Index("idx_messages_conv_time", "conversation_id", "created_at"),)
@@ -73,6 +81,7 @@ class ScheduledTask(Base):
     task_config = mapped_column(JSONB, default=dict)  # skill_id, prompt, kb_ids, feishu_chat_id 等
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_run_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    last_run_status: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -121,6 +130,9 @@ class FeishuConfig(Base):
     app_id: Mapped[str | None] = mapped_column(String(200))
     app_secret_encrypted: Mapped[str | None] = mapped_column(Text)
     webhook_url: Mapped[str | None] = mapped_column(Text)
+    verification_token: Mapped[str | None] = mapped_column(String(200))
+    encrypt_key: Mapped[str | None] = mapped_column(String(200))
+    default_chat_id: Mapped[str | None] = mapped_column(String(200))
     bot_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

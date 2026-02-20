@@ -36,14 +36,20 @@ type ModelForm = {
   preferred_auth_method: string;
 };
 
+type TestResult = {
+  ok: boolean;
+  message: string;
+};
+
 export default function AIModelsPage() {
   const currentModel = useAppStore((s) => s.currentModel);
   const normalizedCurrent = currentModel === 'codex' ? 'openai' : currentModel;
-  const setCurrentModel = useAppStore((s) => s.setCurrentModel);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [forms, setForms] = useState<Record<string, ModelForm>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
 
   const { data: rawModels = [], isLoading, refetch } = useQuery({
     queryKey: ['ai-models'],
@@ -97,6 +103,28 @@ export default function AIModelsPage() {
     }
   };
 
+  const testConnection = async (model: ModelConfig) => {
+    setTesting((prev) => ({ ...prev, [model.id]: true }));
+    setTestResults((prev) => ({ ...prev, [model.id]: { ok: false, message: '测试中...' } }));
+    try {
+      const response = await api.post<{ ok: boolean; message: string }>(
+        `/config/models/${model.id}/test`,
+      );
+      setTestResults((prev) => ({ ...prev, [model.id]: response.data }));
+    } catch (error) {
+      const message =
+        error && typeof error === 'object' && 'response' in error
+          ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : '连接失败';
+      setTestResults((prev) => ({
+        ...prev,
+        [model.id]: { ok: false, message: message || '连接失败' },
+      }));
+    } finally {
+      setTesting((prev) => ({ ...prev, [model.id]: false }));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -109,7 +137,7 @@ export default function AIModelsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="AI 模型配置" description="选择默认模型，配置 API Key" />
+      <PageHeader title="AI 模型配置" description="配置模型参数与 API Key" />
 
       {models.map((model) => {
         const isSelected = normalizedCurrent === model.id;
@@ -129,13 +157,11 @@ export default function AIModelsPage() {
                   <CardTitle className="text-sm">{model.name}</CardTitle>
                   <CardDescription className="text-xs">{model.provider}</CardDescription>
                 </div>
-                <Button
-                  size="sm"
-                  variant={isSelected ? 'default' : 'outline'}
-                  onClick={() => setCurrentModel(model.id as 'claude' | 'openai' | 'codex')}
-                >
-                  {isSelected ? '当前使用' : '切换'}
-                </Button>
+                {isSelected && (
+                  <span className="rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-primary">
+                    当前使用
+                  </span>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -235,6 +261,29 @@ export default function AIModelsPage() {
                   >
                     {saving[model.id] ? '保存中...' : '保存'}
                   </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => testConnection(model)}
+                    disabled={testing[model.id]}
+                  >
+                    {testing[model.id] ? '测试中...' : '测试链接'}
+                  </Button>
+                  {testResults[model.id] && (
+                    <span
+                      className={cn(
+                        'text-xs',
+                        testResults[model.id].ok ? 'text-emerald-500' : 'text-destructive',
+                      )}
+                    >
+                      {testResults[model.id].message}
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">
+                    需先保存配置后再测试。
+                  </span>
                 </div>
               </div>
             </CardContent>

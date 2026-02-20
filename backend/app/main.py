@@ -5,14 +5,18 @@ from contextlib import asynccontextmanager
 from app.config import get_settings
 from app.api.router import api_router
 from app.database import init_db
+from app.services.scheduler_service import SchedulerService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: auto-create tables
     await init_db()
+    scheduler = SchedulerService()
+    await scheduler.start()
     yield
     # Shutdown
+    await scheduler.stop()
 
 
 app = FastAPI(

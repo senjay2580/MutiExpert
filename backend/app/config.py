@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
     feishu_webhook_url: str = ""
+    feishu_verification_token: str = ""
+    feishu_encrypt_key: str = ""
+    feishu_default_chat_id: str = ""
+    feishu_secret_key: str = ""
 
     # Server
     backend_url: str = "http://localhost:8000"

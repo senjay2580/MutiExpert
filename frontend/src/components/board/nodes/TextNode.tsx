@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { cn } from '@/lib/utils';
 
 export type TextNodeData = {
   text?: string;
+  __editTrigger?: number;
   onDataChange?: (id: string, data: Partial<TextNodeData>) => void;
 };
 
@@ -12,6 +13,12 @@ type TextNodeType = Node<TextNodeData, 'text'>;
 export function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(data.text ?? '');
+
+  useEffect(() => {
+    if (!data.__editTrigger) return;
+    setText(data.text ?? '');
+    setEditing(true);
+  }, [data.__editTrigger, data.text]);
 
   const commitText = useCallback(() => {
     setEditing(false);

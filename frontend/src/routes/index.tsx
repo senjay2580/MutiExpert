@@ -3,6 +3,7 @@ import AppLayout from '../layouts/AppLayout';
 import SettingsLayout from '../layouts/SettingsLayout';
 import DashboardPage from '../pages/dashboard/DashboardPage';
 import AIAssistantPage from '../pages/assistant/AIAssistantPage';
+import AIAssistantChatPage from '../pages/assistant/AIAssistantChatPage';
 import KnowledgePage from '../pages/knowledge/KnowledgePage';
 import KnowledgeDetailPage from '../pages/knowledge/KnowledgeDetailPage';
 import AIModelsPage from '../pages/settings/AIModelsPage';
@@ -22,6 +23,8 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'assistant', element: <AIAssistantPage /> },
+      { path: 'assistant/chat', element: <AIAssistantChatPage /> },
+      { path: 'assistant/chat/:conversationId', element: <AIAssistantChatPage /> },
       { path: 'knowledge', element: <KnowledgePage /> },
       { path: 'knowledge/:industryId', element: <KnowledgeDetailPage /> },
       { path: 'scheduler', element: <ScheduledTasksPage /> },

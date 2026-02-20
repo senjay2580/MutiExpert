@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Icon } from '@iconify/react';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ export type TaskNodeData = {
   title?: string;
   completed?: boolean;
   priority?: 'high' | 'medium' | 'low';
+  __editTrigger?: number;
   onDataChange?: (id: string, data: Partial<TaskNodeData>) => void;
 };
 
@@ -22,6 +23,12 @@ export function TaskNode({ id, data, selected }: NodeProps<TaskNodeType>) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(data.title ?? '');
   const pri = PRIORITIES[data.priority ?? 'medium'];
+
+  useEffect(() => {
+    if (!data.__editTrigger) return;
+    setTitle(data.title ?? '');
+    setEditing(true);
+  }, [data.__editTrigger, data.title]);
 
   const commitTitle = useCallback(() => {
     setEditing(false);

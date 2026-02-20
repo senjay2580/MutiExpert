@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.extras import ScheduledTask
+from app.services.scheduler_service import SchedulerService
 
 router = APIRouter()
 
@@ -84,3 +85,12 @@ async def toggle_task(task_id: UUID, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(task)
     return task
+
+
+@router.post("/{task_id}/run")
+async def run_task(task_id: UUID):
+    scheduler = SchedulerService()
+    success, message = await scheduler.run_once(task_id)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": "Task executed", "status": message}

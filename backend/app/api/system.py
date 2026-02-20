@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
@@ -6,6 +7,7 @@ from app.config import get_settings
 from app.models.extras import AIModelConfig
 from app.schemas.ai_models import AIModelConfigUpdate, AIModelConfigOut
 from app.services.ai_model_config import DEFAULT_MODEL_CONFIGS, list_configs
+from app.services.ai_service import stream_chat
 
 router = APIRouter()
 
@@ -99,3 +101,27 @@ async def update_model_config(
     await db.commit()
     await db.refresh(config)
     return _config_to_out(config)
+
+
+@router.post("/config/models/{provider_id}/test")
+async def test_model_connection(
+    provider_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    provider = "openai" if provider_id == "codex" else provider_id
+    if provider not in {"openai", "claude"}:
+        raise HTTPException(status_code=400, detail="Unsupported provider")
+
+    generator = stream_chat([{"role": "user", "content": "ping"}], provider, "", db=db)
+    try:
+        try:
+            first_chunk = await asyncio.wait_for(generator.__anext__(), timeout=20)
+        except StopAsyncIteration:
+            return {"ok": False, "message": "无响应"}
+        if isinstance(first_chunk, str) and first_chunk.lower().startswith("error:"):
+            return {"ok": False, "message": first_chunk.replace("Error:", "").strip()}
+        return {"ok": True, "message": "连接成功"}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await generator.aclose()

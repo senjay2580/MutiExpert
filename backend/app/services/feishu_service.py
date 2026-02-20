@@ -1,6 +1,12 @@
 """飞书集成服务 - 消息发送、Webhook 处理、语音转文字"""
+import base64
+import hashlib
 import json
 import httpx
+from datetime import datetime, timedelta
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
@@ -8,15 +14,34 @@ from app.models.extras import FeishuConfig
 
 
 class FeishuService:
-    def __init__(self, app_id: str = "", app_secret: str = "", webhook_url: str = ""):
+    def __init__(
+        self,
+        app_id: str = "",
+        app_secret: str = "",
+        webhook_url: str = "",
+        verification_token: str = "",
+        encrypt_key: str = "",
+        default_chat_id: str = "",
+    ):
         self.app_id = app_id
         self.app_secret = app_secret
         self.webhook_url = webhook_url
+        self.verification_token = verification_token
+        self.encrypt_key = encrypt_key
+        self.default_chat_id = default_chat_id
         self._tenant_token: str | None = None
+        self._tenant_token_expire_at: datetime | None = None
 
     async def _get_tenant_token(self) -> str:
         """获取 tenant_access_token"""
-        if self._tenant_token:
+        if self._tenant_token and self._tenant_token_expire_at:
+            if datetime.utcnow() < self._tenant_token_expire_at - timedelta(seconds=60):
+                return self._tenant_token
+
+        if not self.app_id or not self.app_secret:
+            return ""
+
+        if self._tenant_token and not self._tenant_token_expire_at:
             return self._tenant_token
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -25,6 +50,9 @@ class FeishuService:
             )
             data = resp.json()
             self._tenant_token = data.get("tenant_access_token", "")
+            expire = data.get("expire") or data.get("expires_in")
+            if isinstance(expire, int):
+                self._tenant_token_expire_at = datetime.utcnow() + timedelta(seconds=expire)
             return self._tenant_token
 
     async def send_webhook_message(self, title: str, content: str) -> dict:
@@ -48,6 +76,8 @@ class FeishuService:
     async def send_text_message(self, chat_id: str, text: str) -> dict:
         """通过 Open API 发送文本消息到指定会话"""
         token = await self._get_tenant_token()
+        if not token:
+            return {"success": False, "error": "Tenant token not available"}
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://open.feishu.cn/open-apis/im/v1/messages",
@@ -64,6 +94,8 @@ class FeishuService:
     async def reply_message(self, message_id: str, text: str) -> dict:
         """回复飞书消息"""
         token = await self._get_tenant_token()
+        if not token:
+            return {"success": False, "error": "Tenant token not available"}
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reply",
@@ -94,19 +126,67 @@ class FeishuService:
         header = body.get("header", {})
         event = body.get("event", {})
         event_type = header.get("event_type", "")
+        token = body.get("token") or header.get("token")
 
         if event_type == "im.message.receive_v1":
             message = event.get("message", {})
             content = json.loads(message.get("content", "{}"))
+            sender = event.get("sender", {})
             return {
                 "type": "message",
+                "token": token,
                 "message_id": message.get("message_id"),
                 "chat_id": message.get("chat_id"),
                 "text": content.get("text", ""),
                 "message_type": message.get("message_type"),
+                "sender_type": sender.get("sender_type"),
+                "sender_id": sender.get("sender_id", {}),
             }
 
-        return {"type": "unknown", "event_type": event_type}
+        return {"type": "unknown", "event_type": event_type, "token": token}
+
+
+def verify_feishu_signature(
+    encrypt_key: str,
+    timestamp: str | None,
+    nonce: str | None,
+    body: bytes,
+    signature: str | None,
+) -> bool:
+    if not encrypt_key or not timestamp or not nonce or not signature:
+        return False
+    base = (timestamp + nonce + encrypt_key).encode("utf-8") + body
+    digest = hashlib.sha256(base).hexdigest()
+    return digest == signature
+
+
+def decrypt_feishu_event(encrypt_key: str, encrypted: str) -> str:
+    key = hashlib.sha256(encrypt_key.encode("utf-8")).digest()
+    payload = base64.b64decode(encrypted)
+    iv = payload[:16]
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    decryptor = cipher.decryptor()
+    padded = decryptor.update(payload[16:]) + decryptor.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    data = unpadder.update(padded) + unpadder.finalize()
+    return data.decode("utf-8")
+
+
+def encrypt_secret(value: str, key: str) -> str:
+    if not key:
+        return value
+    token = Fernet(key).encrypt(value.encode("utf-8")).decode("utf-8")
+    return f"enc:{token}"
+
+
+def decrypt_secret(value: str, key: str) -> str:
+    if not value or not key or not value.startswith("enc:"):
+        return value
+    token = value[4:]
+    try:
+        return Fernet(key).decrypt(token.encode("utf-8")).decode("utf-8")
+    except InvalidToken:
+        return value
 
 
 async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
@@ -115,13 +195,27 @@ async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
     app_id = settings.feishu_app_id
     app_secret = settings.feishu_app_secret
     webhook_url = settings.feishu_webhook_url
+    verification_token = settings.feishu_verification_token
+    encrypt_key = settings.feishu_encrypt_key
+    default_chat_id = settings.feishu_default_chat_id
 
     if db is not None:
         result = await db.execute(select(FeishuConfig).limit(1))
         config = result.scalar_one_or_none()
         if config:
             app_id = config.app_id or app_id
-            app_secret = config.app_secret_encrypted or app_secret
+            stored_secret = config.app_secret_encrypted or app_secret
+            app_secret = decrypt_secret(stored_secret, settings.feishu_secret_key)
             webhook_url = config.webhook_url or webhook_url
+            verification_token = config.verification_token or ""
+            encrypt_key = config.encrypt_key or ""
+            default_chat_id = config.default_chat_id or ""
 
-    return FeishuService(app_id=app_id, app_secret=app_secret, webhook_url=webhook_url)
+    return FeishuService(
+        app_id=app_id,
+        app_secret=app_secret,
+        webhook_url=webhook_url,
+        verification_token=verification_token,
+        encrypt_key=encrypt_key,
+        default_chat_id=default_chat_id,
+    )

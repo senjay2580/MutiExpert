@@ -41,6 +41,8 @@ export interface Conversation {
   title: string;
   knowledge_base_ids: string[];
   model_provider: 'claude' | 'openai' | 'codex';
+  is_pinned: boolean;
+  pinned_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -51,8 +53,12 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   sources: SourceReference[];
-  model_used: string;
-  tokens_used: number;
+  model_used: string | null;
+  tokens_used: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  cost_usd: number | null;
+  latency_ms: number | null;
   created_at: string;
 }
 
