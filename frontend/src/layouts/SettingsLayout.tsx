@@ -1,38 +1,40 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { Cpu, Plug, Database } from 'lucide-react';
-import clsx from 'clsx';
-
-const settingsTabs = [
-  { path: 'ai-models', label: 'AI 模型配置', icon: Cpu },
-  { path: 'integrations', label: '第三方集成', icon: Plug },
-  { path: 'data', label: '数据管理', icon: Database },
-];
+import { useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { Icon } from '@iconify/react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 
 export default function SettingsLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const navIcons = useSiteSettingsStore((s) => s.navIcons);
+
+  const settingsTabs = [
+    { path: 'basic', label: '基础参数', icon: 'streamline-color:ai-settings-spark' },
+    { path: 'ai-models', label: 'AI 模型配置', icon: navIcons.aiModels },
+    { path: 'integrations', label: '第三方集成', icon: navIcons.integrations },
+    { path: 'data', label: '数据管理', icon: navIcons.data },
+  ];
+
+  // Extract the last segment of the path to determine the active tab
+  const segments = location.pathname.split('/');
+  const activeTab = segments[segments.length - 1] || 'basic';
+
   return (
-    <div className="flex gap-6">
-      <nav className="w-52 shrink-0 space-y-0.5">
-        {settingsTabs.map((tab) => (
-          <NavLink
-            key={tab.path}
-            to={tab.path}
-            className={({ isActive }) => clsx(
-              'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors cursor-pointer',
-              isActive
-                ? 'text-[var(--accent-text)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            )}
-            style={({ isActive }) => ({
-              background: isActive ? 'var(--accent-subtle)' : 'transparent',
-              transitionDuration: 'var(--duration-fast)',
-            })}
-          >
-            <tab.icon size={18} strokeWidth={1.8} />
-            {tab.label}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="flex-1 min-w-0">
+    <div className="flex flex-col gap-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => navigate(value)}
+      >
+        <TabsList variant="line">
+          {settingsTabs.map((tab) => (
+            <TabsTrigger key={tab.path} value={tab.path} className="gap-2">
+              <Icon icon={tab.icon} className="size-4" />
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+      <div className="min-w-0">
         <Outlet />
       </div>
     </div>

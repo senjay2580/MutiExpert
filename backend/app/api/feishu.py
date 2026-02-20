@@ -17,7 +17,7 @@ class FeishuConfigUpdate(BaseModel):
     app_id: str | None = None
     app_secret: str | None = None
     webhook_url: str | None = None
-    bot_enabled: bool = False
+    bot_enabled: bool | None = None
 
 
 class FeishuMessageRequest(BaseModel):
@@ -28,7 +28,7 @@ class FeishuMessageRequest(BaseModel):
 @router.post("/webhook")
 async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
-    svc = get_feishu_service()
+    svc = await get_feishu_service()
     parsed = svc.parse_webhook_event(body)
     if parsed["type"] == "challenge":
         return {"challenge": parsed["challenge"]}
@@ -39,14 +39,15 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
 
 async def _handle_feishu_question(parsed: dict):
     """后台任务：用 RAG + AI 回答飞书消息并回复"""
-    svc = get_feishu_service()
     question = parsed["text"]
     message_id = parsed.get("message_id")
     if not message_id:
         return
 
     try:
+        svc = None
         async with AsyncSessionLocal() as db:
+            svc = await get_feishu_service(db)
             # 获取所有知识库 ID 用于检索
             result = await db.execute(select(KnowledgeBase.id))
             kb_ids = [row[0] for row in result.all()]
@@ -69,9 +70,11 @@ async def _handle_feishu_question(parsed: dict):
             async for chunk in stream_chat(messages, "claude", system_prompt):
                 full_response += chunk
 
-        await svc.reply_message(message_id, full_response or "抱歉，暂时无法回答这个问题。")
+        if svc is not None:
+            await svc.reply_message(message_id, full_response or "抱歉，暂时无法回答这个问题。")
     except Exception as e:
-        await svc.reply_message(message_id, f"处理出错: {str(e)}")
+        if svc is not None:
+            await svc.reply_message(message_id, f"处理出错: {str(e)}")
 
 
 @router.get("/config")
@@ -79,9 +82,10 @@ async def get_feishu_config(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(FeishuConfig).limit(1))
     config = result.scalar_one_or_none()
     if not config:
-        return {"app_id": "", "webhook_url": "", "bot_enabled": False}
+        return {"app_id": "", "app_secret_encrypted": "", "webhook_url": "", "bot_enabled": False}
     return {
         "app_id": config.app_id or "",
+        "app_secret_encrypted": "",
         "webhook_url": config.webhook_url or "",
         "bot_enabled": config.bot_enabled,
     }
@@ -94,18 +98,24 @@ async def update_feishu_config(data: FeishuConfigUpdate, db: AsyncSession = Depe
     if not config:
         config = FeishuConfig()
         db.add(config)
-    config.app_id = data.app_id
-    config.app_secret_encrypted = data.app_secret  # TODO: encrypt in production
-    config.webhook_url = data.webhook_url
-    config.bot_enabled = data.bot_enabled
+
+    if data.app_id is not None:
+        config.app_id = data.app_id
+    if data.webhook_url is not None:
+        config.webhook_url = data.webhook_url
+    if data.app_secret is not None and data.app_secret != "":
+        config.app_secret_encrypted = data.app_secret  # TODO: encrypt in production
+    if data.bot_enabled is not None:
+        config.bot_enabled = data.bot_enabled
+
     await db.commit()
     await db.refresh(config)
     return {"message": "Config saved"}
 
 
 @router.post("/test-connection")
-async def test_feishu_connection():
-    svc = get_feishu_service()
+async def test_feishu_connection(db: AsyncSession = Depends(get_db)):
+    svc = await get_feishu_service(db)
     result = await svc.test_connection()
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["message"])
@@ -113,8 +123,8 @@ async def test_feishu_connection():
 
 
 @router.post("/send-message")
-async def send_feishu_message(data: FeishuMessageRequest):
-    svc = get_feishu_service()
+async def send_feishu_message(data: FeishuMessageRequest, db: AsyncSession = Depends(get_db)):
+    svc = await get_feishu_service(db)
     result = await svc.send_text_message(data.chat_id, data.text)
     if not result["success"]:
         raise HTTPException(status_code=400, detail="Failed to send message")

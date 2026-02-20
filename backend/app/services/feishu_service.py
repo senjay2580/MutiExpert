@@ -1,15 +1,17 @@
 """飞书集成服务 - 消息发送、Webhook 处理、语音转文字"""
 import json
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
+from app.models.extras import FeishuConfig
 
 
 class FeishuService:
-    def __init__(self):
-        settings = get_settings()
-        self.app_id = settings.feishu_app_id
-        self.app_secret = settings.feishu_app_secret
-        self.webhook_url = settings.feishu_webhook_url
+    def __init__(self, app_id: str = "", app_secret: str = "", webhook_url: str = ""):
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.webhook_url = webhook_url
         self._tenant_token: str | None = None
 
     async def _get_tenant_token(self) -> str:
@@ -107,11 +109,19 @@ class FeishuService:
         return {"type": "unknown", "event_type": event_type}
 
 
-_feishu_service: FeishuService | None = None
+async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
+    """优先使用数据库配置；没有则回退到环境变量配置。"""
+    settings = get_settings()
+    app_id = settings.feishu_app_id
+    app_secret = settings.feishu_app_secret
+    webhook_url = settings.feishu_webhook_url
 
+    if db is not None:
+        result = await db.execute(select(FeishuConfig).limit(1))
+        config = result.scalar_one_or_none()
+        if config:
+            app_id = config.app_id or app_id
+            app_secret = config.app_secret_encrypted or app_secret
+            webhook_url = config.webhook_url or webhook_url
 
-def get_feishu_service() -> FeishuService:
-    global _feishu_service
-    if _feishu_service is None:
-        _feishu_service = FeishuService()
-    return _feishu_service
+    return FeishuService(app_id=app_id, app_secret=app_secret, webhook_url=webhook_url)

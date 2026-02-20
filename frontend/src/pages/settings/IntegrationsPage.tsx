@@ -1,7 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plug, TestTube, Check, Loader2 } from 'lucide-react';
-import api from '../../services/api';
+import { Icon } from '@iconify/react';
+import api from '@/services/api';
+import { PageHeader } from '@/components/composed/page-header';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { SaveButton, SolidButton } from '@/components/composed/solid-button';
 
 interface FeishuConfig {
   app_id: string;
@@ -10,113 +15,156 @@ interface FeishuConfig {
   bot_enabled: boolean;
 }
 
-export default function IntegrationsPage() {
-  const [appId, setAppId] = useState('');
-  const [appSecret, setAppSecret] = useState('');
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [saved, setSaved] = useState(false);
+const MOCK_FEISHU_CONFIG: FeishuConfig = {
+  app_id: 'cli_a5e8****',
+  app_secret_encrypted: '********',
+  webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/xxxx-yyyy',
+  bot_enabled: true,
+};
 
+export default function IntegrationsPage() {
   const { data: config } = useQuery({
     queryKey: ['feishu-config'],
-    queryFn: () => api.get<FeishuConfig>('/feishu/config').then(r => r.data),
+    queryFn: () => api.get<FeishuConfig>('/feishu/config').then((r) => r.data),
   });
 
-  useEffect(() => {
-    if (config) {
-      setAppId(config.app_id || '');
-      setAppSecret(config.app_secret_encrypted || '');
-      setWebhookUrl(config.webhook_url || '');
-    }
-  }, [config]);
+  const effectiveConfig = config ?? MOCK_FEISHU_CONFIG;
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="第三方集成" description="连接外部服务，扩展平台能力" />
+      <FeishuCard key={`${effectiveConfig.app_id}:${effectiveConfig.webhook_url}`} initialConfig={effectiveConfig} />
+    </div>
+  );
+}
+
+function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
+  const [appId, setAppId] = useState(initialConfig.app_id || '');
+  const [appSecret, setAppSecret] = useState(initialConfig.app_secret_encrypted || '');
+  const [webhookUrl, setWebhookUrl] = useState(initialConfig.webhook_url || '');
+  const [saved, setSaved] = useState(false);
 
   const saveMutation = useMutation({
-    mutationFn: () => api.put('/feishu/config', {
-      app_id: appId, app_secret: appSecret, webhook_url: webhookUrl,
-    }),
-    onSuccess: () => { setSaved(true); setTimeout(() => setSaved(false), 2000); },
+    mutationFn: () =>
+      api.put('/feishu/config', {
+        app_id: appId,
+        app_secret: appSecret,
+        webhook_url: webhookUrl,
+      }),
+    onSuccess: () => {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
   });
 
   const testMutation = useMutation({
     mutationFn: () => api.post('/feishu/test-connection'),
   });
 
-  const connected = !!(config?.app_id && config?.webhook_url);
+  const connected = !!(appId && webhookUrl);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-[16px] font-semibold" style={{ color: 'var(--text-primary)' }}>第三方集成</h3>
-        <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>连接外部服务，扩展平台能力</p>
-      </div>
-
-      <div
-        className="rounded-xl p-5 space-y-4"
-        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
-      >
+    <Card className="gap-4 py-5">
+      <CardContent className="space-y-4">
+        {/* Header row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
-              <Plug size={18} strokeWidth={1.8} />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+              <Icon icon="streamline-color:electric-cord-1" width={18} height={18} className="text-primary" />
             </div>
             <div>
-              <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>飞书</div>
-              <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>将知识洞察推送到飞书群</div>
+              <div className="text-sm font-semibold text-foreground">飞书</div>
+              <div className="text-xs text-muted-foreground">
+                将知识洞察推送到飞书群
+              </div>
             </div>
           </div>
-          <span
-            className="text-[11px] font-medium px-2 py-1 rounded"
-            style={{ background: connected ? 'var(--success-subtle)' : 'var(--bg-sunken)', color: connected ? 'var(--success)' : 'var(--text-muted)' }}
-          >
-            {connected ? '已连接' : '未连接'}
-          </span>
+          {connected ? (
+            <Badge className="bg-green-500/10 text-green-600 border-transparent">
+              已连接
+            </Badge>
+          ) : (
+            <Badge variant="outline">未连接</Badge>
+          )}
         </div>
 
+        {/* Form fields */}
         <div className="space-y-3">
-          <Field label="App ID" value={appId} onChange={setAppId} placeholder="输入 App ID..." />
-          <Field label="App Secret" value={appSecret} onChange={setAppSecret} placeholder="输入 App Secret..." type="password" />
-          <Field label="Webhook URL" value={webhookUrl} onChange={setWebhookUrl} placeholder="输入 Webhook URL..." />
+          <Field
+            label="App ID"
+            value={appId}
+            onChange={setAppId}
+            placeholder="输入 App ID..."
+          />
+          <Field
+            label="App Secret"
+            value={appSecret}
+            onChange={setAppSecret}
+            placeholder="输入 App Secret..."
+            type="password"
+          />
+          <Field
+            label="Webhook URL"
+            value={webhookUrl}
+            onChange={setWebhookUrl}
+            placeholder="输入 Webhook URL..."
+          />
         </div>
 
+        {/* Actions */}
         <div className="flex gap-2">
-          <button
+          <SaveButton
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-medium cursor-pointer transition-colors disabled:opacity-50"
-            style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}
+            loading={saveMutation.isPending}
           >
-            {saveMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : null}
             {saved ? '已保存' : '保存配置'}
-          </button>
-          <button
+          </SaveButton>
+          <SolidButton
+            color="secondary"
+            icon="streamline-color:test-tube"
             onClick={() => testMutation.mutate()}
-            disabled={testMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-medium cursor-pointer transition-colors"
-            style={{ background: 'transparent', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
+            loading={testMutation.isPending}
+            loadingText="测试中..."
           >
-            {testMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
             测试连接
-          </button>
+          </SolidButton>
         </div>
-        {testMutation.isSuccess && <p className="text-[12px]" style={{ color: 'var(--success)' }}>连接成功</p>}
-        {testMutation.isError && <p className="text-[12px]" style={{ color: 'var(--error)' }}>连接失败，请检查配置</p>}
-      </div>
-    </div>
+
+        {/* Status messages */}
+        {testMutation.isSuccess && (
+          <p className="text-xs text-green-600">连接成功</p>
+        )}
+        {testMutation.isError && (
+          <p className="text-xs text-destructive">连接失败，请检查配置</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text' }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder: string; type?: string;
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  type?: string;
 }) {
   return (
-    <div>
-      <label className="text-[12px] font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>{label}</label>
-      <input
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-muted-foreground">
+        {label}
+      </label>
+      <Input
         type={type}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 rounded-lg text-[13px] bg-transparent outline-none"
-        style={{ border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
       />
     </div>
   );

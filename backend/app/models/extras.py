@@ -78,6 +78,27 @@ class ScheduledTask(Base):
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Todo(Base):
+    __tablename__ = "todos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    priority: Mapped[str] = mapped_column(String(10), default="medium")  # low | medium | high
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SiteSetting(Base):
+    __tablename__ = "site_settings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class FeishuConfig(Base):
     __tablename__ = "feishu_config"
 

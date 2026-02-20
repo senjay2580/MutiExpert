@@ -1,80 +1,116 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Eye, EyeOff } from 'lucide-react';
-import api from '../../services/api';
-import { useAppStore } from '../../stores/useAppStore';
+import { Icon } from '@iconify/react';
+
+import api from '@/services/api';
+import { useAppStore } from '@/stores/useAppStore';
+import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/composed/page-header';
+import { EmptyState } from '@/components/composed/empty-state';
+import { illustrationPresets } from '@/lib/illustrations';
+import { CardSkeleton } from '@/components/composed/loading-skeleton';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+const MOCK_MODELS = [
+  { id: 'claude', name: 'Claude 4 Opus', provider: 'Anthropic' },
+  { id: 'gpt4', name: 'GPT-4o', provider: 'OpenAI' },
+  { id: 'gemini', name: 'Gemini 2.0 Pro', provider: 'Google' },
+  { id: 'deepseek', name: 'DeepSeek V3', provider: 'DeepSeek' },
+];
 
 export default function AIModelsPage() {
-  const { currentModel, setCurrentModel } = useAppStore();
+  const currentModel = useAppStore((s) => s.currentModel);
+  const setCurrentModel = useAppStore((s) => s.setCurrentModel);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [keys, setKeys] = useState<Record<string, string>>({});
 
-  const { data: models = [] } = useQuery({
+  const { data: rawModels = [], isLoading } = useQuery({
     queryKey: ['ai-models'],
-    queryFn: () => api.get<Array<{ id: string; name: string; provider: string }>>('/config/models').then(r => r.data),
+    queryFn: () =>
+      api
+        .get<Array<{ id: string; name: string; provider: string }>>('/config/models')
+        .then((r) => r.data),
   });
+  const models = rawModels.length > 0 ? rawModels : MOCK_MODELS;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="AI 模型配置" description="选择默认模型，配置 API Key" />
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-[16px] font-semibold" style={{ color: 'var(--text-primary)' }}>AI 模型配置</h3>
-        <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>选择默认模型，配置 API Key</p>
-      </div>
+      <PageHeader title="AI 模型配置" description="选择默认模型，配置 API Key" />
 
-      {models.map((model) => (
-        <div
-          key={model.id}
-          className="rounded-xl p-5 space-y-4"
-          style={{
-            background: 'var(--bg-surface)',
-            border: currentModel === model.id ? '2px solid var(--accent)' : '1px solid var(--border-default)',
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{model.name}</span>
-              <span className="text-[12px] ml-2" style={{ color: 'var(--text-muted)' }}>{model.provider}</span>
-            </div>
-            <button
-              onClick={() => setCurrentModel(model.id as 'claude' | 'codex')}
-              className="text-[12px] px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
-              style={{
-                background: currentModel === model.id ? 'var(--accent)' : 'var(--bg-sunken)',
-                color: currentModel === model.id ? 'var(--text-inverse)' : 'var(--text-secondary)',
-              }}
-            >
-              {currentModel === model.id ? '当前使用' : '切换'}
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg"
-              style={{ background: 'var(--bg-sunken)', border: '1px solid var(--border-default)' }}
-            >
-              <input
-                type={showKeys[model.id] ? 'text' : 'password'}
-                placeholder="API Key（服务端已配置则无需填写）"
-                value={keys[model.id] || ''}
-                onChange={(e) => setKeys(prev => ({ ...prev, [model.id]: e.target.value }))}
-                className="flex-1 bg-transparent border-none outline-none text-[13px] font-mono"
-                style={{ color: 'var(--text-primary)' }}
-              />
-              <button
-                onClick={() => setShowKeys(prev => ({ ...prev, [model.id]: !prev[model.id] }))}
-                className="cursor-pointer p-1 rounded"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                {showKeys[model.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-          </div>
-        </div>
-      ))}
+      {models.map((model) => {
+        const isSelected = currentModel === model.id;
+
+        return (
+          <Card
+            key={model.id}
+            className={cn(
+              'gap-4 py-5',
+              isSelected && 'border-2 border-primary'
+            )}
+          >
+            <CardHeader className="py-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm">{model.name}</CardTitle>
+                  <CardDescription className="text-xs">{model.provider}</CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant={isSelected ? 'default' : 'outline'}
+                  onClick={() => setCurrentModel(model.id as 'claude' | 'codex')}
+                >
+                  {isSelected ? '当前使用' : '切换'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <Input
+                  type={showKeys[model.id] ? 'text' : 'password'}
+                  placeholder="API Key（服务端已配置则无需填写）"
+                  value={keys[model.id] || ''}
+                  onChange={(e) =>
+                    setKeys((prev) => ({ ...prev, [model.id]: e.target.value }))
+                  }
+                  className="flex-1 font-mono text-xs"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    setShowKeys((prev) => ({
+                      ...prev,
+                      [model.id]: !prev[model.id],
+                    }))
+                  }
+                >
+                  {showKeys[model.id] ? <Icon icon="streamline-color:invisible-1" width={14} height={14} /> : <Icon icon="streamline-color:visible" width={14} height={14} />}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
 
       {models.length === 0 && (
-        <div className="text-center py-12 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-          无法加载模型列表，请检查后端连接
-        </div>
+        <EmptyState
+          icon="streamline-color:artificial-intelligence-spark"
+          illustration={illustrationPresets.emptyAIModels}
+          title="无法加载模型列表"
+          description="请检查后端连接"
+        />
       )}
     </div>
   );

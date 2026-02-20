@@ -1,153 +1,327 @@
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Icon } from '@iconify/react';
+import { cn } from '@/lib/utils';
+import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import {
-  LayoutDashboard,
-  BookOpen,
-  MessageSquare,
-  Zap,
-  Clock,
-  BarChart3,
-  Settings,
-  ChevronsLeft,
-  ChevronsRight,
-  X,
-} from 'lucide-react';
-import clsx from 'clsx';
-import { useAppStore } from '../stores/useAppStore';
-import { ThemeToggle } from '../components/ui/ThemeToggle';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import {
+  Sidebar as ShadcnSidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
+  SidebarHeader,
+  SidebarFooter,
+  useSidebarActions,
+  useSidebarState,
+} from '@/components/ui/sidebar';
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from '@/components/ui/collapsible';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useNavItems, type NavItem } from '@/hooks/useNavItems';
 
-const navItems = [
-  { path: '/dashboard', icon: LayoutDashboard, label: '仪表盘' },
-  { path: '/knowledge', icon: BookOpen, label: '行业知识库' },
-  { path: '/chat', icon: MessageSquare, label: 'AI 对话' },
-  { path: '/skills', icon: Zap, label: '技能管理' },
-  { path: '/scheduler', icon: Clock, label: '定时任务' },
-  { path: '/analytics', icon: BarChart3, label: '数据分析' },
-  { path: '/settings', icon: Settings, label: '系统管理' },
-];
+/* ------------------------------------------------------------------ */
+/*  Types & Data                                                      */
+/* ------------------------------------------------------------------ */
 
-export default function Sidebar() {
-  const { sidebarCollapsed, mobileMenuOpen, toggleSidebar, setMobileMenuOpen } = useAppStore();
+/** 各页面帮助说明 */
+const pageHelp: Record<string, { title: string; desc: string }> = {
+  '/dashboard': {
+    title: '仪表盘',
+    desc: '总览平台核心数据：知识库数量、文档总量、AI 对话统计、跨域洞察等关键指标，以及文档上传趋势、AI 调用趋势、行业分布等可视化图表，帮助你快速掌握平台运行状态。',
+  },
+  '/knowledge': {
+    title: '知识库',
+    desc: '管理所有行业知识库。你可以新建知识库、上传文档（PDF、Word、Markdown 等）、浏览和搜索已有资料，以及查看知识库详情和关联关系。',
+  },
+  '/scheduler': {
+    title: '定时任务',
+    desc: '配置和管理自动化任务。设置定时触发规则，让 AI 按计划自动执行数据同步、报告生成、知识更新等工作，减少重复操作。',
+  },
+  '/boards': {
+    title: '画板',
+    desc: '可视化画板工具。使用便签、任务卡片、文本块等元素自由组织想法，支持拖拽、连线、模板和导入导出。',
+  },
+  '/settings/basic': {
+    title: '基础参数',
+    desc: '配置平台基础信息，包括站点名称、副标题、Logo、导航图标等个性化设置，打造专属的工作空间。',
+  },
+  '/settings/ai-models': {
+    title: 'AI 模型配置',
+    desc: '管理 AI 模型的 API 密钥和参数。支持配置多个模型供应商（Claude、OpenAI 等），设置默认模型和调用参数。',
+  },
+  '/settings/integrations': {
+    title: '第三方集成',
+    desc: '连接外部服务和平台。配置飞书、钉钉等通讯工具的 Webhook，实现消息推送和双向交互。',
+  },
+  '/settings/data': {
+    title: '数据管理',
+    desc: '数据导入导出、备份恢复等操作。管理平台数据的生命周期，确保数据安全和可迁移性。',
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Logo / Workspace Switcher                                         */
+/* ------------------------------------------------------------------ */
+
+function SidebarLogo() {
+  const { state } = useSidebarState();
+  const collapsed = state === 'collapsed';
+  const siteName = useSiteSettingsStore((s) => s.siteName);
+  const siteSubtitle = useSiteSettingsStore((s) => s.siteSubtitle);
+  const logoUrl = useSiteSettingsStore((s) => s.logoUrl);
+
+  return (
+    <div className={cn(
+      'flex items-center gap-2.5 rounded-lg px-2 py-2',
+      collapsed && 'justify-center px-0',
+    )}>
+      <img src={logoUrl} alt={siteName} className="size-8 shrink-0" />
+      {!collapsed && (
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-base font-semibold leading-tight text-sidebar-foreground">
+            {siteName}
+          </span>
+          <span className="text-[10px] leading-tight text-sidebar-foreground/40">
+            {siteSubtitle}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Help Button (appears on hover)                                    */
+/* ------------------------------------------------------------------ */
+
+function HelpButton({ path, onHelp }: { path: string; onHelp: (path: string) => void }) {
+  if (!pageHelp[path]) return null;
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onHelp(path);
+            }}
+            className="ml-auto size-5 shrink-0 items-center justify-center rounded text-sidebar-foreground/30 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors cursor-pointer hidden group-hover/item:inline-flex"
+          >
+            <Icon icon="lucide:circle-help" className="size-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">页面说明</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Flat Nav Group                                                    */
+/* ------------------------------------------------------------------ */
+
+function NavGroup({
+  label,
+  items,
+  isActive,
+  onNav,
+  onHelp,
+}: {
+  label: string;
+  items: NavItem[];
+  isActive: (path: string) => boolean;
+  onNav: (path: string) => void;
+  onHelp: (path: string) => void;
+}) {
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/30">
+        {label}
+      </SidebarGroupLabel>
+      <SidebarMenu>
+        {items.map((item) => {
+          const active = isActive(item.path);
+          return (
+            <SidebarMenuItem key={item.path} className="group/item">
+              <SidebarMenuButton
+                isActive={active}
+                tooltip={item.label}
+                onClick={() => onNav(item.path)}
+                className={cn(
+                  'transition-all duration-150',
+                  active && 'bg-sidebar-accent font-medium',
+                )}
+              >
+                <Icon icon={item.icon} className={cn(
+                  'transition-colors duration-150',
+                  active ? item.iconClass : 'text-sidebar-foreground/50',
+                )} />
+                <span>{item.label}</span>
+                <HelpButton path={item.path} onHelp={onHelp} />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
+      </SidebarMenu>
+    </SidebarGroup>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Collapsible System Group                                          */
+/* ------------------------------------------------------------------ */
+
+function SystemGroup({
+  isActive,
+  onNav,
+  onHelp,
+  items,
+  settingsIcon,
+}: {
+  isActive: (path: string) => boolean;
+  onNav: (path: string) => void;
+  onHelp: (path: string) => void;
+  items: { path: string; icon: string; label: string }[];
+  settingsIcon: string;
+}) {
+  const systemActive = isActive('/settings');
+  const [open, setOpen] = useState(systemActive);
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/30">
+        系统
+      </SidebarGroupLabel>
+      <SidebarMenu>
+        <Collapsible open={open} onOpenChange={setOpen} className="group/collapsible">
+          <SidebarMenuItem>
+            <CollapsibleTrigger asChild>
+              <SidebarMenuButton
+                tooltip="系统管理"
+                className={cn(
+                  'transition-all duration-150',
+                  systemActive && 'bg-sidebar-accent font-medium',
+                )}
+              >
+                <Icon icon={settingsIcon} className={cn(
+                  'transition-colors duration-150',
+                  systemActive ? 'text-sidebar-foreground' : 'text-sidebar-foreground/50',
+                )} />
+                <span>系统管理</span>
+                <Icon icon="lucide:chevron-right" className="ml-auto size-4 text-sidebar-foreground/30 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+              </SidebarMenuButton>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarMenuSub>
+                {items.map((sub) => {
+                  const active = isActive(sub.path);
+                  return (
+                    <SidebarMenuSubItem key={sub.path} className="group/item">
+                      <SidebarMenuSubButton
+                        isActive={active}
+                        onClick={() => onNav(sub.path)}
+                        className={cn(
+                          'cursor-pointer transition-colors duration-150',
+                          active && 'font-medium',
+                        )}
+                      >
+                        <Icon icon={sub.icon} />
+                        <span>{sub.label}</span>
+                        <HelpButton path={sub.path} onHelp={onHelp} />
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  );
+                })}
+              </SidebarMenuSub>
+            </CollapsibleContent>
+          </SidebarMenuItem>
+        </Collapsible>
+      </SidebarMenu>
+    </SidebarGroup>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main Sidebar                                                      */
+/* ------------------------------------------------------------------ */
+
+export default function AppSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { setOpenMobile } = useSidebarActions();
+  const { overviewNav, systemSubNav, settingsIcon } = useNavItems();
+  const [helpPath, setHelpPath] = useState<string | null>(null);
 
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(path + '/');
 
   const handleNav = (path: string) => {
     navigate(path);
-    setMobileMenuOpen(false);
+    setOpenMobile(false);
   };
 
-  const sidebarContent = (
-    <>
-      {/* Logo */}
-      <div
-        className="flex items-center justify-between shrink-0 px-4"
-        style={{ height: 'var(--topbar-height)', borderBottom: '1px solid var(--border-default)' }}
-      >
-        <span className="font-bold tracking-tight" style={{ color: 'var(--accent)', fontSize: sidebarCollapsed ? 18 : 20 }}>
-          {sidebarCollapsed ? 'ME' : 'MutiExpert'}
-        </span>
-        {/* Mobile close */}
-        <button
-          onClick={() => setMobileMenuOpen(false)}
-          className="sm:hidden p-1 rounded-md cursor-pointer"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <X size={18} />
-        </button>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => (
-          <button
-            key={item.path}
-            onClick={() => handleNav(item.path)}
-            title={sidebarCollapsed ? item.label : undefined}
-            className={clsx(
-              'w-full flex items-center gap-3 rounded-lg text-[13px] font-medium cursor-pointer transition-colors',
-              sidebarCollapsed ? 'justify-center px-0 py-2.5 max-sm:justify-start max-sm:px-3' : 'px-3 py-2',
-              isActive(item.path)
-                ? 'text-[var(--accent-text)]'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            )}
-            style={{
-              background: isActive(item.path) ? 'var(--accent-subtle)' : 'transparent',
-              transitionDuration: 'var(--duration-fast)',
-            }}
-            onMouseEnter={(e) => { if (!isActive(item.path)) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-            onMouseLeave={(e) => { if (!isActive(item.path)) e.currentTarget.style.background = 'transparent'; }}
-          >
-            <item.icon size={20} strokeWidth={1.8} />
-            {(!sidebarCollapsed || mobileMenuOpen) && <span>{item.label}</span>}
-          </button>
-        ))}
-      </nav>
-
-      {/* Bottom */}
-      <div className="px-2 py-3 space-y-1 shrink-0" style={{ borderTop: '1px solid var(--border-default)' }}>
-        <ThemeToggle collapsed={sidebarCollapsed && !mobileMenuOpen} />
-        <button
-          onClick={toggleSidebar}
-          className={clsx(
-            'w-full hidden sm:flex items-center gap-3 rounded-lg text-[13px] font-medium cursor-pointer',
-            'text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors',
-            sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2'
-          )}
-          style={{ transitionDuration: 'var(--duration-fast)' }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-        >
-          {sidebarCollapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-          {!sidebarCollapsed && <span>收起侧栏</span>}
-        </button>
-      </div>
-    </>
-  );
+  const helpInfo = helpPath ? pageHelp[helpPath] : null;
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside
-        className={clsx(
-          'fixed inset-y-0 left-0 z-40 flex-col border-r transition-all hidden sm:flex',
-          sidebarCollapsed ? 'w-[64px]' : 'w-[240px]'
-        )}
-        style={{
-          background: 'var(--bg-sidebar)',
-          borderColor: 'var(--border-default)',
-          transitionDuration: 'var(--duration-slow)',
-          transitionTimingFunction: 'var(--ease-default)',
-        }}
-      >
-        {sidebarContent}
-      </aside>
+      <ShadcnSidebar collapsible="icon">
+        <SidebarHeader>
+          <SidebarLogo />
+        </SidebarHeader>
 
-      {/* Mobile overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="fixed inset-0 z-50 sm:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-        />
-      )}
+        <SidebarContent>
+          <NavGroup label="概览" items={overviewNav} isActive={isActive} onNav={handleNav} onHelp={setHelpPath} />
+          <SystemGroup isActive={isActive} onNav={handleNav} onHelp={setHelpPath} items={systemSubNav} settingsIcon={settingsIcon} />
+        </SidebarContent>
 
-      {/* Mobile drawer */}
-      <aside
-        className={clsx(
-          'fixed inset-y-0 left-0 z-50 w-[260px] flex flex-col border-r sm:hidden transition-transform',
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
-        style={{
-          background: 'var(--bg-sidebar)',
-          borderColor: 'var(--border-default)',
-          transitionDuration: 'var(--duration-slow)',
-          transitionTimingFunction: 'var(--ease-default)',
-        }}
-      >
-        {sidebarContent}
-      </aside>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="帮助中心"
+                isActive={isActive('/help')}
+                onClick={() => handleNav('/help')}
+                className={cn(
+                  'transition-all duration-150',
+                  isActive('/help') && 'bg-sidebar-accent font-medium',
+                )}
+              >
+                <Icon icon="streamline-color:customer-support-1" className="text-sidebar-foreground/50" />
+                <span>帮助中心</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      </ShadcnSidebar>
+
+      <Sheet open={!!helpInfo} onOpenChange={(open) => { if (!open) setHelpPath(null); }}>
+        <SheetContent side="right" className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Icon icon="lucide:info" className="size-5 text-primary" />
+              {helpInfo?.title}
+            </SheetTitle>
+            <SheetDescription className="text-sm leading-relaxed">
+              {helpInfo?.desc}
+            </SheetDescription>
+          </SheetHeader>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

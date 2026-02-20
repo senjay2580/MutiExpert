@@ -23,6 +23,14 @@ AsyncSessionLocal = async_sessionmaker(
 ) if engine else None
 
 
+async def init_db():
+    """Auto-create all tables on startup (safe: CREATE IF NOT EXISTS)."""
+    if engine is None:
+        return
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
 async def get_db():
     if AsyncSessionLocal is None:
         raise RuntimeError("Database not configured. Set DATABASE_URL in .env")

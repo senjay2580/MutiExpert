@@ -94,29 +94,6 @@ export interface Insight {
   created_at: string;
 }
 
-export interface Skill {
-  id: string;
-  name: string;
-  type: 'yaml' | 'python';
-  config: Record<string, unknown>;
-  file_path: string;
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  description: string;
-  event_type: string;
-  start_time: string;
-  end_time: string;
-  related_kb_id?: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface DashboardOverview {
   total_knowledge_bases: number;
   total_documents: number;

@@ -48,7 +48,7 @@ async def push_insight_to_feishu(insight_id: UUID, db: AsyncSession = Depends(ge
     insight = result.scalar_one_or_none()
     if not insight:
         raise HTTPException(status_code=404, detail="Insight not found")
-    svc = get_feishu_service()
+    svc = await get_feishu_service(db)
     result = await svc.send_webhook_message(
         title=f"💡 创意洞察: {insight.title}",
         content=insight.content,

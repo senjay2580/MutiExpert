@@ -1,15 +1,95 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback, type PointerEvent as ReactPointerEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Icon } from '@iconify/react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-  ArrowLeft, Upload, FileText, Trash2, Loader2, RefreshCw, BookOpen,
-  Link as LinkIcon, PenLine, X, ExternalLink, Globe,
-} from 'lucide-react';
-import { knowledgeBaseService, documentService } from '../../services/knowledgeBaseService';
-import type { Document as DocType } from '../../types';
-import TiptapEditor from '../../components/editor/TiptapEditor';
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/composed/empty-state';
+import { SolidButton } from '@/components/composed/solid-button';
+import { AnimatedList, AnimatedItem } from '@/components/composed/animated';
+import { ConfirmDialog } from '@/components/composed/confirm-dialog';
+import { cn } from '@/lib/utils';
+import { knowledgeBaseService, documentService } from '@/services/knowledgeBaseService';
+import { illustrationPresets } from '@/lib/illustrations';
+import type { Document as DocType, KnowledgeBase } from '@/types';
+import { useBreadcrumbStore } from '@/stores/useBreadcrumbStore';
+import { ChatPanel } from '@/components/composed/chat-panel';
+import { FloatingEditor } from '@/components/composed/floating-editor';
+
+/* ================================================================ */
+/*  useResizablePanel — VSCode-style drag-to-resize hook             */
+/* ================================================================ */
+
+const PANEL_MIN = 280;
+const PANEL_MAX = 600;
+const PANEL_DEFAULT = 380;
+
+function useResizablePanel(defaultWidth = PANEL_DEFAULT) {
+  const [width, setWidth] = useState(defaultWidth);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
+
+  const onPointerDown = useCallback((e: ReactPointerEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    startX.current = e.clientX;
+    startW.current = width;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [width]);
+
+  const onPointerMove = useCallback((e: ReactPointerEvent) => {
+    if (!isDragging.current) return;
+    // Dragging left → panel gets wider (resize handle is on the left edge of panel)
+    const delta = startX.current - e.clientX;
+    const next = Math.min(PANEL_MAX, Math.max(PANEL_MIN, startW.current + delta));
+    setWidth(next);
+  }, []);
+
+  const onPointerUp = useCallback((e: ReactPointerEvent) => {
+    isDragging.current = false;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  return { width, onPointerDown, onPointerMove, onPointerUp };
+}
+
+const MOCK_KB: KnowledgeBase = {
+  id: 'kb-1',
+  name: '临床医学研究资料',
+  description: '收集整理最新临床医学研究论文与报告',
+  industry_id: 'ind-1',
+  document_count: 8,
+  created_at: '2026-01-15T08:00:00Z',
+  updated_at: '2026-02-20T09:30:00Z',
+};
+
+const MOCK_DOCUMENTS: DocType[] = [
+  { id: 'doc-1', knowledge_base_id: 'kb-1', title: '2026年心血管疾病研究综述.pdf', file_type: 'pdf', file_url: '', file_size: 2457600, content_text: '', chunk_count: 24, status: 'ready', created_at: '2026-02-18T10:00:00Z', updated_at: '2026-02-18T10:30:00Z' },
+  { id: 'doc-2', knowledge_base_id: 'kb-1', title: '新型免疫治疗方案对比分析.docx', file_type: 'docx', file_url: '', file_size: 1843200, content_text: '', chunk_count: 18, status: 'ready', created_at: '2026-02-17T14:00:00Z', updated_at: '2026-02-17T14:20:00Z' },
+  { id: 'doc-3', knowledge_base_id: 'kb-1', title: '基因编辑技术最新进展笔记.md', file_type: 'md', file_url: '', file_size: 45056, content_text: '', chunk_count: 6, status: 'ready', created_at: '2026-02-16T09:00:00Z', updated_at: '2026-02-16T09:05:00Z' },
+  { id: 'doc-4', knowledge_base_id: 'kb-1', title: 'Nature Medicine - 肿瘤靶向治疗', file_type: 'link', file_url: '', file_size: 0, source_url: 'https://nature.com/nm/article-12345', content_text: '', chunk_count: 12, status: 'ready', created_at: '2026-02-15T16:00:00Z', updated_at: '2026-02-15T16:10:00Z' },
+  { id: 'doc-5', knowledge_base_id: 'kb-1', title: '临床试验数据管理规范', file_type: 'article', file_url: '', file_size: 0, content_html: '<p>临床试验数据管理规范内容...</p>', content_text: '临床试验数据管理规范内容...', chunk_count: 8, status: 'ready', created_at: '2026-02-14T11:00:00Z', updated_at: '2026-02-14T11:15:00Z' },
+  { id: 'doc-6', knowledge_base_id: 'kb-1', title: '罕见病诊疗指南2026版.pdf', file_type: 'pdf', file_url: '', file_size: 5242880, content_text: '', chunk_count: 42, status: 'processing', created_at: '2026-02-20T08:00:00Z', updated_at: '2026-02-20T08:00:00Z' },
+  { id: 'doc-7', knowledge_base_id: 'kb-1', title: '药物不良反应监测报告.docx', file_type: 'docx', file_url: '', file_size: 921600, content_text: '', chunk_count: 0, status: 'error', error_message: '文件格式解析失败', created_at: '2026-02-13T10:00:00Z', updated_at: '2026-02-13T10:05:00Z' },
+  { id: 'doc-8', knowledge_base_id: 'kb-1', title: '医疗AI应用白皮书.pdf', file_type: 'pdf', file_url: '', file_size: 3145728, content_text: '', chunk_count: 31, status: 'ready', created_at: '2026-02-12T15:00:00Z', updated_at: '2026-02-12T15:20:00Z' },
+];
 
 type AddMode = null | 'file' | 'link' | 'article';
+type DocFilter = 'all' | 'file' | 'link' | 'article';
 
 export default function KnowledgeDetailPage() {
   const { industryId: kbId } = useParams<{ industryId: string }>();
@@ -18,6 +98,11 @@ export default function KnowledgeDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [addMode, setAddMode] = useState<AddMode>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(true);
+  const [docFilter, setDocFilter] = useState<DocFilter>('all');
+  const panel = useResizablePanel();
   // Link form
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -30,197 +115,606 @@ export default function KnowledgeDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['knowledge-bases'] });
   };
 
-  const { data: kb } = useQuery({
+  const { data: rawKb } = useQuery({
     queryKey: ['knowledge-base', kbId],
     queryFn: () => knowledgeBaseService.get(kbId!),
     enabled: !!kbId,
   });
+  const kb = rawKb ?? MOCK_KB;
 
-  const { data: documents = [], isLoading } = useQuery({
+  const setDynamicLabel = useBreadcrumbStore((s) => s.setDynamicLabel);
+  useEffect(() => {
+    if (kb?.name) setDynamicLabel(kb.name);
+    return () => setDynamicLabel(null);
+  }, [kb?.name, setDynamicLabel]);
+
+  const { data: rawDocuments = [], isLoading } = useQuery({
     queryKey: ['kb-documents', kbId],
     queryFn: () => knowledgeBaseService.listDocuments(kbId!),
     enabled: !!kbId,
   });
+  const documents = rawDocuments.length > 0 ? rawDocuments : MOCK_DOCUMENTS;
 
-  const deleteMutation = useMutation({ mutationFn: documentService.delete, onSuccess: invalidate });
-  const reprocessMutation = useMutation({ mutationFn: documentService.reprocess, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['kb-documents', kbId] }) });
+  const deleteMutation = useMutation({
+    mutationFn: documentService.delete,
+    onSuccess: () => {
+      invalidate();
+      setDeleteDocId(null);
+    },
+  });
 
-  const handleUpload = async (files: FileList | null) => {
+  const handleUpload = useCallback(async (files: FileList | null) => {
     if (!files || !kbId) return;
     setUploading(true);
     try {
       for (const file of Array.from(files)) await knowledgeBaseService.uploadDocument(kbId, file);
       invalidate();
-    } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
     setAddMode(null);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kbId]);
 
   const linkMutation = useMutation({
-    mutationFn: () => knowledgeBaseService.createLinkDocument(kbId!, { title: linkTitle.trim(), source_url: linkUrl.trim() }),
-    onSuccess: () => { invalidate(); setAddMode(null); setLinkTitle(''); setLinkUrl(''); },
+    mutationFn: () =>
+      knowledgeBaseService.createLinkDocument(kbId!, {
+        title: linkTitle.trim(),
+        source_url: linkUrl.trim(),
+      }),
+    onSuccess: () => {
+      invalidate();
+      setAddMode(null);
+      setLinkTitle('');
+      setLinkUrl('');
+    },
   });
 
   const articleMutation = useMutation({
-    mutationFn: () => knowledgeBaseService.createArticleDocument(kbId!, { title: articleTitle.trim(), content_html: articleHtml }),
-    onSuccess: () => { invalidate(); setAddMode(null); setArticleTitle(''); setArticleHtml(''); },
+    mutationFn: () =>
+      knowledgeBaseService.createArticleDocument(kbId!, {
+        title: articleTitle.trim(),
+        content_html: articleHtml,
+      }),
+    onSuccess: () => {
+      invalidate();
+      setAddMode(null);
+      setArticleTitle('');
+      setArticleHtml('');
+    },
   });
 
-  const closeForm = () => { setAddMode(null); setLinkTitle(''); setLinkUrl(''); setArticleTitle(''); setArticleHtml(''); };
+  const closeForm = () => {
+    setAddMode(null);
+    setLinkTitle('');
+    setLinkUrl('');
+    setArticleTitle('');
+    setArticleHtml('');
+  };
+
+  // Drag & drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      handleUpload(e.dataTransfer.files);
+    },
+    [handleUpload],
+  );
+
+  // Delete target doc for confirm dialog
+  const deleteTargetDoc = deleteDocId ? documents.find((d) => d.id === deleteDocId) : null;
+
+  // Stats by type
+  const fileCount = documents.filter((d) => d.file_type === 'md').length;
+  const linkCount = documents.filter((d) => d.file_type === 'link').length;
+  const articleCount = documents.filter((d) => d.file_type === 'article').length;
+  const totalChunks = documents.reduce((sum, d) => sum + (d.chunk_count || 0), 0);
+
+  // Filtered documents
+  const filteredDocs = docFilter === 'all'
+    ? documents
+    : docFilter === 'file'
+      ? documents.filter((d) => d.file_type === 'md')
+      : documents.filter((d) => d.file_type === docFilter);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/knowledge')} className="p-1.5 rounded-md cursor-pointer transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-muted)' }}>
-          <ArrowLeft size={18} strokeWidth={1.8} />
-        </button>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-[15px] sm:text-[16px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{kb?.name ?? '加载中...'}</h2>
-          {kb?.description && <p className="text-[12px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{kb.description}</p>}
+    <div className="flex h-full">
+      {/* ══════════ Left Column: KB Info + Actions ══════════ */}
+      <div className="w-[280px] shrink-0 border-r border-border overflow-y-auto">
+        <div className="p-4 space-y-4">
+          {/* Back + KB Name */}
+          <div className="flex items-start gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/knowledge')}
+              className="shrink-0 text-muted-foreground hover:text-foreground -ml-1 mt-0.5 h-7 w-7"
+            >
+              <Icon icon="lucide:arrow-left" width={16} height={16} />
+            </Button>
+            <div className="min-w-0 flex-1">
+              {kb ? (
+                <>
+                  <h2 className="text-sm font-bold leading-tight">{kb.name}</h2>
+                  {kb.description && (
+                    <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{kb.description}</p>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Stats Grid — clickable filters */}
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard icon="lucide:file-text" label="全部文档" value={documents.length} color="text-blue-500" active={docFilter === 'all'} onClick={() => setDocFilter('all')} />
+            <StatCard icon="lucide:puzzle" label="知识块" value={totalChunks} color="text-indigo-500" />
+            <StatCard icon="streamline-color:new-file" label="文档" value={fileCount} color="text-sky-500" active={docFilter === 'file'} onClick={() => setDocFilter('file')} />
+            <StatCard icon="streamline-color:earth-1" label="链接" value={linkCount} color="text-emerald-500" active={docFilter === 'link'} onClick={() => setDocFilter('link')} />
+            <StatCard icon="streamline-color:pen-draw" label="文章" value={articleCount} color="text-violet-500" active={docFilter === 'article'} onClick={() => setDocFilter('article')} />
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-border" />
+
+          {/* Action Buttons */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">添加资料</p>
+            <SolidButton
+              color="indigo"
+              size="sm"
+              icon="streamline-color:upload-box-1"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full justify-start"
+            >
+              上传文档
+            </SolidButton>
+            <SolidButton
+              color={addMode === 'link' ? 'primary' : 'secondary'}
+              size="sm"
+              icon="streamline-color:link-chain"
+              onClick={() => setAddMode(addMode === 'link' ? null : 'link')}
+              className="w-full justify-start"
+            >
+              添加链接
+            </SolidButton>
+            <SolidButton
+              color={addMode === 'article' ? 'primary' : 'secondary'}
+              size="sm"
+              icon="streamline-color:pen-draw"
+              onClick={() => setAddMode(addMode === 'article' ? null : 'article')}
+              className="w-full justify-start"
+            >
+              写文章
+            </SolidButton>
+            {uploading && (
+              <div className="flex items-center gap-2 text-xs text-primary px-1">
+                <Icon icon="lucide:loader" width={12} height={12} className="animate-spin" />
+                上传中...
+              </div>
+            )}
+          </div>
+
+          {/* Link Form (inline in sidebar) */}
+          {addMode === 'link' && (
+            <SidebarFormCard title="添加链接" onClose={closeForm}>
+              <Input
+                autoFocus
+                placeholder="标题"
+                value={linkTitle}
+                onChange={(e) => setLinkTitle(e.target.value)}
+                className="h-8 text-xs"
+              />
+              <Input
+                placeholder="https://..."
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                className="h-8 text-xs"
+              />
+              <SolidButton
+                color="indigo"
+                size="sm"
+                onClick={() => linkMutation.mutate()}
+                disabled={!linkTitle.trim() || !linkUrl.trim()}
+                loading={linkMutation.isPending}
+                loadingText="添加中..."
+                className="w-full"
+              >
+                添加链接
+              </SolidButton>
+            </SidebarFormCard>
+          )}
+
+          {/* Article form is now a floating editor — see FloatingEditor below */}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".md"
+            multiple
+            className="hidden"
+            onChange={(e) => handleUpload(e.target.files)}
+          />
         </div>
       </div>
 
-      {/* Add buttons */}
-      <div className="grid grid-cols-3 gap-3">
-        {([
-          { mode: 'file' as const, icon: Upload, label: '上传文档', desc: 'PDF / Word / Markdown' },
-          { mode: 'link' as const, icon: LinkIcon, label: '添加链接', desc: '网页链接自动摘要' },
-          { mode: 'article' as const, icon: PenLine, label: '写文章', desc: 'tiptap 富文本编辑' },
-        ]).map((item) => (
-          <button
-            key={item.mode}
-            onClick={() => item.mode === 'file' ? fileInputRef.current?.click() : setAddMode(item.mode)}
-            className="flex flex-col items-center gap-2 p-4 sm:p-5 rounded-xl cursor-pointer transition-colors text-center"
-            style={{ background: addMode === item.mode ? 'var(--accent-subtle)' : 'var(--bg-surface)', border: addMode === item.mode ? '1px solid var(--accent)' : '1px solid var(--border-default)' }}
+      {/* ══════════ Center Column: Document List ══════════ */}
+      <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="p-4 space-y-3">
+          {/* Drop Zone */}
+          <div
+            className={cn(
+              'relative rounded-xl border-2 border-dashed transition-all duration-200',
+              isDragOver
+                ? 'border-primary bg-primary/5 scale-[1.005]'
+                : 'border-border hover:border-muted-foreground/30',
+            )}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
-            <item.icon size={20} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
-            <span className="text-[12px] sm:text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{item.label}</span>
-            <span className="text-[10px] sm:text-[11px] hidden sm:block" style={{ color: 'var(--text-muted)' }}>{item.desc}</span>
-          </button>
-        ))}
-        <input ref={fileInputRef} type="file" accept=".pdf,.docx,.md" multiple className="hidden" onChange={(e) => handleUpload(e.target.files)} />
+            <div className="flex items-center gap-3 px-5 py-4">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                <Icon
+                  icon={isDragOver ? 'streamline-color:download-box-1' : 'streamline-color:upload-box-1'}
+                  width={16}
+                  height={16}
+                  className="text-primary"
+                />
+              </div>
+              <div>
+                <p className="text-[13px] font-medium text-foreground">
+                  {isDragOver ? '松手即可上传' : '拖拽文件到此处上传'}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  支持 Markdown（.md）格式
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Document List */}
+          {isLoading ? (
+            <Card className="gap-0 py-0">
+              <div className="divide-y">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 px-5 py-4">
+                    <Skeleton className="h-10 w-10 rounded-lg" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-1/3" />
+                      <Skeleton className="h-3 w-1/4" />
+                    </div>
+                    <Skeleton className="h-5 w-14 rounded-full" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : documents.length === 0 ? (
+            <EmptyState
+              icon="streamline-color:open-book"
+              illustration={illustrationPresets.emptyDocuments}
+              title="暂无资料"
+              description="上传文档或添加链接，开始构建知识库"
+              action={{
+                label: '上传文档',
+                onClick: () => fileInputRef.current?.click(),
+                color: 'indigo' as const,
+              }}
+            />
+          ) : (
+            <Card className="gap-0 overflow-hidden py-0 card-glow-indigo">
+              {/* List header */}
+              <div className="flex items-center justify-between border-b px-5 py-3">
+                <span className="text-[13px] font-semibold text-foreground">
+                  文档列表
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {docFilter !== 'all' ? `${filteredDocs.length} / ${documents.length} 篇` : `共 ${documents.length} 篇`}
+                </span>
+              </div>
+              {filteredDocs.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                  <Icon icon="lucide:search-x" width={24} height={24} />
+                  <span className="text-[13px]">该分类下暂无文档</span>
+                </div>
+              ) : (
+                <AnimatedList className="divide-y">
+                  {filteredDocs.map((doc) => (
+                    <AnimatedItem key={doc.id}>
+                      <DocRow
+                        doc={doc}
+                        onDelete={() => setDeleteDocId(doc.id)}
+                      />
+                    </AnimatedItem>
+                  ))}
+                </AnimatedList>
+              )}
+            </Card>
+          )}
+        </div>
       </div>
 
-      {uploading && <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}><Loader2 size={14} className="animate-spin" /> 上传中...</div>}
+      {/* ══════════ Right Column: AI Chat Panel (VSCode-style resizable) ══════════ */}
+      {chatOpen ? (
+        <div
+          className="hidden lg:flex shrink-0 h-full"
+          style={{ width: panel.width }}
+        >
+          {/* ── Resize handle ── */}
+          <div
+            className="group relative w-[3px] shrink-0 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 transition-colors"
+            onPointerDown={panel.onPointerDown}
+            onPointerMove={panel.onPointerMove}
+            onPointerUp={panel.onPointerUp}
+          >
+            {/* Visual indicator on hover */}
+            <div className="absolute inset-y-0 -left-[2px] -right-[2px] group-hover:bg-primary/20 group-active:bg-primary/30" />
+          </div>
 
-      {/* Link form */}
-      {addMode === 'link' && (
-        <FormCard title="添加链接" onClose={closeForm}>
-          <input placeholder="标题" value={linkTitle} onChange={(e) => setLinkTitle(e.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px] bg-transparent outline-none" style={{ border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
-          <input placeholder="https://..." value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px] bg-transparent outline-none" style={{ border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
-          <button onClick={() => linkMutation.mutate()} disabled={!linkTitle.trim() || !linkUrl.trim() || linkMutation.isPending} className="px-4 py-2 rounded-lg text-[13px] font-medium cursor-pointer disabled:opacity-50" style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}>
-            {linkMutation.isPending ? '添加中...' : '添加链接'}
-          </button>
-        </FormCard>
-      )}
-
-      {/* Article form */}
-      {addMode === 'article' && (
-        <FormCard title="写文章" onClose={closeForm}>
-          <input placeholder="文章标题" value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px] bg-transparent outline-none" style={{ border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
-          <TiptapEditor content={articleHtml} onChange={setArticleHtml} placeholder="开始编写文章内容..." />
-          <button onClick={() => articleMutation.mutate()} disabled={!articleTitle.trim() || !articleHtml.trim() || articleMutation.isPending} className="px-4 py-2 rounded-lg text-[13px] font-medium cursor-pointer disabled:opacity-50" style={{ background: 'var(--accent)', color: 'var(--text-inverse)' }}>
-            {articleMutation.isPending ? '保存中...' : '保存文章'}
-          </button>
-        </FormCard>
-      )}
-
-      {/* Stats */}
-      <div className="flex gap-3">
-        <StatBadge label="文档总数" value={documents.length} />
-        <StatBadge label="已就绪" value={documents.filter(d => d.status === 'ready').length} />
-        <StatBadge label="处理中" value={documents.filter(d => d.status === 'processing' || d.status === 'uploading').length} />
-      </div>
-
-      {/* Document List */}
-      {isLoading ? (
-        <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
-      ) : documents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 rounded-xl" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}>
-          <BookOpen size={36} strokeWidth={1.2} style={{ color: 'var(--text-muted)' }} />
-          <p className="mt-3 text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无资料，使用上方按钮添加</p>
+          {/* ── Panel content ── */}
+          <div className="flex-1 min-w-0 flex flex-col border-l border-border">
+            <div className="flex-1 min-h-0">
+              <ChatPanel knowledgeBaseId={kbId!} onClose={() => setChatOpen(false)} />
+            </div>
+          </div>
         </div>
       ) : (
-        <div className="rounded-xl overflow-hidden divide-y" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderColor: 'var(--border-default)' }}>
-          {documents.map((doc) => (
-            <DocRow key={doc.id} doc={doc} onDelete={() => { if (confirm('确定删除？')) deleteMutation.mutate(doc.id); }} onReprocess={() => reprocessMutation.mutate(doc.id)} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FormCard({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--bg-surface)', border: '1px solid var(--accent)' }}>
-      <div className="flex items-center justify-between">
-        <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
-        <button onClick={onClose} className="p-1 rounded-md cursor-pointer" style={{ color: 'var(--text-muted)' }}><X size={16} /></button>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function StatBadge({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="px-3 py-2 rounded-lg text-center" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}>
-      <div className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>{value}</div>
-      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{label}</div>
-    </div>
-  );
-}
-
-const typeIcons: Record<string, typeof FileText> = { pdf: FileText, docx: FileText, md: FileText, link: Globe, article: PenLine };
-const statusMap: Record<string, { label: string; color: string; bg: string }> = {
-  ready: { label: '就绪', color: 'var(--success)', bg: 'var(--success-subtle)' },
-  processing: { label: '处理中', color: 'var(--warning)', bg: 'var(--warning-subtle)' },
-  uploading: { label: '上传中', color: 'var(--info)', bg: 'var(--info-subtle)' },
-  error: { label: '错误', color: 'var(--error)', bg: 'var(--error-subtle)' },
-};
-
-function DocRow({ doc, onDelete, onReprocess }: { doc: DocType; onDelete: () => void; onReprocess: () => void }) {
-  const status = statusMap[doc.status] ?? statusMap.processing;
-  const Icon = typeIcons[doc.file_type] ?? FileText;
-  const sizeStr = doc.file_size ? (doc.file_size > 1048576 ? (doc.file_size / 1048576).toFixed(1) + ' MB' : (doc.file_size / 1024).toFixed(0) + ' KB') : '';
-
-  return (
-    <div
-      className="flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-3.5 transition-colors group"
-      style={{ transitionDuration: 'var(--duration-fast)' }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-    >
-      <Icon size={18} strokeWidth={1.5} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-      <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.title}</div>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[11px] uppercase" style={{ color: 'var(--text-muted)' }}>{doc.file_type}</span>
-          {sizeStr && <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{sizeStr}</span>}
-          {doc.source_url && (
-            <a href={doc.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-0.5 text-[11px]" style={{ color: 'var(--accent)' }}>
-              <ExternalLink size={10} /> 链接
-            </a>
-          )}
-          {doc.chunk_count > 0 && <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{doc.chunk_count} chunks</span>}
-        </div>
-      </div>
-      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0" style={{ background: status.bg, color: status.color }}>{status.label}</span>
-      {doc.status === 'error' && (
-        <button onClick={onReprocess} className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" style={{ color: 'var(--text-muted)' }} title="重新处理">
-          <RefreshCw size={14} strokeWidth={1.8} />
+        /* ── Collapsed strip ── */
+        <button
+          onClick={() => setChatOpen(true)}
+          className="hidden lg:flex shrink-0 w-9 h-full flex-col items-center gap-2 pt-3 border-l border-border bg-muted/20 text-muted-foreground hover:text-primary hover:bg-muted/40 transition-colors"
+          title="展开 AI 助手"
+        >
+          <Icon icon="lucide:sparkles" width={15} height={15} className="text-primary" />
+          <span
+            className="text-[10px] font-medium"
+            style={{ writingMode: 'vertical-rl' }}
+          >
+            AI 助手
+          </span>
+          <Icon icon="lucide:chevron-left" width={13} height={13} className="mt-1" />
         </button>
       )}
-      <button
-        onClick={onDelete}
-        className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-        style={{ color: 'var(--text-muted)' }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
-      >
-        <Trash2 size={14} strokeWidth={1.8} />
-      </button>
+
+      {/* ---- Floating Article Editor ---- */}
+      <FloatingEditor
+        open={addMode === 'article'}
+        onClose={closeForm}
+        title={articleTitle}
+        onTitleChange={setArticleTitle}
+        html={articleHtml}
+        onHtmlChange={setArticleHtml}
+        onSave={() => articleMutation.mutate()}
+        saving={articleMutation.isPending}
+      />
+
+      {/* ---- Delete Confirm ---- */}
+      <ConfirmDialog
+        open={!!deleteDocId}
+        onOpenChange={(open) => !open && setDeleteDocId(null)}
+        title="确认删除"
+        description={`确定要删除文档「${deleteTargetDoc?.title}」吗？此操作不可恢复。`}
+        confirmLabel="删除"
+        variant="destructive"
+        onConfirm={() => {
+          if (deleteDocId) deleteMutation.mutate(deleteDocId);
+        }}
+        loading={deleteMutation.isPending}
+      />
     </div>
+  );
+}
+
+/* ================================================================ */
+/*  Stat Card (left sidebar)                                         */
+/* ================================================================ */
+
+function StatCard({
+  icon,
+  label,
+  value,
+  color,
+  active,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  value: number;
+  color: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const isClickable = !!onClick;
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-3 py-2 transition-colors',
+        active
+          ? 'border-primary bg-primary/8 ring-1 ring-primary/20'
+          : 'border-border bg-muted/30',
+        isClickable && 'cursor-pointer hover:border-primary/50 hover:bg-primary/5',
+      )}
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-1.5">
+        <Icon icon={icon} width={12} height={12} className={active ? 'text-primary' : color} />
+        <span className={cn('text-[10px]', active ? 'text-primary font-medium' : 'text-muted-foreground')}>{label}</span>
+      </div>
+      <p className={cn('mt-0.5 text-lg font-bold tabular-nums', active && 'text-primary')}>{value}</p>
+    </div>
+  );
+}
+
+/* ================================================================ */
+/*  Sidebar Form Card                                                */
+/* ================================================================ */
+
+function SidebarFormCard({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="gap-0 border-primary py-0">
+      <CardHeader className="flex-row items-center justify-between px-3 py-2">
+        <CardTitle className="text-xs">{title}</CardTitle>
+        <Button variant="ghost" size="icon-xs" onClick={onClose} className="text-muted-foreground h-5 w-5">
+          <Icon icon="lucide:x" width={12} height={12} />
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-2 px-3 pb-3">
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ================================================================ */
+/*  Document Row                                                     */
+/* ================================================================ */
+
+const typeIconConfig: Record<string, { icon: string; color: string }> = {
+  md: { icon: 'streamline-color:new-file', color: '#6B7280' },
+  link: { icon: 'streamline-color:earth-1', color: '#10B981' },
+  article: { icon: 'streamline-color:pen-draw', color: '#8B5CF6' },
+};
+
+function DocRow({
+  doc,
+  onDelete,
+}: {
+  doc: DocType;
+  onDelete: () => void;
+}) {
+  const typeConf = typeIconConfig[doc.file_type] ?? { icon: 'streamline-color:new-file', color: '#6B7280' };
+  const sizeStr = doc.file_size
+    ? doc.file_size > 1048576
+      ? (doc.file_size / 1048576).toFixed(1) + ' MB'
+      : (doc.file_size / 1024).toFixed(0) + ' KB'
+    : '';
+
+  const canPreview = !!(doc.source_url || doc.file_url);
+  const canDownload = !!doc.file_url;
+
+  const handlePreview = () => {
+    if (doc.source_url) window.open(doc.source_url, '_blank');
+    else if (doc.file_url) window.open(doc.file_url, '_blank');
+  };
+
+  const handleDownload = () => {
+    if (!doc.file_url) return;
+    const a = document.createElement('a');
+    a.href = doc.file_url;
+    a.download = doc.title;
+    a.click();
+  };
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="group flex items-center gap-3 px-5 py-3.5">
+          {/* Type icon with color */}
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+            style={{
+              background: `linear-gradient(135deg, ${typeConf.color}18, ${typeConf.color}08)`,
+              color: typeConf.color,
+            }}
+          >
+            <Icon icon={typeConf.icon} width={18} height={18} />
+          </div>
+
+          {/* Info */}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-medium text-foreground">{doc.title}</div>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: typeConf.color }}
+              >
+                {doc.file_type}
+              </span>
+              {sizeStr && (
+                <span className="text-[11px] text-muted-foreground">{sizeStr}</span>
+              )}
+              {doc.source_url && (
+                <a
+                  href={doc.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:underline"
+                >
+                  <Icon icon="streamline-color:share-link" width={10} height={10} /> 链接
+                </a>
+              )}
+              {doc.chunk_count > 0 && (
+                <span className="text-[11px] text-muted-foreground">{doc.chunk_count} chunks</span>
+              )}
+              {doc.status === 'error' && doc.error_message && (
+                <span className="text-[10px] text-destructive truncate max-w-[150px]" title={doc.error_message}>
+                  {doc.error_message}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Preview */}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="shrink-0 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+            title="预览"
+            onClick={handlePreview}
+          >
+            <Icon icon="streamline-color:magnifying-glass" width={14} height={14} />
+          </Button>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={handlePreview} disabled={!canPreview}>
+          <Icon icon="streamline-color:magnifying-glass" width={14} height={14} />
+          预览
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleDownload} disabled={!canDownload}>
+          <Icon icon="streamline-color:download-box-1" width={14} height={14} />
+          下载
+        </ContextMenuItem>
+        {doc.source_url && (
+          <ContextMenuItem onClick={() => window.open(doc.source_url, '_blank')}>
+            <Icon icon="streamline-color:share-link" width={14} height={14} />
+            打开链接
+          </ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onClick={onDelete}>
+          <Icon icon="lucide:trash-2" width={14} height={14} />
+          删除
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

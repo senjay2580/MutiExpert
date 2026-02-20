@@ -5,13 +5,10 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mutiexpert}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mutiexpert_secure_2024}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
       POSTGRES_DB: ${POSTGRES_DB:-mutiexpert}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_init.sql
-    ports:
-      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mutiexpert}"]
       interval: 5s
@@ -30,13 +27,11 @@ services:
     restart: always
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mutiexpert}:${POSTGRES_PASSWORD:-mutiexpert_secure_2024}@postgres:5432/${POSTGRES_DB:-mutiexpert}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mutiexpert}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/${POSTGRES_DB:-mutiexpert}
       SKILLS_DIR: /app/skills
     volumes:
       - uploads:/app/uploads
       - ./skills:/app/skills
-    ports:
-      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,10 +44,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_KEY: ${API_KEY:-}
     container_name: mutiexpert-web
     restart: always
-    ports:
-      - "3000:80"
     depends_on:
       - backend
     deploy:

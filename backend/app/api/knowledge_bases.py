@@ -2,11 +2,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from app.config import get_settings
 from app.database import get_db
 from app.models.knowledge import KnowledgeBase, Document
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse, DocumentResponse, LinkDocumentCreate, ArticleDocumentCreate
 from app.services.document_parser import parse_document
 from app.services.document_pipeline import process_document
+from app.services.url_fetcher import UnsafeUrlError, fetch_url_text
 
 router = APIRouter()
 
@@ -81,6 +83,8 @@ async def upload_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
+    settings = get_settings()
+
     # Verify KB exists
     result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
     kb = result.scalar_one_or_none()
@@ -94,7 +98,9 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, or MD.")
 
     # Read file content
-    content = await file.read()
+    content = await file.read(settings.max_upload_size + 1)
+    if len(content) > settings.max_upload_size:
+        raise HTTPException(status_code=413, detail="File too large")
 
     # Parse text
     try:
@@ -112,6 +118,7 @@ async def upload_document(
         status="processing",
     )
     db.add(doc)
+    kb.document_count = (kb.document_count or 0) + 1
     await db.commit()
     await db.refresh(doc)
 
@@ -133,15 +140,30 @@ async def create_link_document(
     if not kb:
         raise HTTPException(status_code=404, detail="Knowledge base not found")
 
+    try:
+        text = await fetch_url_text(data.source_url)
+    except UnsafeUrlError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        message = str(e) or "Failed to fetch URL content"
+        if "too large" in message.lower():
+            raise HTTPException(status_code=413, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+
+    if not text:
+        raise HTTPException(status_code=400, detail="No readable text found at URL")
+
     doc = Document(
         knowledge_base_id=kb_id,
         title=data.title,
         file_type="link",
         source_url=data.source_url,
+        content_text=text,
+        file_size=len(text.encode("utf-8")),
         status="processing",
     )
     db.add(doc)
-    kb.document_count += 1
+    kb.document_count = (kb.document_count or 0) + 1
     await db.commit()
     await db.refresh(doc)
     background_tasks.add_task(process_document, doc.id)
@@ -174,7 +196,7 @@ async def create_article_document(
         status="processing",
     )
     db.add(doc)
-    kb.document_count += 1
+    kb.document_count = (kb.document_count or 0) + 1
     await db.commit()
     await db.refresh(doc)
     background_tasks.add_task(process_document, doc.id)

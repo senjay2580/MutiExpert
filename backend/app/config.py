@@ -5,9 +5,9 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # PostgreSQL
     postgres_user: str = "mutiexpert"
-    postgres_password: str = "mutiexpert_secure_2024"
+    postgres_password: str = "change_me_in_production"
     postgres_db: str = "mutiexpert"
-    database_url: str = "postgresql+asyncpg://mutiexpert:mutiexpert_secure_2024@localhost:5432/mutiexpert"
+    database_url: str = "postgresql+asyncpg://mutiexpert:change_me_in_production@localhost:5432/mutiexpert"
 
     # AI Models
     anthropic_api_key: str = ""
@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Upload
     upload_dir: str = "/app/uploads"
     max_upload_size: int = 52428800  # 50MB
+
+    # Security
+    api_key: str = ""  # If set, require X-API-Key / Bearer token for most endpoints
+    max_link_fetch_size: int = 2000000  # 2MB max remote HTML/text fetch
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

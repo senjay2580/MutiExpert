@@ -2,9 +2,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
-import {
-  Bold, Italic, List, ListOrdered, Heading2, Link as LinkIcon, Undo, Redo, Code,
-} from 'lucide-react';
+import { Icon } from '@iconify/react';
 
 interface TiptapEditorProps {
   content: string;
@@ -26,11 +24,11 @@ export default function TiptapEditor({ content, onChange, placeholder = '开始�
   if (!editor) return null;
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
+    <div className="rounded-xl overflow-hidden flex flex-col" style={{ border: '1px solid var(--border-default)' }}>
       <Toolbar editor={editor} />
       <EditorContent
         editor={editor}
-        className="tiptap-content"
+        className="tiptap-content flex-1 min-h-0 overflow-y-auto"
       />
     </div>
   );
@@ -57,32 +55,32 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
       style={{ background: 'var(--bg-sunken)', borderBottom: '1px solid var(--border-default)' }}
     >
       <button className={btnClass} style={btn(editor.isActive('bold'))} onClick={() => editor.chain().focus().toggleBold().run()}>
-        <Bold size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:text-style" width={15} height={15} />
       </button>
       <button className={btnClass} style={btn(editor.isActive('italic'))} onClick={() => editor.chain().focus().toggleItalic().run()}>
-        <Italic size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:paragraph" width={15} height={15} />
       </button>
       <button className={btnClass} style={btn(editor.isActive('heading', { level: 2 }))} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
-        <Heading2 size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:heading-2-paragraph-styles-heading" width={15} height={15} />
       </button>
       <button className={btnClass} style={btn(editor.isActive('bulletList'))} onClick={() => editor.chain().focus().toggleBulletList().run()}>
-        <List size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:bullet-list" width={15} height={15} />
       </button>
       <button className={btnClass} style={btn(editor.isActive('orderedList'))} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-        <ListOrdered size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:ascending-number-order" width={15} height={15} />
       </button>
       <button className={btnClass} style={btn(editor.isActive('codeBlock'))} onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
-        <Code size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:curly-brackets" width={15} height={15} />
       </button>
       <button className={btnClass} style={btn(editor.isActive('link'))} onClick={addLink}>
-        <LinkIcon size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:link-chain" width={15} height={15} />
       </button>
       <div className="w-px h-4 mx-1" style={{ background: 'var(--border-default)' }} />
       <button className={btnClass} style={btn(false)} onClick={() => editor.chain().focus().undo().run()}>
-        <Undo size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:return-2" width={15} height={15} />
       </button>
       <button className={btnClass} style={btn(false)} onClick={() => editor.chain().focus().redo().run()}>
-        <Redo size={15} strokeWidth={2} />
+        <Icon icon="streamline-color:ai-redo-spark" width={15} height={15} />
       </button>
     </div>
   );

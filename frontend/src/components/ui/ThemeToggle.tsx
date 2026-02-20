@@ -1,64 +1,65 @@
-import { Sun, Moon, Monitor } from 'lucide-react';
-import clsx from 'clsx';
-import { useTheme } from '../../hooks/useTheme';
-import type { Theme } from '../../stores/useAppStore';
+import { Icon } from '@iconify/react';
+import { cn } from '@/lib/utils';
+import { useTheme } from '@/hooks/useTheme';
+import { useSidebarState } from '@/components/ui/sidebar';
+import {
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+} from '@/components/ui/sidebar';
+import type { Theme } from '@/stores/useAppStore';
 
-const themeOptions: { value: Theme; icon: typeof Sun; label: string }[] = [
-  { value: 'light', icon: Sun, label: '浅色' },
-  { value: 'dark', icon: Moon, label: '深色' },
-  { value: 'system', icon: Monitor, label: '跟随系统' },
+const themeOptions: { value: Theme; icon: string; label: string }[] = [
+  { value: 'light', icon: 'streamline-color:brightness-1', label: '浅色' },
+  { value: 'dark', icon: 'streamline-color:waning-cresent-moon', label: '深色' },
 ];
 
-export function ThemeToggle({ collapsed }: { collapsed?: boolean }) {
-  const { theme, setTheme } = useTheme();
+export function ThemeToggle() {
+  const { theme, setThemeWithTransition } = useTheme();
+  const { state } = useSidebarState();
+  const collapsed = state === 'collapsed';
 
   if (collapsed) {
-    const current = themeOptions.find((o) => o.value === theme) ?? themeOptions[0];
-    const nextIndex = (themeOptions.findIndex((o) => o.value === theme) + 1) % themeOptions.length;
+    const current =
+      themeOptions.find((o) => o.value === theme) ?? themeOptions[0];
+    const nextIndex =
+      (themeOptions.findIndex((o) => o.value === theme) + 1) %
+      themeOptions.length;
     const next = themeOptions[nextIndex];
+
     return (
-      <button
-        onClick={() => setTheme(next.value)}
-        title={`当前: ${current.label}，点击切换到${next.label}`}
-        className={clsx(
-          'w-full flex items-center justify-center py-2.5 rounded-lg cursor-pointer',
-          'text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors'
-        )}
-        style={{ transitionDuration: 'var(--duration-fast)' }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-      >
-        <current.icon size={18} strokeWidth={1.8} />
-      </button>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            tooltip={`当前: ${current.label}，点击切换到${next.label}`}
+            onClick={(e) => setThemeWithTransition(next.value, e)}
+          >
+            <Icon icon={current.icon} />
+            <span>切换主题</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
     );
   }
 
   return (
-    <div
-      className="flex items-center gap-1 p-1 rounded-lg"
-      style={{ background: 'var(--bg-sunken)' }}
-    >
+    <div className="flex items-center gap-0.5 rounded-lg bg-sidebar-accent/60 p-0.5">
       {themeOptions.map((option) => {
-        const Icon = option.icon;
         const active = theme === option.value;
         return (
           <button
             key={option.value}
-            onClick={() => setTheme(option.value)}
+            onClick={(e) => setThemeWithTransition(option.value, e)}
             title={option.label}
-            className={clsx(
-              'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium cursor-pointer transition-all',
+            className={cn(
+              'flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all duration-200',
               active
-                ? 'text-[var(--text-primary)]'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
+                : 'text-sidebar-foreground/35 hover:text-sidebar-foreground/60'
             )}
-            style={{
-              background: active ? 'var(--bg-surface)' : 'transparent',
-              boxShadow: active ? 'var(--shadow-xs)' : 'none',
-              transitionDuration: 'var(--duration-normal)',
-            }}
           >
-            <Icon size={14} strokeWidth={1.8} />
+            <Icon icon={option.icon} className="size-3.5" />
+            <span>{option.label}</span>
           </button>
         );
       })}

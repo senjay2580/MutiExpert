@@ -4,14 +4,14 @@ import SettingsLayout from '../layouts/SettingsLayout';
 import DashboardPage from '../pages/dashboard/DashboardPage';
 import KnowledgePage from '../pages/knowledge/KnowledgePage';
 import KnowledgeDetailPage from '../pages/knowledge/KnowledgeDetailPage';
-import ChatListPage from '../pages/chat/ChatListPage';
-import ChatConversationPage from '../pages/chat/ChatConversationPage';
-import AnalyticsPage from '../pages/analytics/AnalyticsPage';
 import AIModelsPage from '../pages/settings/AIModelsPage';
+import BasicSettingsPage from '../pages/settings/BasicSettingsPage';
 import IntegrationsPage from '../pages/settings/IntegrationsPage';
 import DataManagementPage from '../pages/settings/DataManagementPage';
-import SkillsPage from '../pages/skills/SkillsPage';
 import ScheduledTasksPage from '../pages/scheduler/ScheduledTasksPage';
+import BoardListPage from '../pages/boards/BoardListPage';
+import BoardEditorPage from '../pages/boards/BoardEditorPage';
+import HelpCenterPage from '../pages/help/HelpCenterPage';
 
 export const router = createBrowserRouter([
   {
@@ -22,16 +22,16 @@ export const router = createBrowserRouter([
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'knowledge', element: <KnowledgePage /> },
       { path: 'knowledge/:industryId', element: <KnowledgeDetailPage /> },
-      { path: 'chat', element: <ChatListPage /> },
-      { path: 'chat/:id', element: <ChatConversationPage /> },
-      { path: 'skills', element: <SkillsPage /> },
       { path: 'scheduler', element: <ScheduledTasksPage /> },
-      { path: 'analytics', element: <AnalyticsPage /> },
+      { path: 'boards', element: <BoardListPage /> },
+      { path: 'boards/:boardId', element: <BoardEditorPage /> },
+      { path: 'help', element: <HelpCenterPage /> },
       {
         path: 'settings',
         element: <SettingsLayout />,
         children: [
-          { index: true, element: <Navigate to="ai-models" replace /> },
+          { index: true, element: <Navigate to="basic" replace /> },
+          { path: 'basic', element: <BasicSettingsPage /> },
           { path: 'ai-models', element: <AIModelsPage /> },
           { path: 'integrations', element: <IntegrationsPage /> },
           { path: 'data', element: <DataManagementPage /> },

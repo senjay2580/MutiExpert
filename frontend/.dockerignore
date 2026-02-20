@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.vite/
+
+.env
+.env.*
+
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.git/
+.gitignore
+.DS_Store
+Thumbs.db

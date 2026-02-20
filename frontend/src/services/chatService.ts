@@ -34,9 +34,14 @@ export function streamMessage(
 
   const controller = new AbortController();
 
+  const apiKey = (import.meta.env.VITE_API_KEY as string | undefined) || localStorage.getItem('MUTIEXPERT_API_KEY');
+
   fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+    },
     body: JSON.stringify({ content }),
     signal: controller.signal,
   }).then(async (response) => {

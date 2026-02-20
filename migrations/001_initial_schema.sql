@@ -149,14 +149,3 @@ CREATE INDEX idx_messages_conv_time ON messages(conversation_id, created_at);
 CREATE INDEX idx_links_source_target ON knowledge_links(source_kb_id, target_kb_id);
 CREATE INDEX idx_calendar_time ON calendar_events(start_time, end_time);
 
--- ========== 种子数据 ==========
-
-INSERT INTO industries (name, description, icon, color) VALUES
-('科技', '信息技术、软件工程、AI/ML', 'laptop', '#3B82F6'),
-('金融', '银行、投资、保险、加密货币', 'dollar-sign', '#10B981'),
-('医疗', '医学、生物技术、健康管理', 'heart-pulse', '#EF4444'),
-('教育', '教学方法、课程设计、EdTech', 'graduation-cap', '#8B5CF6'),
-('设计', 'UI/UX、平面设计、工业设计', 'palette', '#F59E0B'),
-('法律', '法规、合规、知识产权', 'scale', '#6B7280'),
-('营销', '品牌、增长、内容营销', 'megaphone', '#EC4899'),
-('制造', '供应链、质量管理、工业4.0', 'factory', '#14B8A6');

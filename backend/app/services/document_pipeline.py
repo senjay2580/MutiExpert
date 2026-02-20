@@ -1,7 +1,7 @@
 """文档处理管线 - 上传 → 解析 → 分块 → 向量化 → 存储"""
 import uuid
 from sqlalchemy import select
-from app.models.knowledge import Document, KnowledgeBase
+from app.models.knowledge import Document
 from app.models.network import DocumentChunk
 from app.services.embedding_service import generate_embeddings
 from app.core.chunking import chunk_text
@@ -55,12 +55,6 @@ async def process_document(document_id: uuid.UUID):
 
             doc.chunk_count = len(chunks)
             doc.status = "ready"
-
-            # 更新知识库文档计数
-            kb_result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == doc.knowledge_base_id))
-            kb = kb_result.scalar_one_or_none()
-            if kb:
-                kb.document_count = (kb.document_count or 0) + 1
 
             await db.commit()
 

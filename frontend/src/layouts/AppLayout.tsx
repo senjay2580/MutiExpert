@@ -1,32 +1,37 @@
-import { Outlet } from 'react-router-dom';
-import clsx from 'clsx';
-import { useAppStore } from '../stores/useAppStore';
+import { Outlet, useLocation } from 'react-router-dom';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import { CommandPalette } from '@/components/composed/command-palette';
+
+/** Routes that need full-width, edge-to-edge layout (no max-w / padding) */
+const FULL_WIDTH_PATTERNS = [
+  /^\/knowledge\/[^/]+$/, // /knowledge/:id  detail page
+  /^\/boards\/[^/]+$/,    // /boards/:id     board editor
+];
 
 export default function AppLayout() {
-  const { sidebarCollapsed } = useAppStore();
+  const { pathname } = useLocation();
+  const isFullWidth = FULL_WIDTH_PATTERNS.some((re) => re.test(pathname));
 
   return (
-    <div className="flex h-screen" style={{ background: 'var(--bg-base)' }}>
+    <SidebarProvider className="!h-svh">
       <Sidebar />
-      <div
-        className={clsx(
-          'flex flex-col flex-1 min-w-0 transition-all sidebar-offset',
-          sidebarCollapsed && 'collapsed'
-        )}
-        style={{
-          transitionDuration: 'var(--duration-slow)',
-          transitionTimingFunction: 'var(--ease-default)',
-        }}
-      >
+      <SidebarInset className="overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[var(--content-max-width)] px-4 py-4 sm:p-[var(--content-padding)]">
+        <CommandPalette />
+        {isFullWidth ? (
+          <div className="relative flex-1 min-h-0">
             <Outlet />
           </div>
-        </main>
-      </div>
-    </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
+              <Outlet />
+            </div>
+          </div>
+        )}
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
