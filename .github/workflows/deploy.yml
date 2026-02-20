@@ -44,6 +44,7 @@ jobs:
           script: |
             cd /opt/mutiexpert
             git pull origin main
-            docker compose up -d --build --remove-orphans
+            docker compose build --no-cache frontend
+            docker compose up -d --remove-orphans
             docker image prune -f
             echo "Deploy completed at $(date)"
