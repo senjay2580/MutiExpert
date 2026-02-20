@@ -40,9 +40,10 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
+          command_timeout: 30m
           script: |
             cd /opt/mutiexpert
             git pull origin main
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
+            docker compose up -d --build --remove-orphans
             docker image prune -f
             echo "Deploy completed at $(date)"
