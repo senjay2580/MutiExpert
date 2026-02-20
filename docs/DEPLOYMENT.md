@@ -87,7 +87,7 @@ server {
 
 ## 7) 磁盘 / 镜像体积优化建议
 
-- 后端镜像偏大通常来自 `sentence-transformers` → `torch/transformers` 依赖链（属于正常现象），如果 40G 磁盘紧张，优先从 **清理旧镜像/构建缓存** 入手：
+- Embedding 已改用 OpenAI API（`text-embedding-3-small`），不再依赖 `sentence-transformers` / `torch`，镜像体积大幅缩小。如果磁盘紧张，可清理旧镜像：
   - 查看占用：`docker system df`
   - 清理悬挂镜像：`docker image prune -f`
   - 清理构建缓存：`docker builder prune -f`

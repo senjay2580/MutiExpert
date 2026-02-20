@@ -13,9 +13,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
-    # Embedding
+    # Embedding (SiliconFlow)
+    embedding_api_base: str = "https://api.siliconflow.cn/v1"
+    embedding_api_key: str = ""
     embedding_model: str = "BAAI/bge-m3"
-    embedding_device: str = "cpu"
 
     # Feishu
     feishu_app_id: str = ""
