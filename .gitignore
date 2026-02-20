@@ -42,3 +42,4 @@ build/
 */.cache/
 **/.cache/
 .claude/commands/web-search-plus/config.json
+.claude/settings.local.json

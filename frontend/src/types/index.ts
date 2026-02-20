@@ -40,7 +40,7 @@ export interface Conversation {
   id: string;
   title: string;
   knowledge_base_ids: string[];
-  model_provider: 'claude' | 'codex';
+  model_provider: 'claude' | 'openai' | 'codex';
   created_at: string;
   updated_at: string;
 }

@@ -15,25 +15,25 @@ interface FeishuConfig {
   bot_enabled: boolean;
 }
 
-const MOCK_FEISHU_CONFIG: FeishuConfig = {
-  app_id: 'cli_a5e8****',
-  app_secret_encrypted: '********',
-  webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/xxxx-yyyy',
-  bot_enabled: true,
-};
-
 export default function IntegrationsPage() {
   const { data: config } = useQuery({
     queryKey: ['feishu-config'],
     queryFn: () => api.get<FeishuConfig>('/feishu/config').then((r) => r.data),
   });
 
-  const effectiveConfig = config ?? MOCK_FEISHU_CONFIG;
+  if (!config) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="第三方集成" description="连接外部服务，扩展平台能力" />
+        <FeishuCard initialConfig={{ app_id: '', app_secret_encrypted: '', webhook_url: '', bot_enabled: false }} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
       <PageHeader title="第三方集成" description="连接外部服务，扩展平台能力" />
-      <FeishuCard key={`${effectiveConfig.app_id}:${effectiveConfig.webhook_url}`} initialConfig={effectiveConfig} />
+      <FeishuCard key={`${config.app_id}:${config.webhook_url}`} initialConfig={config} />
     </div>
   );
 }

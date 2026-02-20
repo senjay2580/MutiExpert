@@ -25,7 +25,7 @@ export default function SettingsLayout() {
         value={activeTab}
         onValueChange={(value) => navigate(value)}
       >
-        <TabsList variant="line">
+        <TabsList variant="browser">
           {settingsTabs.map((tab) => (
             <TabsTrigger key={tab.path} value={tab.path} className="gap-2">
               <Icon icon={tab.icon} className="size-4" />

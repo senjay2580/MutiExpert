@@ -9,19 +9,11 @@ import { CardSkeleton } from '@/components/composed/loading-skeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
-const MOCK_OVERVIEW = {
-  total_knowledge_bases: 12,
-  total_documents: 1756,
-  total_conversations: 342,
-  total_insights: 89,
-};
-
 export default function DataManagementPage() {
-  const { data: rawOverview, isLoading } = useQuery({
+  const { data: overview, isLoading } = useQuery({
     queryKey: ['dashboard-overview'],
     queryFn: dashboardService.getOverview,
   });
-  const overview = rawOverview ?? MOCK_OVERVIEW;
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);

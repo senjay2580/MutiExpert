@@ -44,6 +44,10 @@ const pageHelp: Record<string, { title: string; desc: string }> = {
     title: '仪表盘',
     desc: '总览平台核心数据：知识库数量、文档总量、AI 对话统计、跨域洞察等关键指标，以及文档上传趋势、AI 调用趋势、行业分布等可视化图表，帮助你快速掌握平台运行状态。',
   },
+  '/assistant': {
+    title: 'AI 问答',
+    desc: '统一调用所有知识库与系统 Skills 的智能问答入口。输入问题后，调度器会自动检索、整合与编排答案，并提供可执行的结论与建议。',
+  },
   '/knowledge': {
     title: '知识库',
     desc: '管理所有行业知识库。你可以新建知识库、上传文档（PDF、Word、Markdown 等）、浏览和搜索已有资料，以及查看知识库详情和关联关系。',
@@ -87,18 +91,25 @@ function SidebarLogo() {
 
   return (
     <div className={cn(
-      'flex items-center gap-2.5 rounded-lg px-2 py-2',
+      'flex items-center gap-3 rounded-lg px-2.5 py-2 transition-colors hover:bg-sidebar-accent/60',
       collapsed && 'justify-center px-0',
     )}>
-      <img src={logoUrl} alt={siteName} className="size-8 shrink-0" />
+      <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-sidebar-border/60 bg-sidebar-accent/70">
+        <img src={logoUrl} alt={siteName} className="size-6 object-contain" />
+      </div>
       {!collapsed && (
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-base font-semibold leading-tight text-sidebar-foreground">
-            {siteName}
-          </span>
-          <span className="text-[10px] leading-tight text-sidebar-foreground/40">
-            {siteSubtitle}
-          </span>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="truncate text-sm font-semibold leading-tight text-sidebar-foreground">
+              {siteName}
+            </span>
+            {siteSubtitle ? (
+              <span className="inline-flex w-fit max-w-full items-center rounded-full bg-sidebar-accent px-1.5 py-0.5 text-[9px] font-semibold text-sidebar-foreground/60">
+                {siteSubtitle}
+              </span>
+            ) : null}
+          </div>
+          <Icon icon="lucide:chevron-down" className="ml-auto size-4 shrink-0 text-sidebar-foreground/40" />
         </div>
       )}
     </div>

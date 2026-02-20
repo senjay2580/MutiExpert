@@ -76,6 +76,19 @@ CREATE TABLE messages (
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- AI 模型配置
+CREATE TABLE ai_model_configs (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    provider_id VARCHAR(50) UNIQUE NOT NULL,
+    name        VARCHAR(200) NOT NULL,
+    base_url    TEXT,
+    api_key     TEXT,
+    model       VARCHAR(100),
+    extras      JSONB DEFAULT '{}',
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 知识关联（网络图边）
 CREATE TABLE knowledge_links (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -146,6 +159,6 @@ CREATE INDEX idx_chunks_embedding ON document_chunks
 CREATE INDEX idx_chunks_kb_id ON document_chunks(knowledge_base_id);
 CREATE INDEX idx_documents_kb_id ON documents(knowledge_base_id);
 CREATE INDEX idx_messages_conv_time ON messages(conversation_id, created_at);
+CREATE INDEX idx_ai_model_provider ON ai_model_configs(provider_id);
 CREATE INDEX idx_links_source_target ON knowledge_links(source_kb_id, target_kb_id);
 CREATE INDEX idx_calendar_time ON calendar_events(start_time, end_time);
-

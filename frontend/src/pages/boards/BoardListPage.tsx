@@ -23,65 +23,6 @@ import { boardService, type BoardListItem } from '@/services/boardService';
 import { illustrationPresets } from '@/lib/illustrations';
 import { cn } from '@/lib/utils';
 
-// ======================== Mock Data ========================
-
-const MOCK_BOARDS: BoardListItem[] = [
-  {
-    id: 'board-1',
-    name: 'Q1 产品路线图',
-    description: '2026 年第一季度产品功能规划与优先级排列',
-    thumbnail_url: null,
-    node_count: 12,
-    created_at: '2026-01-15T08:00:00Z',
-    updated_at: '2026-02-20T09:30:00Z',
-  },
-  {
-    id: 'board-2',
-    name: '头脑风暴 - 新功能',
-    description: '团队头脑风暴会议记录，收集新功能创意',
-    thumbnail_url: null,
-    node_count: 8,
-    created_at: '2026-02-01T10:00:00Z',
-    updated_at: '2026-02-19T14:00:00Z',
-  },
-  {
-    id: 'board-3',
-    name: '系统架构设计',
-    description: '后端微服务架构拆分方案与数据流向',
-    thumbnail_url: null,
-    node_count: 15,
-    created_at: '2026-01-20T08:00:00Z',
-    updated_at: '2026-02-18T16:00:00Z',
-  },
-  {
-    id: 'board-4',
-    name: '每周任务看板',
-    description: '本周开发任务追踪，To Do / Doing / Done',
-    thumbnail_url: null,
-    node_count: 6,
-    created_at: '2026-02-10T08:00:00Z',
-    updated_at: '2026-02-20T11:00:00Z',
-  },
-  {
-    id: 'board-5',
-    name: '用户旅程地图',
-    description: '新用户从注册到首次使用的完整路径',
-    thumbnail_url: null,
-    node_count: 10,
-    created_at: '2026-02-05T08:00:00Z',
-    updated_at: '2026-02-17T10:00:00Z',
-  },
-  {
-    id: 'board-6',
-    name: '竞品分析',
-    description: '主要竞品功能对比与差异化策略',
-    thumbnail_url: null,
-    node_count: 9,
-    created_at: '2026-01-25T08:00:00Z',
-    updated_at: '2026-02-16T12:00:00Z',
-  },
-];
-
 export default function BoardListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -95,7 +36,7 @@ export default function BoardListPage() {
     queryKey: ['boards'],
     queryFn: boardService.list,
   });
-  const boards = rawBoards.length > 0 ? rawBoards : MOCK_BOARDS;
+  const boards = rawBoards;
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; description?: string }) => boardService.create(data),

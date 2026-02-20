@@ -59,6 +59,7 @@ async def generate_insights(db: AsyncSession) -> list[dict]:
     async for chunk in stream_chat(
         [{"role": "user", "content": prompt}],
         provider="claude",
+        db=db,
     ):
         full_response += chunk
 

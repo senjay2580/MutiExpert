@@ -49,6 +49,7 @@ const quickActions = [
  */
 const segmentLabels: Record<string, string> = {
   dashboard: '仪表盘',
+  assistant: 'AI 问答',
   knowledge: '知识库',
   scheduler: '定时任务',
   boards: '画板',

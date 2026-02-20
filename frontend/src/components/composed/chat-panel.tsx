@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { chatService, streamMessage } from '@/services/chatService';
+import { useAppStore } from '@/stores/useAppStore';
 import ReactMarkdown from 'react-markdown';
 
 /* ================================================================ */
@@ -43,6 +44,10 @@ interface ChatPanelProps {
 /* ================================================================ */
 
 export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProps) {
+  const currentModel = useAppStore((s) => s.currentModel);
+  const normalizedModel = currentModel === 'codex' ? 'openai' : currentModel;
+  const providerLabel = normalizedModel === 'openai' ? 'OpenAI' : 'Claude';
+  const providerSubLabel = normalizedModel === 'openai' ? 'Responses' : 'Sonnet';
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -72,6 +77,10 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
         if (cancelled) return;
         if (existing) {
           setConversationId(existing.id);
+          const existingProvider = existing.model_provider === 'codex' ? 'openai' : existing.model_provider;
+          if (existingProvider !== normalizedModel) {
+            await chatService.switchModel(existing.id, normalizedModel);
+          }
           const existingMessages = await chatService.listMessages(existing.id);
           if (cancelled) return;
           setMessages(
@@ -95,14 +104,14 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
     }
     init();
     return () => { cancelled = true; };
-  }, [knowledgeBaseId]);
+  }, [knowledgeBaseId, normalizedModel]);
 
   const ensureConversation = async (): Promise<string> => {
     if (conversationId) return conversationId;
     const conv = await chatService.createConversation({
       title: '知识库问答',
       knowledge_base_ids: [knowledgeBaseId],
-      model_provider: 'claude',
+      model_provider: normalizedModel,
     });
     setConversationId(conv.id);
     return conv.id;
@@ -173,8 +182,8 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--cc-accent)]/15">
             <Icon icon="lucide:sparkles" width={13} height={13} className="text-[var(--cc-accent)]" />
           </div>
-          <span className="text-[13px] font-semibold text-[var(--cc-fg)]">Claude</span>
-          <span className="text-[10px] text-[var(--cc-fg-muted)] font-medium">Sonnet</span>
+          <span className="text-[13px] font-semibold text-[var(--cc-fg)]">{providerLabel}</span>
+          <span className="text-[10px] text-[var(--cc-fg-muted)] font-medium">{providerSubLabel}</span>
         </div>
         <div className="flex items-center gap-0.5">
           <Button
@@ -213,7 +222,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
             <WelcomeState />
           ) : (
             messages.map((msg) => (
-              <CCMessage key={msg.id} message={msg} />
+              <CCMessage key={msg.id} message={msg} providerLabel={providerLabel} />
             ))
           )}
         </div>
@@ -303,7 +312,7 @@ function WelcomeState() {
 /*  Claude Code Style Message                                        */
 /* ================================================================ */
 
-function CCMessage({ message }: { message: ChatMessage }) {
+function CCMessage({ message, providerLabel }: { message: ChatMessage; providerLabel: string }) {
   const isUser = message.role === 'user';
 
   return (
@@ -321,7 +330,7 @@ function CCMessage({ message }: { message: ChatMessage }) {
           {/* Role label */}
           <div className="flex items-center gap-1.5">
             <Icon icon="lucide:sparkles" width={12} height={12} className="text-[var(--cc-accent)]" />
-            <span className="text-[11px] font-semibold text-[var(--cc-accent)]">Claude</span>
+            <span className="text-[11px] font-semibold text-[var(--cc-accent)]">{providerLabel}</span>
           </div>
 
           {/* Content */}

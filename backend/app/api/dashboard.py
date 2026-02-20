@@ -29,7 +29,10 @@ async def get_ai_usage(db: AsyncSession = Depends(get_db)):
         select(func.count(Message.id)).where(Message.role == "assistant", Message.model_used == "claude")
     )).scalar() or 0
     codex_count = (await db.execute(
-        select(func.count(Message.id)).where(Message.role == "assistant", Message.model_used == "codex")
+        select(func.count(Message.id)).where(
+            Message.role == "assistant",
+            Message.model_used.in_(["openai", "codex"]),
+        )
     )).scalar() or 0
     total_tokens = (await db.execute(
         select(func.coalesce(func.sum(Message.tokens_used), 0)).where(Message.role == "assistant")

@@ -97,11 +97,13 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
     history = list(reversed(history_result.scalars().all()))
     messages = [{"role": m.role, "content": m.content} for m in history]
     provider = conv.model_provider or "claude"
+    if provider == "codex":
+        provider = "openai"
 
     async def event_stream():
         full_content = ""
         try:
-            async for chunk in stream_chat(messages, provider, system_prompt):
+            async for chunk in stream_chat(messages, provider, system_prompt, db=db):
                 full_content += chunk
                 yield f"event: chunk\ndata: {json.dumps({'content': chunk, 'type': 'text'})}\n\n"
             if sources:

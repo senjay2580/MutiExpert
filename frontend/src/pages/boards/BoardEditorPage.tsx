@@ -301,6 +301,8 @@ function GuideOverlay({ onClose }: { onClose: () => void }) {
     { icon: 'lucide:mouse-pointer-click', text: '从左侧工具栏拖拽组件到画布' },
     { icon: 'lucide:mouse-pointer-2', text: '双击节点编辑内容' },
     { icon: 'lucide:move', text: '拖拽节点自由排列' },
+    { icon: 'lucide:move', text: '按住空格拖动画布' },
+    { icon: 'lucide:mouse-pointer-2', text: '鼠标左键拖动框选多个节点' },
     { icon: 'lucide:spline', text: '从节点手柄拖出连线' },
     { icon: 'lucide:keyboard', text: 'Ctrl+Z 撤销 / Ctrl+Shift+Z 重做' },
     { icon: 'lucide:clipboard-paste', text: 'Ctrl+V 粘贴剪贴板中的图片' },
@@ -737,6 +739,9 @@ function BoardEditorInner() {
           onDrop={onDrop}
           onNodesDelete={onDelete}
           onEdgesDelete={onDelete}
+          selectionOnDrag
+          panOnDrag
+          panActivationKeyCode="Space"
           fitView
           fitViewOptions={{ padding: 0.2 }}
           deleteKeyCode={['Backspace', 'Delete']}

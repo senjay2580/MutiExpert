@@ -20,7 +20,7 @@ import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { cn } from '@/lib/utils';
 import { knowledgeBaseService, documentService } from '@/services/knowledgeBaseService';
 import { illustrationPresets } from '@/lib/illustrations';
-import type { Document as DocType, KnowledgeBase } from '@/types';
+import type { Document as DocType } from '@/types';
 import { useBreadcrumbStore } from '@/stores/useBreadcrumbStore';
 import { ChatPanel } from '@/components/composed/chat-panel';
 import { FloatingEditor } from '@/components/composed/floating-editor';
@@ -67,27 +67,6 @@ function useResizablePanel(defaultWidth = PANEL_DEFAULT) {
   return { width, onPointerDown, onPointerMove, onPointerUp };
 }
 
-const MOCK_KB: KnowledgeBase = {
-  id: 'kb-1',
-  name: '临床医学研究资料',
-  description: '收集整理最新临床医学研究论文与报告',
-  industry_id: 'ind-1',
-  document_count: 8,
-  created_at: '2026-01-15T08:00:00Z',
-  updated_at: '2026-02-20T09:30:00Z',
-};
-
-const MOCK_DOCUMENTS: DocType[] = [
-  { id: 'doc-1', knowledge_base_id: 'kb-1', title: '2026年心血管疾病研究综述.pdf', file_type: 'pdf', file_url: '', file_size: 2457600, content_text: '', chunk_count: 24, status: 'ready', created_at: '2026-02-18T10:00:00Z', updated_at: '2026-02-18T10:30:00Z' },
-  { id: 'doc-2', knowledge_base_id: 'kb-1', title: '新型免疫治疗方案对比分析.docx', file_type: 'docx', file_url: '', file_size: 1843200, content_text: '', chunk_count: 18, status: 'ready', created_at: '2026-02-17T14:00:00Z', updated_at: '2026-02-17T14:20:00Z' },
-  { id: 'doc-3', knowledge_base_id: 'kb-1', title: '基因编辑技术最新进展笔记.md', file_type: 'md', file_url: '', file_size: 45056, content_text: '', chunk_count: 6, status: 'ready', created_at: '2026-02-16T09:00:00Z', updated_at: '2026-02-16T09:05:00Z' },
-  { id: 'doc-4', knowledge_base_id: 'kb-1', title: 'Nature Medicine - 肿瘤靶向治疗', file_type: 'link', file_url: '', file_size: 0, source_url: 'https://nature.com/nm/article-12345', content_text: '', chunk_count: 12, status: 'ready', created_at: '2026-02-15T16:00:00Z', updated_at: '2026-02-15T16:10:00Z' },
-  { id: 'doc-5', knowledge_base_id: 'kb-1', title: '临床试验数据管理规范', file_type: 'article', file_url: '', file_size: 0, content_html: '<p>临床试验数据管理规范内容...</p>', content_text: '临床试验数据管理规范内容...', chunk_count: 8, status: 'ready', created_at: '2026-02-14T11:00:00Z', updated_at: '2026-02-14T11:15:00Z' },
-  { id: 'doc-6', knowledge_base_id: 'kb-1', title: '罕见病诊疗指南2026版.pdf', file_type: 'pdf', file_url: '', file_size: 5242880, content_text: '', chunk_count: 42, status: 'processing', created_at: '2026-02-20T08:00:00Z', updated_at: '2026-02-20T08:00:00Z' },
-  { id: 'doc-7', knowledge_base_id: 'kb-1', title: '药物不良反应监测报告.docx', file_type: 'docx', file_url: '', file_size: 921600, content_text: '', chunk_count: 0, status: 'error', error_message: '文件格式解析失败', created_at: '2026-02-13T10:00:00Z', updated_at: '2026-02-13T10:05:00Z' },
-  { id: 'doc-8', knowledge_base_id: 'kb-1', title: '医疗AI应用白皮书.pdf', file_type: 'pdf', file_url: '', file_size: 3145728, content_text: '', chunk_count: 31, status: 'ready', created_at: '2026-02-12T15:00:00Z', updated_at: '2026-02-12T15:20:00Z' },
-];
-
 type AddMode = null | 'file' | 'link' | 'article';
 type DocFilter = 'all' | 'file' | 'link' | 'article';
 
@@ -120,7 +99,7 @@ export default function KnowledgeDetailPage() {
     queryFn: () => knowledgeBaseService.get(kbId!),
     enabled: !!kbId,
   });
-  const kb = rawKb ?? MOCK_KB;
+  const kb = rawKb ?? null;
 
   const setDynamicLabel = useBreadcrumbStore((s) => s.setDynamicLabel);
   useEffect(() => {
@@ -133,7 +112,7 @@ export default function KnowledgeDetailPage() {
     queryFn: () => knowledgeBaseService.listDocuments(kbId!),
     enabled: !!kbId,
   });
-  const documents = rawDocuments.length > 0 ? rawDocuments : MOCK_DOCUMENTS;
+  const documents = rawDocuments;
 
   const deleteMutation = useMutation({
     mutationFn: documentService.delete,

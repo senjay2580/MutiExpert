@@ -12,6 +12,7 @@ export function useNavItems() {
 
   const overviewNav: NavItem[] = [
     { path: '/dashboard',  icon: navIcons.dashboard,  label: '仪表盘',  iconClass: 'text-blue-500' },
+    { path: '/assistant',  icon: 'streamline-color:chat-bubble-text-square', label: 'AI 问答', iconClass: 'text-rose-500' },
     { path: '/knowledge',  icon: navIcons.knowledge,  label: '知识库',  iconClass: 'text-indigo-500' },
     { path: '/scheduler',  icon: navIcons.scheduler,   label: '定时任务', iconClass: 'text-cyan-500' },
     { path: '/boards',     icon: navIcons.boards,    label: '画板', iconClass: 'text-amber-500' },

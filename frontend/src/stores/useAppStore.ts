@@ -14,7 +14,7 @@ interface AppState {
   mobileMenuOpen: boolean;
   theme: Theme;
   resolvedTheme: 'light' | 'dark';
-  currentModel: 'claude' | 'codex';
+  currentModel: 'claude' | 'openai' | 'codex';
   commandPaletteOpen: boolean;
   customQuickActions: CustomQuickAction[];
 
@@ -22,7 +22,7 @@ interface AppState {
   setMobileMenuOpen: (open: boolean) => void;
   setTheme: (theme: Theme) => void;
   setResolvedTheme: (resolved: 'light' | 'dark') => void;
-  setCurrentModel: (model: 'claude' | 'codex') => void;
+  setCurrentModel: (model: 'claude' | 'openai' | 'codex') => void;
   setCommandPaletteOpen: (open: boolean) => void;
   addQuickAction: (action: CustomQuickAction) => void;
   removeQuickAction: (route: string) => void;

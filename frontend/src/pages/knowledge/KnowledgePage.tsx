@@ -35,29 +35,6 @@ import { knowledgeBaseService } from '@/services/knowledgeBaseService';
 import { illustrationPresets } from '@/lib/illustrations';
 import type { KnowledgeBase, Industry } from '@/types';
 
-const MOCK_INDUSTRIES: Industry[] = [
-  { id: 'ind-1', name: '医疗健康', description: '医疗健康行业知识', icon: '', color: '#EF4444', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'ind-2', name: '金融投资', description: '金融投资行业知识', icon: '', color: '#3B82F6', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'ind-3', name: '法律合规', description: '法律合规行业知识', icon: '', color: '#8B5CF6', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'ind-4', name: '科技研发', description: '科技研发行业知识', icon: '', color: '#10B981', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-  { id: 'ind-5', name: '教育培训', description: '教育培训行业知识', icon: '', color: '#F59E0B', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-];
-
-const MOCK_KNOWLEDGE_BASES: KnowledgeBase[] = [
-  { id: 'kb-1', name: '临床医学研究资料', description: '收集整理最新临床医学研究论文与报告', industry_id: 'ind-1', document_count: 156, created_at: '2026-01-15T08:00:00Z', updated_at: '2026-02-20T09:30:00Z' },
-  { id: 'kb-2', name: '药物研发文档', description: '新药研发流程文档与实验数据', industry_id: 'ind-1', document_count: 89, created_at: '2026-01-20T08:00:00Z', updated_at: '2026-02-18T14:00:00Z' },
-  { id: 'kb-3', name: '投资策略分析', description: '量化投资策略研究与回测报告', industry_id: 'ind-2', document_count: 234, created_at: '2026-01-10T08:00:00Z', updated_at: '2026-02-19T16:00:00Z' },
-  { id: 'kb-4', name: '市场研究报告', description: '全球金融市场趋势分析报告', industry_id: 'ind-2', document_count: 67, created_at: '2026-01-25T08:00:00Z', updated_at: '2026-02-17T10:00:00Z' },
-  { id: 'kb-5', name: '合同模板库', description: '各类商业合同模板与审查要点', industry_id: 'ind-3', document_count: 312, created_at: '2026-01-05T08:00:00Z', updated_at: '2026-02-20T11:00:00Z' },
-  { id: 'kb-6', name: '法规政策解读', description: '最新法律法规变更解读与合规指南', industry_id: 'ind-3', document_count: 145, created_at: '2026-01-18T08:00:00Z', updated_at: '2026-02-19T09:00:00Z' },
-  { id: 'kb-7', name: 'AI 技术文档', description: '大语言模型技术文档与最佳实践', industry_id: 'ind-4', document_count: 198, created_at: '2026-01-12T08:00:00Z', updated_at: '2026-02-20T08:00:00Z' },
-  { id: 'kb-8', name: '云架构方案', description: '云原生架构设计方案与运维手册', industry_id: 'ind-4', document_count: 76, created_at: '2026-02-01T08:00:00Z', updated_at: '2026-02-18T15:00:00Z' },
-  { id: 'kb-9', name: 'K12 教材解析', description: '中小学教材知识点解析与教学方案', industry_id: 'ind-5', document_count: 423, created_at: '2026-01-08T08:00:00Z', updated_at: '2026-02-20T07:00:00Z' },
-  { id: 'kb-10', name: '职业培训课程', description: '在线职业培训课程设计与评估', industry_id: 'ind-5', document_count: 56, created_at: '2026-02-05T08:00:00Z', updated_at: '2026-02-16T12:00:00Z' },
-  { id: 'kb-11', name: '医疗器械认证', description: '医疗器械注册认证流程文档', industry_id: 'ind-1', document_count: 34, created_at: '2026-02-10T08:00:00Z', updated_at: '2026-02-19T14:00:00Z' },
-  { id: 'kb-12', name: '风控模型库', description: '金融风险控制模型文档与参数', industry_id: 'ind-2', document_count: 112, created_at: '2026-01-22T08:00:00Z', updated_at: '2026-02-20T06:00:00Z' },
-];
-
 const PAGE_SIZE = 9;
 
 type ViewMode = 'grid' | 'list';
@@ -91,17 +68,13 @@ export default function KnowledgePage() {
     queryKey: ['industries'],
     queryFn: industryService.list,
   });
-  const industries = rawIndustries.length > 0 ? rawIndustries : MOCK_INDUSTRIES;
+  const industries = rawIndustries;
 
   const { data: rawKnowledgeBases = [], isLoading: loadingKB } = useQuery({
     queryKey: ['knowledge-bases', selectedIndustry],
     queryFn: () => knowledgeBaseService.list(selectedIndustry ?? undefined),
   });
-  const knowledgeBases = rawKnowledgeBases.length > 0 ? rawKnowledgeBases : (
-    selectedIndustry
-      ? MOCK_KNOWLEDGE_BASES.filter(kb => kb.industry_id === selectedIndustry)
-      : MOCK_KNOWLEDGE_BASES
-  );
+  const knowledgeBases = rawKnowledgeBases;
 
   /* ---- KB Mutations ---- */
   const createMutation = useMutation({
@@ -271,12 +244,15 @@ export default function KnowledgePage() {
         </div>
       </Card>
 
-      {/* ---- Mini Stats ---- */}
-      <div className="grid grid-cols-3 gap-3">
-        <MiniStat icon="streamline-color:module-puzzle-3" label="知识库" value={knowledgeBases.length} glow="card-glow-indigo" loading={loadingKB} />
-        <MiniStat icon="streamline-color:new-file" label="文档总量" value={totalDocs} glow="card-glow-blue" loading={loadingKB} />
-        <MiniStat icon="streamline-color:hierarchy-2" label="行业覆盖" value={industries.length} glow="card-glow-emerald" loading={loadingInd} />
-      </div>
+      {/* ---- Stats Chart ---- */}
+      <KnowledgeStatsCard
+        loading={loadingKB || loadingInd}
+        data={[
+          { label: '知识库', value: knowledgeBases.length, color: '#6366F1' },
+          { label: '文档总量', value: totalDocs, color: '#3B82F6' },
+          { label: '行业覆盖', value: industries.length, color: '#10B981' },
+        ]}
+      />
 
       {/* ---- Main Content ---- */}
       <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:gap-6">
@@ -649,36 +625,82 @@ function Pagination({
 }
 
 /* ================================================================ */
-/*  Mini Stat                                                        */
+/*  Knowledge Stats Card                                             */
 /* ================================================================ */
 
-function MiniStat({
-  icon,
-  label,
-  value,
-  glow,
+function KnowledgeStatsCard({
+  data,
   loading,
 }: {
-  icon: string;
-  label: string;
-  value: number;
-  glow: string;
+  data: { label: string; value: number; color: string }[];
   loading?: boolean;
 }) {
+  const maxValue = Math.max(1, ...data.map((item) => item.value));
+  const chartHeight = 56;
+  const chartWidth = 100;
+  const step = data.length > 1 ? chartWidth / (data.length - 1) : 0;
+  const points = data.map((item, index) => {
+    const x = step * index;
+    const y = chartHeight - (item.value / maxValue) * chartHeight;
+    return { x, y };
+  });
+  const polyline = points.map((p) => `${p.x},${p.y}`).join(' ');
+
   return (
-    <Card className={cn('gap-0 py-0', glow)}>
-      <CardContent className="flex items-center gap-3 px-4 py-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Icon icon={icon} width={16} height={16} className="text-primary" />
+    <Card className="gap-0 py-0">
+      <CardContent className="flex flex-col gap-4 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-semibold text-foreground">知识库统计</div>
+            <div className="text-[12px] text-muted-foreground">一个坐标图展示关键指标</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+            {data.map((item) => (
+              <div key={item.label} className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+                <span className="tabular-nums">{item.label} {item.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="min-w-0">
-          <div className="text-[11px] text-muted-foreground">{label}</div>
-          {loading ? (
-            <Skeleton className="mt-0.5 h-5 w-10" />
-          ) : (
-            <div className="text-lg font-bold tabular-nums text-foreground leading-tight">{value}</div>
-          )}
-        </div>
+        {loading ? (
+          <Skeleton className="h-[88px] w-full" />
+        ) : (
+          <div className="relative rounded-lg border border-border bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950/50 dark:via-card dark:to-slate-900/30 px-4 py-3">
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.06)_1px,transparent_1px)] [background-size:18px_18px]" />
+            </div>
+            <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="relative h-[72px] w-full">
+              <polyline
+                fill="none"
+                stroke="url(#kbStatsGradient)"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                points={polyline}
+              />
+              {points.map((p, index) => (
+                <circle key={`${p.x}-${p.y}`} cx={p.x} cy={p.y} r="3.4" fill={data[index].color} />
+              ))}
+              <defs>
+                <linearGradient id="kbStatsGradient" x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
+                  {data.map((item, index) => (
+                    <stop
+                      key={item.label}
+                      offset={`${(index / Math.max(1, data.length - 1)) * 100}%`}
+                      stopColor={item.color}
+                    />
+                  ))}
+                </linearGradient>
+              </defs>
+            </svg>
+            <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
+              {data.map((item) => (
+                <span key={item.label}>{item.label}</span>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -67,7 +67,7 @@ async def _handle_feishu_question(parsed: dict):
             messages = [{"role": "user", "content": question}]
 
             full_response = ""
-            async for chunk in stream_chat(messages, "claude", system_prompt):
+            async for chunk in stream_chat(messages, "claude", system_prompt, db=db):
                 full_response += chunk
 
         if svc is not None:

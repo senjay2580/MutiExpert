@@ -73,9 +73,24 @@ class ScheduledTask(Base):
     task_config = mapped_column(JSONB, default=dict)  # skill_id, prompt, kb_ids, feishu_chat_id 等
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_run_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
-    last_run_status: Mapped[str | None] = mapped_column(String(20))  # success | failed
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AIModelConfig(Base):
+    __tablename__ = "ai_model_configs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(Text)
+    api_key: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(100))
+    extras = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (Index("idx_ai_model_provider", "provider_id"),)
 
 
 class Todo(Base):
