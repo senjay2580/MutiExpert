@@ -76,7 +76,7 @@ async def delete_todo(todo_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.delete("/completed", status_code=204)
 async def clear_completed(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Todo).where(Todo.completed == True))
+    result = await db.execute(select(Todo).where(Todo.completed.is_(True)))
     todos = result.scalars().all()
     for todo in todos:
         await db.delete(todo)
