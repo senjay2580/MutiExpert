@@ -802,7 +802,10 @@ export default function AIAssistantChatPage() {
                   <Button
                     variant={modes.has('knowledge') ? 'secondary' : 'ghost'}
                     size="sm"
-                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', modes.has('knowledge') && 'shadow-sm')}
+                    className={cn(
+                      'h-6 rounded-md px-2.5 text-[11px] transition-all',
+                      modes.has('knowledge') && 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(16,185,129,0.3)]',
+                    )}
                     onClick={() => toggleMode('knowledge')}
                   >
                     <Icon icon="lucide:book-open" width={12} height={12} className="mr-1" />
@@ -811,7 +814,10 @@ export default function AIAssistantChatPage() {
                   <Button
                     variant={modes.has('search') ? 'secondary' : 'ghost'}
                     size="sm"
-                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', modes.has('search') && 'shadow-sm')}
+                    className={cn(
+                      'h-6 rounded-md px-2.5 text-[11px] transition-all',
+                      modes.has('search') && 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(16,185,129,0.3)]',
+                    )}
                     onClick={() => toggleMode('search')}
                   >
                     <Icon icon="lucide:search" width={12} height={12} className="mr-1" />
@@ -820,7 +826,10 @@ export default function AIAssistantChatPage() {
                   <Button
                     variant={modes.has('tools') ? 'secondary' : 'ghost'}
                     size="sm"
-                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', modes.has('tools') && 'shadow-sm')}
+                    className={cn(
+                      'h-6 rounded-md px-2.5 text-[11px] transition-all',
+                      modes.has('tools') && 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(16,185,129,0.3)]',
+                    )}
                     onClick={() => toggleMode('tools')}
                   >
                     <Icon icon="lucide:wrench" width={12} height={12} className="mr-1" />
