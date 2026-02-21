@@ -456,6 +456,13 @@ export function DataTable<T>({
     });
   }, []);
 
+  const allFilteredKeys = useMemo(() => sorted.map((r) => rowKey(r)), [sorted, rowKey]);
+  const allFilteredSelected = allFilteredKeys.length > 0 && allFilteredKeys.every((k) => selectedKeys.has(k));
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedKeys(new Set(allFilteredKeys));
+  }, [allFilteredKeys]);
+
   const clearSelection = useCallback(() => setSelectedKeys(new Set()), []);
 
   const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -593,6 +600,11 @@ export function DataTable<T>({
         {showBulkBar && (
           <div className="flex items-center gap-3 border-b bg-primary/5 px-6 py-2.5">
             <span className="text-xs font-medium text-primary">已选 {selectedKeys.size} 项</span>
+            {!allFilteredSelected && allFilteredKeys.length > selectedKeys.size && (
+              <Button variant="link" size="sm" className="h-7 text-xs px-1 text-primary" onClick={selectAllFiltered}>
+                选择全部 {allFilteredKeys.length} 项
+              </Button>
+            )}
             <div className="flex items-center gap-1.5">
               {bulkActions!.map((ba, i) => (
                 <Button
