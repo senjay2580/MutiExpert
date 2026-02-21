@@ -25,29 +25,10 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark-dimmed.css';
 import { illustrations } from '@/lib/illustrations';
+import * as streamRegistry from '@/lib/streamRegistry';
+import type { ChatMessage, MessageSource } from '@/lib/streamRegistry';
 
 type ModelConfig = { id: string; name: string; provider: string };
-
-type MessageSource = {
-  document_name: string;
-  content_preview: string;
-  relevance_score: number;
-  document_id: string;
-};
-
-type ChatMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  sources?: MessageSource[];
-  isStreaming?: boolean;
-  model_used?: string | null;
-  tokens_used?: number | null;
-  prompt_tokens?: number | null;
-  completion_tokens?: number | null;
-  cost_usd?: number | null;
-  latency_ms?: number | null;
-};
 
 type LocationState = { initialPrompt?: string };
 type FocusMode = 'knowledge' | 'model';
@@ -281,6 +262,47 @@ export default function AIAssistantChatPage() {
         }));
       currentConvIdRef.current = activeConvId;
       setMessages(mapped);
+      // Restore stream from registry if one was running in background
+      const entry = streamRegistry.getStream(activeConvId);
+      if (entry) {
+        const assistantMsg: ChatMessage = {
+          id: entry.finalMessageId || entry.assistantMessageId,
+          role: 'assistant',
+          content: entry.content,
+          sources: entry.sources,
+          isStreaming: entry.isStreaming,
+          model_used: entry.modelUsed,
+          latency_ms: entry.meta?.latency_ms ?? null,
+          tokens_used: entry.meta?.tokens_used ?? null,
+          prompt_tokens: entry.meta?.prompt_tokens ?? null,
+          completion_tokens: entry.meta?.completion_tokens ?? null,
+          cost_usd: entry.meta?.cost_usd ?? null,
+        };
+        const hasUser = mapped.some((m) => m.id === entry.userMessage.id);
+        setMessages(hasUser ? [...mapped, assistantMsg] : [...mapped, entry.userMessage, assistantMsg]);
+        if (entry.isStreaming) {
+          setIsSending(true);
+          abortRef.current = entry.abort;
+          streamRegistry.subscribe(activeConvId, (updated) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === entry.assistantMessageId || m.id === updated.finalMessageId
+                  ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, sources: updated.sources, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
+                  : m,
+              ),
+            );
+            if (!updated.isStreaming) {
+              setIsSending(false);
+              abortRef.current = null;
+              streamRegistry.removeStream(activeConvId);
+              queryClient.invalidateQueries({ queryKey: ['conversations'] });
+            }
+          });
+        } else {
+          streamRegistry.removeStream(activeConvId);
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        }
+      }
     }).catch(() => { if (!cancelled) setMessages([]); })
       .finally(() => { if (!cancelled) setLoadingMessages(false); });
     return () => { cancelled = true; };
@@ -312,8 +334,12 @@ export default function AIAssistantChatPage() {
   }, [messages]);
 
   useEffect(() => {
-    return () => { abortRef.current?.(); if (copyTimeoutRef.current) window.clearTimeout(copyTimeoutRef.current); };
-  }, []);
+    return () => {
+      // Don't abort stream on unmount — let it complete in background
+      if (activeConvId) streamRegistry.unsubscribe(activeConvId);
+      if (copyTimeoutRef.current) window.clearTimeout(copyTimeoutRef.current);
+    };
+  }, [activeConvId]);
 
   useEffect(() => {
     const state = location.state as LocationState | null;
@@ -325,6 +351,7 @@ export default function AIAssistantChatPage() {
 
   /* ── Handlers ── */
   const cancelStreaming = () => {
+    if (activeConvId) streamRegistry.abortAndRemove(activeConvId);
     if (abortRef.current) { abortRef.current(); abortRef.current = null; }
     setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
     setIsSending(false);
@@ -385,30 +412,18 @@ export default function AIAssistantChatPage() {
     if (!activeConvId || isSending) return;
     const lastUserIndex = [...messages].map((m) => m.role).lastIndexOf('user');
     if (lastUserIndex < 0) return;
+    const lastUserMsg = messages[lastUserIndex];
     const assistantId = `assistant-${Date.now()}`;
     setMessages((prev) => {
       const trimmed = prev.slice(0, lastUserIndex + 1);
       return [...trimmed, { id: assistantId, role: 'assistant', content: '', isStreaming: true, model_used: normalizedCurrent }];
     });
     setIsSending(true);
-    abortRef.current = streamRegenerate(
-      activeConvId,
-      normalizedCurrent,
-      (chunk) => setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + chunk } : m))),
-      (sources) => setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, sources: sources.map((s) => ({ document_name: s.document_title, content_preview: s.snippet, relevance_score: s.score, document_id: s.document_id ?? '' })) } : m)),
-      (messageId, meta) => {
-        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, id: messageId, isStreaming: false, latency_ms: meta?.latency_ms ?? null, tokens_used: meta?.tokens_used ?? null, prompt_tokens: meta?.prompt_tokens ?? null, completion_tokens: meta?.completion_tokens ?? null, cost_usd: meta?.cost_usd ?? null } : m));
-        setIsSending(false);
-        abortRef.current = null;
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      },
-      (error) => {
-        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: `Error: ${error}`, isStreaming: false } : m));
-        setSendError(error);
-        setIsSending(false);
-        abortRef.current = null;
-      },
-    );
+    const cb = registryCallbacks(assistantId, activeConvId, lastUserMsg);
+    const abort = streamRegenerate(activeConvId, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+    abortRef.current = abort;
+    const entry = streamRegistry.getStream(activeConvId);
+    if (entry) entry.abort = abort;
   };
 
   const handleStartEditMessage = (messageId: string, content: string) => {
@@ -459,23 +474,42 @@ export default function AIAssistantChatPage() {
     try { await copyToClipboard(buildMarkdownExport()); } catch { /* ignore */ }
   };
 
-  const streamCallbacks = (assistantId: string) => ({
-    onChunk: (chunk: string) => setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + chunk } : m))),
-    onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) =>
-      setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, sources: sources.map((s) => ({ document_name: s.document_title, content_preview: s.snippet, relevance_score: s.score, document_id: s.document_id ?? '' })) } : m)),
-    onDone: (messageId: string, meta?: { latency_ms?: number; tokens_used?: number | null; prompt_tokens?: number | null; completion_tokens?: number | null; cost_usd?: number | null }) => {
-      setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, id: messageId, isStreaming: false, latency_ms: meta?.latency_ms ?? null, tokens_used: meta?.tokens_used ?? null, prompt_tokens: meta?.prompt_tokens ?? null, completion_tokens: meta?.completion_tokens ?? null, cost_usd: meta?.cost_usd ?? null } : m));
-      setIsSending(false);
-      abortRef.current = null;
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    },
-    onError: (error: string) => {
-      setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: `Error: ${error}`, isStreaming: false } : m));
-      setSendError(error);
-      setIsSending(false);
-      abortRef.current = null;
-    },
-  });
+  const registryCallbacks = (assistantId: string, convId: string, userMsg: ChatMessage) => {
+    streamRegistry.registerStream({
+      conversationId: convId,
+      assistantMessageId: assistantId,
+      userMessage: userMsg,
+      content: '',
+      sources: [],
+      isStreaming: true,
+      abort: null,
+      modelUsed: normalizedCurrent,
+    });
+    streamRegistry.subscribe(convId, (updated) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId || m.id === updated.finalMessageId
+            ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, sources: updated.sources, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
+            : m,
+        ),
+      );
+      if (!updated.isStreaming) {
+        setIsSending(false);
+        abortRef.current = null;
+        streamRegistry.removeStream(convId);
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        if (updated.error) setSendError(updated.error);
+      }
+    });
+    return {
+      onChunk: (chunk: string) => streamRegistry.appendChunk(convId, chunk),
+      onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) =>
+        streamRegistry.setSources(convId, sources.map((s) => ({ document_name: s.document_title, content_preview: s.snippet, relevance_score: s.score, document_id: s.document_id ?? '' }))),
+      onDone: (messageId: string, meta?: { latency_ms?: number; tokens_used?: number | null; prompt_tokens?: number | null; completion_tokens?: number | null; cost_usd?: number | null }) =>
+        streamRegistry.markDone(convId, messageId, meta),
+      onError: (error: string) => streamRegistry.markError(convId, error),
+    };
+  };
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
@@ -496,8 +530,12 @@ export default function AIAssistantChatPage() {
         return updated;
       });
       try {
-        const cb = streamCallbacks(aId);
-        abortRef.current = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+        const editedUserMsg: ChatMessage = { id: editingMessageId, role: 'user', content: text };
+        const cb = registryCallbacks(aId, activeConvId, editedUserMsg);
+        const abort = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+        abortRef.current = abort;
+        const entry = streamRegistry.getStream(activeConvId);
+        if (entry) entry.abort = abort;
       } catch (e) { setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
       return;
     }
@@ -523,8 +561,11 @@ export default function AIAssistantChatPage() {
         navigate(`/assistant/chat/${convId}`, { replace: true });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else { currentConvIdRef.current = convId; }
-      const cb = streamCallbacks(assistantMsg.id);
-      abortRef.current = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+      const cb = registryCallbacks(assistantMsg.id, convId, userMsg);
+      const abort = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+      abortRef.current = abort;
+      const entry = streamRegistry.getStream(convId);
+      if (entry) entry.abort = abort;
     } catch (e) { creatingConvRef.current = false; setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
   }, [activeConvId, editingMessageId, focusMode, input, isSending, knowledgeBases, navigate, normalizedCurrent, queryClient, selectedKbIds]);
 
