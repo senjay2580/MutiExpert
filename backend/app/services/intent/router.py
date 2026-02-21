@@ -8,6 +8,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.ai_model_config import get_provider_config, ProviderConfig
 from app.services.intent.tools import load_tools, to_openai_tools, to_claude_tools
+from app.services.system_prompt_service import build_system_prompt
 
 
 @dataclass
@@ -40,11 +41,14 @@ async def recognize_intent(
     messages = list(history or [])
     messages.append({"role": "user", "content": message})
 
-    system_prompt = (
-        "你是 MutiExpert 智能助手。根据用户消息判断是否需要调用工具。"
-        "如果需要，调用最合适的工具；如果不需要，直接用文字回答。"
-        "回复请用中文。"
+    # 使用统一系统提示词（紧凑模式，节省 token）
+    system_prompt = await build_system_prompt(
+        db,
+        compact=True,
+        include_scripts=False,
+        include_tasks=False,
     )
+    system_prompt += "\n如果需要调用工具就调用最合适的工具；如果不需要，直接用文字回答。"
 
     config = await get_provider_config(db, provider)
 

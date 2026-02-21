@@ -15,8 +15,9 @@ from app.services.feishu_service import (
 )
 from app.services.intent.router import recognize_intent
 from app.services.intent.executor import execute_action, format_result
-from app.services.rag_service import retrieve_context, build_rag_prompt
+from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
+from app.services.system_prompt_service import build_system_prompt
 
 router = APIRouter()
 
@@ -150,7 +151,9 @@ async def _fallback_rag(question: str, provider: str, db) -> str:
     result = await db.execute(select(KnowledgeBase.id))
     kb_ids = [row[0] for row in result.all()]
     context, sources = await retrieve_context(db, question, kb_ids) if kb_ids else ("", [])
-    system_prompt = build_rag_prompt(context, question) if context else ""
+    system_prompt = await build_system_prompt(db, compact=True)
+    if context:
+        system_prompt += "\n\n" + build_rag_context(context, question)
     messages = [{"role": "user", "content": question}]
     full_response = ""
     async for chunk in stream_chat(messages, provider, system_prompt, db=db):

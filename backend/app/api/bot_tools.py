@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.routing import APIRoute
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +33,34 @@ class BotToolUpdate(BaseModel):
     param_mapping: dict | None = None
     parameters: dict | None = None
     enabled: bool | None = None
+
+
+EXCLUDED_PREFIXES = ("/api/v1/bot-tools", "/api/v1/health", "/api/v1/config")
+
+
+@router.get("/available-endpoints")
+async def available_endpoints(request: Request):
+    """扫描 FastAPI 所有业务路由，返回可选端点列表"""
+    endpoints = []
+    for route in request.app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        path = route.path
+        if any(path.startswith(p) for p in EXCLUDED_PREFIXES):
+            continue
+        if not path.startswith("/api/v1/"):
+            continue
+        summary = route.summary or route.name.replace("_", " ").title()
+        tags = list(route.tags) if route.tags else []
+        for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
+            endpoints.append({
+                "path": path,
+                "method": method,
+                "summary": summary,
+                "tags": tags,
+            })
+    endpoints.sort(key=lambda e: (e["path"], e["method"]))
+    return endpoints
 
 
 @router.get("/")

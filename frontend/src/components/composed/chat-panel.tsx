@@ -138,7 +138,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
       const convId = await ensureConversation();
       const aId = assistantMsg.id;
       abortRef.current = streamMessage(
-        convId, text,
+        convId, text, normalizedModel,
         (chunk) => setMessages((p) => p.map((m) => m.id === aId ? { ...m, content: m.content + chunk } : m)),
         (sources) => {
           const mapped: MessageSource[] = sources.map((s) => ({

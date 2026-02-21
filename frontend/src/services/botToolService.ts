@@ -1,8 +1,16 @@
 import api from './api';
 import type { BotTool } from '../types';
 
+export interface AvailableEndpoint {
+  path: string;
+  method: string;
+  summary: string;
+  tags: string[];
+}
+
 export const botToolService = {
   list: () => api.get<BotTool[]>('/bot-tools').then((r) => r.data),
+  listEndpoints: () => api.get<AvailableEndpoint[]>('/bot-tools/available-endpoints').then((r) => r.data),
   get: (id: string) => api.get<BotTool>(`/bot-tools/${id}`).then((r) => r.data),
   create: (data: Omit<BotTool, 'id' | 'created_at' | 'updated_at' | 'enabled'>) =>
     api.post<BotTool>('/bot-tools', data).then((r) => r.data),

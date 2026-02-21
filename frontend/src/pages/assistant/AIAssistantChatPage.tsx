@@ -393,6 +393,7 @@ export default function AIAssistantChatPage() {
     setIsSending(true);
     abortRef.current = streamRegenerate(
       activeConvId,
+      normalizedCurrent,
       (chunk) => setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + chunk } : m))),
       (sources) => setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, sources: sources.map((s) => ({ document_name: s.document_title, content_preview: s.snippet, relevance_score: s.score, document_id: s.document_id ?? '' })) } : m)),
       (messageId, meta) => {
@@ -496,7 +497,7 @@ export default function AIAssistantChatPage() {
       });
       try {
         const cb = streamCallbacks(aId);
-        abortRef.current = streamEditMessage(activeConvId, editingMessageId, text, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+        abortRef.current = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
       } catch (e) { setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
       return;
     }
@@ -523,7 +524,7 @@ export default function AIAssistantChatPage() {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else { currentConvIdRef.current = convId; }
       const cb = streamCallbacks(assistantMsg.id);
-      abortRef.current = streamMessage(convId, text, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+      abortRef.current = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
     } catch (e) { creatingConvRef.current = false; setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
   }, [activeConvId, editingMessageId, focusMode, input, isSending, knowledgeBases, navigate, normalizedCurrent, queryClient, selectedKbIds]);
 

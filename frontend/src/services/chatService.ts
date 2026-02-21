@@ -126,6 +126,7 @@ function streamConversationRequest(
 export function streamMessage(
   convId: string,
   content: string,
+  modelProvider: string,
   onChunk: (text: string) => void,
   onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) => void,
   onDone: (messageId: string, meta?: StreamDoneMeta) => void,
@@ -133,11 +134,12 @@ export function streamMessage(
 ): () => void {
   const baseUrl = api.defaults.baseURL || '/api/v1';
   const url = `${baseUrl}/conversations/${convId}/messages`;
-  return streamConversationRequest(url, { content }, { onChunk, onSources, onDone, onError });
+  return streamConversationRequest(url, { content, model_provider: modelProvider }, { onChunk, onSources, onDone, onError });
 }
 
 export function streamRegenerate(
   convId: string,
+  modelProvider: string,
   onChunk: (text: string) => void,
   onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) => void,
   onDone: (messageId: string, meta?: StreamDoneMeta) => void,
@@ -145,13 +147,14 @@ export function streamRegenerate(
 ): () => void {
   const baseUrl = api.defaults.baseURL || '/api/v1';
   const url = `${baseUrl}/conversations/${convId}/regenerate`;
-  return streamConversationRequest(url, {}, { onChunk, onSources, onDone, onError });
+  return streamConversationRequest(url, { model_provider: modelProvider }, { onChunk, onSources, onDone, onError });
 }
 
 export function streamEditMessage(
   convId: string,
   messageId: string,
   content: string,
+  modelProvider: string,
   onChunk: (text: string) => void,
   onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) => void,
   onDone: (messageId: string, meta?: StreamDoneMeta) => void,
@@ -159,5 +162,5 @@ export function streamEditMessage(
 ): () => void {
   const baseUrl = api.defaults.baseURL || '/api/v1';
   const url = `${baseUrl}/conversations/${convId}/messages/${messageId}/edit`;
-  return streamConversationRequest(url, { content }, { onChunk, onSources, onDone, onError });
+  return streamConversationRequest(url, { content, model_provider: modelProvider }, { onChunk, onSources, onDone, onError });
 }

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace as dc_replace
 from typing import AsyncGenerator, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
@@ -249,18 +250,25 @@ async def stream_chat(
     provider: str = "claude",
     system_prompt: str = "",
     db: AsyncSession | None = None,
+    model_name: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """流式生成 AI 回答"""
     provider = _normalize_provider(provider)
 
     if provider == "claude":
         config = await get_provider_config(db, "claude")
+        if model_name:
+            config = dc_replace(config, model=model_name)
         strategy = ClaudeStrategy(config)
     elif provider == "openai":
         config = await get_provider_config(db, "openai")
+        if model_name:
+            config = dc_replace(config, model=model_name)
         strategy = OpenAIResponsesStrategy(config)
     elif provider in ("deepseek", "qwen"):
         config = await get_provider_config(db, provider)
+        if model_name:
+            config = dc_replace(config, model=model_name)
         strategy = OpenAIChatCompletionsStrategy(config)
     else:
         yield f"Unknown provider: {provider}"

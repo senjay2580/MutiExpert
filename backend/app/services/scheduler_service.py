@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models.extras import ScheduledTask
 from app.models.knowledge import KnowledgeBase
-from app.services.rag_service import retrieve_context, build_rag_prompt
+from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
 from app.services.feishu_service import get_feishu_service
 from app.services.skill_executor import execute_skill
@@ -55,7 +55,10 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
                 result = await db.execute(select(KnowledgeBase.id))
                 kb_ids = [row[0] for row in result.all()]
             context, sources = await retrieve_context(db, prompt, kb_ids) if kb_ids else ("", [])
-            system_prompt = build_rag_prompt(context, prompt) if context else ""
+            from app.services.system_prompt_service import build_system_prompt
+            system_prompt = await build_system_prompt(db, compact=True, include_scripts=False, include_tasks=False)
+            if context:
+                system_prompt += "\n\n" + build_rag_context(context, prompt)
             response = await _generate_text([
                 {"role": "user", "content": prompt},
             ], provider, system_prompt, db)
@@ -104,6 +107,7 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
 
         elif task.task_type == "script_exec":
             from app.models.extras import UserScript
+            from app.services.script_env_resolver import resolve_env_vars
             script_id = task.script_id or config.get("script_id")
             if not script_id:
                 raise RuntimeError("Missing script_id")
@@ -111,7 +115,12 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
             script = sr.scalar_one_or_none()
             if not script:
                 raise RuntimeError(f"Script {script_id} not found")
-            result = await execute_script(script.script_content, timeout_seconds=config.get("timeout", 30))
+            env_vars = await resolve_env_vars(db)
+            result = await execute_script(
+                script.script_content,
+                timeout_seconds=config.get("timeout", 30),
+                extra_env=env_vars,
+            )
             if not result.success:
                 raise RuntimeError(result.error or "Script execution failed")
             if config.get("push_to_feishu"):

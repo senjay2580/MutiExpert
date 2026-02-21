@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.extras import UserScript
 from app.services.script_executor import execute_script
+from app.services.script_env_resolver import (
+    prepare_script_env,
+    detect_hardcoded_secrets,
+    ENV_VAR_REGISTRY,
+)
 
 router = APIRouter()
 
@@ -31,6 +36,12 @@ class ScriptUpdate(BaseModel):
 
 # ── UserScript endpoints ──
 
+@router.get("/env-vars/available")
+async def list_available_env_vars():
+    """返回脚本中可用的系统环境变量列表"""
+    return ENV_VAR_REGISTRY
+
+
 @router.get("/")
 async def list_scripts(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UserScript).order_by(UserScript.created_at.desc()))
@@ -39,6 +50,7 @@ async def list_scripts(db: AsyncSession = Depends(get_db)):
 
 @router.post("/")
 async def create_script(data: ScriptCreate, db: AsyncSession = Depends(get_db)):
+    warnings = detect_hardcoded_secrets(data.script_content)
     script = UserScript(
         name=data.name,
         description=data.description,
@@ -48,7 +60,10 @@ async def create_script(data: ScriptCreate, db: AsyncSession = Depends(get_db)):
     db.add(script)
     await db.commit()
     await db.refresh(script)
-    return _script_to_dict(script)
+    result = _script_to_dict(script)
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 @router.get("/{script_id}")
@@ -71,7 +86,12 @@ async def update_script(script_id: uuid.UUID, data: ScriptUpdate, db: AsyncSessi
     script.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(script)
-    return _script_to_dict(script)
+    result = _script_to_dict(script)
+    if data.script_content is not None:
+        warnings = detect_hardcoded_secrets(data.script_content)
+        if warnings:
+            result["warnings"] = warnings
+    return result
 
 
 @router.delete("/{script_id}")
@@ -85,7 +105,13 @@ async def delete_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 @router.post("/{script_id}/test")
 async def test_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     script = await _get_script_or_404(script_id, db)
-    result = await execute_script(script.script_content, timeout_seconds=30)
+    # 预处理：解析系统配置环境变量 + 检测硬编码密钥
+    env_result = await prepare_script_env(db, script.script_content)
+    result = await execute_script(
+        script.script_content,
+        timeout_seconds=30,
+        extra_env=env_result.env_vars,
+    )
     script.last_test_at = datetime.utcnow()
     script.last_test_status = "success" if result.success else "failed"
     script.last_test_output = (result.output or result.error)[:5000]
@@ -95,6 +121,7 @@ async def test_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         "output": result.output,
         "error": result.error,
         "timed_out": result.timed_out,
+        "warnings": env_result.warnings,
     }
 
 

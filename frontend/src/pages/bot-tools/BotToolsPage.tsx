@@ -1,10 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Icon } from '@iconify/react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import {
   Dialog,
   DialogContent,
@@ -25,6 +34,7 @@ import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
 import { botToolService } from '@/services/botToolService';
+import type { AvailableEndpoint } from '@/services/botToolService';
 import type { BotTool } from '@/types';
 
 type FormData = {
@@ -53,10 +63,18 @@ export default function BotToolsPage() {
   const [editingTool, setEditingTool] = useState<BotTool | null>(null);
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<BotTool | null>(null);
+  const [showEndpointPicker, setShowEndpointPicker] = useState(false);
+  const endpointRef = useRef<HTMLDivElement>(null);
 
   const { data: tools = [], isLoading } = useQuery({
     queryKey: ['bot-tools'],
     queryFn: botToolService.list,
+  });
+
+  const { data: endpoints = [] } = useQuery({
+    queryKey: ['bot-tools-endpoints'],
+    queryFn: botToolService.listEndpoints,
+    enabled: showForm,
   });
 
   const saveMutation = useMutation({
@@ -287,28 +305,61 @@ export default function BotToolsPage() {
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-4 gap-3">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">HTTP 方法</label>
-                <Select value={form.method} onValueChange={(v) => setForm({ ...form, method: v })}>
-                  <SelectTrigger className="w-full font-mono"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GET">GET</SelectItem>
-                    <SelectItem value="POST">POST</SelectItem>
-                    <SelectItem value="PUT">PUT</SelectItem>
-                    <SelectItem value="DELETE">DELETE</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-3">
-                <label className="mb-1 block text-xs text-muted-foreground">API 端点 *</label>
-                <Input
-                  placeholder="/api/v1/todos/"
-                  value={form.endpoint}
-                  onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
-                  className="font-mono"
-                />
-              </div>
+            <div ref={endpointRef} className="relative">
+              <label className="mb-1 block text-xs text-muted-foreground">API 端点 *（点击选择或搜索）</label>
+              <button
+                type="button"
+                onClick={() => setShowEndpointPicker(!showEndpointPicker)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm font-mono',
+                  'bg-background hover:bg-accent/50 transition-colors text-left',
+                  !form.endpoint && 'text-muted-foreground',
+                )}
+              >
+                {form.endpoint ? (
+                  <>
+                    <Badge variant="outline" className="text-[9px] font-mono px-1.5 shrink-0">{form.method}</Badge>
+                    <span className="truncate">{form.endpoint}</span>
+                  </>
+                ) : (
+                  <span>选择 API 端点...</span>
+                )}
+                <Icon icon="lucide:chevrons-up-down" className="ml-auto size-4 shrink-0 opacity-50" />
+              </button>
+              {showEndpointPicker && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-lg">
+                  <Command>
+                    <CommandInput placeholder="搜索端点路径或描述..." />
+                    <CommandList className="max-h-[240px]">
+                      <CommandEmpty>没有匹配的端点</CommandEmpty>
+                      {Object.entries(
+                        endpoints.reduce<Record<string, AvailableEndpoint[]>>((acc, ep) => {
+                          const tag = ep.tags[0] || 'other';
+                          (acc[tag] ??= []).push(ep);
+                          return acc;
+                        }, {}),
+                      ).map(([tag, eps]) => (
+                        <CommandGroup key={tag} heading={tag}>
+                          {eps.map((ep) => (
+                            <CommandItem
+                              key={`${ep.method}-${ep.path}`}
+                              value={`${ep.method} ${ep.path} ${ep.summary}`}
+                              onSelect={() => {
+                                setForm({ ...form, method: ep.method, endpoint: ep.path });
+                                setShowEndpointPicker(false);
+                              }}
+                            >
+                              <Badge variant="outline" className="text-[9px] font-mono px-1.5 shrink-0">{ep.method}</Badge>
+                              <span className="font-mono text-xs truncate">{ep.path}</span>
+                              <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-[140px]">{ep.summary}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </div>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted-foreground">参数定义（JSON Schema）</label>

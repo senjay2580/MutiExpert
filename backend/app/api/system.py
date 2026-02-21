@@ -113,13 +113,15 @@ async def update_model_config(
 @router.post("/config/models/{provider_id}/test")
 async def test_model_connection(
     provider_id: str,
+    data: dict | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     provider = "openai" if provider_id == "codex" else provider_id
     if provider not in {"openai", "claude", "deepseek", "qwen"}:
         raise HTTPException(status_code=400, detail="Unsupported provider")
 
-    generator = stream_chat([{"role": "user", "content": "ping"}], provider, "", db=db)
+    model_name = data.get("model") if data else None
+    generator = stream_chat([{"role": "user", "content": "ping"}], provider, "", db=db, model_name=model_name)
     try:
         try:
             first_chunk = await asyncio.wait_for(generator.__anext__(), timeout=20)

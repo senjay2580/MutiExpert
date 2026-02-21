@@ -24,6 +24,7 @@ class ConversationResponse(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str
+    model_provider: str | None = None
 
 
 class MessageResponse(BaseModel):

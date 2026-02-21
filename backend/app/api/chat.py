@@ -20,9 +20,9 @@ from app.schemas.chat import (
     ConversationMemoryResponse,
     ConversationMemoryUpdate,
 )
-from app.services.rag_service import retrieve_context, build_rag_prompt
+from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
-from app.services.skill_executor import load_registry
+from app.services.system_prompt_service import build_system_prompt
 
 router = APIRouter()
 
@@ -132,6 +132,10 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    # 消息级别的 model_provider 优先，同时同步到会话
+    if data.model_provider and data.model_provider != conv.model_provider:
+        conv.model_provider = data.model_provider
+
     user_msg = Message(conversation_id=conv_id, role="user", content=data.content)
     db.add(user_msg)
     conv.updated_at = datetime.utcnow()
@@ -143,13 +147,12 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
 
     context, sources = await _build_context(db, conv, data.content)
 
-    # 加载 Skills 信息，让 AI 知道可用技能
-    skills_info = _get_skills_info()
-
-    system_prompt = build_rag_prompt(context, data.content, skills_info) if context else ""
+    # 统一系统提示词（身份 + 能力 + RAG 上下文 + 记忆）
+    system_prompt = await build_system_prompt(db)
+    if context:
+        system_prompt += "\n\n" + build_rag_context(context, data.content)
     if conv.memory_enabled and conv.memory_summary:
-        memory_block = f"会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
-        system_prompt = f"{system_prompt}\n\n{memory_block}" if system_prompt else memory_block
+        system_prompt += f"\n\n会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
 
     history_result = await db.execute(
         select(Message).where(Message.conversation_id == conv_id).order_by(Message.created_at.desc()).limit(10)
@@ -179,11 +182,14 @@ async def switch_model(conv_id: UUID, data: ModelSwitch, db: AsyncSession = Depe
 
 
 @router.post("/{conv_id}/regenerate")
-async def regenerate_last_answer(conv_id: UUID, db: AsyncSession = Depends(get_db)):
+async def regenerate_last_answer(conv_id: UUID, data: MessageCreate | None = None, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Conversation).where(Conversation.id == conv_id))
     conv = result.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if data and data.model_provider and data.model_provider != conv.model_provider:
+        conv.model_provider = data.model_provider
 
     history_result = await db.execute(
         select(Message)
@@ -208,11 +214,11 @@ async def regenerate_last_answer(conv_id: UUID, db: AsyncSession = Depends(get_d
     await db.commit()
 
     context, sources = await _build_context(db, conv, last_user.content)
-    skills_info = _get_skills_info()
-    system_prompt = build_rag_prompt(context, last_user.content, skills_info) if context else ""
+    system_prompt = await build_system_prompt(db)
+    if context:
+        system_prompt += "\n\n" + build_rag_context(context, last_user.content)
     if conv.memory_enabled and conv.memory_summary:
-        memory_block = f"会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
-        system_prompt = f"{system_prompt}\n\n{memory_block}" if system_prompt else memory_block
+        system_prompt += f"\n\n会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
 
     history_result = await db.execute(
         select(Message)
@@ -243,6 +249,9 @@ async def edit_last_user_message(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    if data.model_provider and data.model_provider != conv.model_provider:
+        conv.model_provider = data.model_provider
+
     msg_result = await db.execute(
         select(Message).where(Message.id == message_id, Message.conversation_id == conv_id)
     )
@@ -270,11 +279,11 @@ async def edit_last_user_message(
     await db.commit()
 
     context, sources = await _build_context(db, conv, message.content)
-    skills_info = _get_skills_info()
-    system_prompt = build_rag_prompt(context, message.content, skills_info) if context else ""
+    system_prompt = await build_system_prompt(db)
+    if context:
+        system_prompt += "\n\n" + build_rag_context(context, message.content)
     if conv.memory_enabled and conv.memory_summary:
-        memory_block = f"会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
-        system_prompt = f"{system_prompt}\n\n{memory_block}" if system_prompt else memory_block
+        system_prompt += f"\n\n会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
 
     history_result = await db.execute(
         select(Message)
@@ -392,19 +401,6 @@ async def _update_conversation_memory(conv_id: UUID) -> None:
             conv.memory_summary = summary
             conv.updated_at = datetime.utcnow()
             await session.commit()
-
-
-def _get_skills_info() -> str:
-    skills_info = ""
-    try:
-        registry = load_registry()
-        if registry:
-            skills_info = "\n".join(
-                f"- {s['name']}: {s.get('description', '')}" for s in registry
-            )
-    except Exception:
-        pass
-    return skills_info
 
 
 async def _build_context(db: AsyncSession, conv: Conversation, question: str) -> tuple[str, list[dict]]:

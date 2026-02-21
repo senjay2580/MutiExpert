@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from app.config import get_settings
 
 
@@ -14,12 +14,14 @@ class ScriptResult:
     output: str
     error: str = ""
     timed_out: bool = False
+    warnings: list[str] = field(default_factory=list)
 
 
 async def execute_script(
     script_content: str,
     timeout_seconds: int = 30,
     allow_net_hosts: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> ScriptResult:
     """用 Deno 沙箱执行 TypeScript 脚本"""
     settings = get_settings()
@@ -55,15 +57,20 @@ async def execute_script(
 
         cmd.append(script_path)
 
+        # 构建环境变量：系统默认 + 系统配置注入 + extra_env
+        script_env = {
+            **os.environ,
+            "API_BASE_URL": settings.backend_url,
+            "API_KEY": settings.api_key or "",
+        }
+        if extra_env:
+            script_env.update(extra_env)
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={
-                **os.environ,
-                "API_BASE_URL": settings.backend_url,
-                "API_KEY": settings.api_key or "",
-            },
+            env=script_env,
         )
 
         try:

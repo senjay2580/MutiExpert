@@ -18,6 +18,7 @@ import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
 import { scriptService } from '@/services/scriptService';
+import type { ScriptTestResult } from '@/services/scriptService';
 import type { UserScript } from '@/types';
 
 // ======================== Types ========================
@@ -26,14 +27,12 @@ type FormData = {
   name: string;
   description: string;
   script_content: string;
-  script_type: string;
 };
 
 const EMPTY_FORM: FormData = {
   name: '',
   description: '',
-  script_content: '# 在此编写你的 Python 脚本\n# 脚本执行结果会显示在测试输出中\n\nprint("Hello, World!")\n',
-  script_type: 'python',
+  script_content: '// 在此编写你的 TypeScript 脚本\n// 脚本由 Deno 沙箱执行，支持 fetch 等 API\n// 使用 Deno.env.get("CLAUDE_API_KEY") 引用系统配置\n\nconsole.log("Hello, World!");\n',
 };
 
 // ======================== Test Result Dialog ========================
@@ -42,7 +41,7 @@ interface TestResultDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scriptName: string;
-  result: { success: boolean; output: string; error: string; timed_out: boolean } | null;
+  result: ScriptTestResult | null;
 }
 
 function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResultDialogProps) {
@@ -69,6 +68,16 @@ function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResult
         {result?.timed_out && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
             脚本执行超时
+          </div>
+        )}
+
+        {result?.warnings && result.warnings.length > 0 && (
+          <div className="space-y-1">
+            {result.warnings.map((w, i) => (
+              <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                {w}
+              </div>
+            ))}
           </div>
         )}
 
@@ -115,12 +124,19 @@ export default function ScriptsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{
     scriptName: string;
-    result: { success: boolean; output: string; error: string; timed_out: boolean };
+    result: ScriptTestResult;
   } | null>(null);
+  const [showEnvRef, setShowEnvRef] = useState(false);
 
   const { data: scripts = [], isLoading } = useQuery({
     queryKey: ['scripts'],
     queryFn: scriptService.list,
+  });
+
+  const { data: envVars = [] } = useQuery({
+    queryKey: ['script-env-vars'],
+    queryFn: scriptService.listEnvVars,
+    staleTime: 60_000,
   });
 
   const saveMutation = useMutation({
@@ -177,7 +193,6 @@ export default function ScriptsPage() {
       name: script.name,
       description: script.description ?? '',
       script_content: script.script_content,
-      script_type: script.script_type,
     });
     setShowForm(true);
   };
@@ -190,7 +205,6 @@ export default function ScriptsPage() {
         name: form.name,
         description: form.description || null,
         script_content: form.script_content,
-        script_type: form.script_type,
       },
     });
   };
@@ -221,16 +235,6 @@ export default function ScriptsPage() {
             </div>
           )}
         </div>
-      ),
-    },
-    {
-      key: 'script_type',
-      header: '类型',
-      width: '100px',
-      render: (s) => (
-        <Badge variant="outline" className="text-[10px] font-mono uppercase">
-          {s.script_type}
-        </Badge>
       ),
     },
     {
@@ -383,6 +387,17 @@ export default function ScriptsPage() {
         />
       </div>
 
+      {/* ======================== Env Var Tip ======================== */}
+      <div className="rounded-lg border border-violet-200/60 bg-violet-50/40 px-4 py-2.5 dark:border-violet-800/40 dark:bg-violet-950/20">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          脚本中需要 API Key 等敏感配置？使用{' '}
+          <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+            Deno.env.get("CLAUDE_API_KEY")
+          </code>{' '}
+          引用系统管理的配置，执行时自动从「AI 模型配置」和「飞书集成」中注入，无需硬编码密钥。
+        </p>
+      </div>
+
       <DataTable<UserScript>
         data={scripts}
         columns={columns}
@@ -408,24 +423,13 @@ export default function ScriptsPage() {
           </DialogHeader>
 
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 sm:col-span-1">
-                <label className="mb-1 block text-xs text-muted-foreground">脚本名称 *</label>
-                <Input
-                  placeholder="例如：每日数据汇总"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
-              </div>
-              <div className="col-span-2 sm:col-span-1">
-                <label className="mb-1 block text-xs text-muted-foreground">脚本类型</label>
-                <Input
-                  placeholder="python"
-                  value={form.script_type}
-                  onChange={(e) => setForm({ ...form, script_type: e.target.value })}
-                  className="font-mono"
-                />
-              </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">脚本名称 *</label>
+              <Input
+                placeholder="例如：每日数据汇总"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </div>
 
             <div>
@@ -438,7 +442,31 @@ export default function ScriptsPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">脚本内容 *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs text-muted-foreground">脚本内容 *</label>
+                <button
+                  type="button"
+                  onClick={() => setShowEnvRef((v) => !v)}
+                  className="text-[11px] text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 transition-colors"
+                >
+                  {showEnvRef ? '收起变量参考' : '查看可用环境变量'}
+                </button>
+              </div>
+              {showEnvRef && envVars.length > 0 && (
+                <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50/50 p-2.5 dark:border-violet-800 dark:bg-violet-950/20">
+                  <p className="text-[11px] text-muted-foreground mb-1.5">
+                    在脚本中使用 <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">Deno.env.get("变量名")</code> 引用系统配置，执行时自动注入：
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                    {envVars.map((v) => (
+                      <div key={v.name} className="flex items-baseline gap-1.5 text-[11px]">
+                        <code className="shrink-0 font-mono text-violet-700 dark:text-violet-300">{v.name}</code>
+                        <span className="text-muted-foreground truncate">{v.source}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <Textarea
                 placeholder="在此编写脚本内容..."
                 value={form.script_content}

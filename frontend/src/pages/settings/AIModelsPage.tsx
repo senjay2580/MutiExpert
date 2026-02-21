@@ -119,7 +119,9 @@ export default function AIModelsPage() {
     setTesting((prev) => ({ ...prev, [model.id]: true }));
     setTestResults((prev) => ({ ...prev, [model.id]: { ok: false, message: '测试中...' } }));
     try {
-      const response = await api.post<{ ok: boolean; message: string }>(`/config/models/${model.id}/test`);
+      const response = await api.post<{ ok: boolean; message: string }>(`/config/models/${model.id}/test`, {
+        model: forms[model.id]?.model || model.model || undefined,
+      });
       setTestResults((prev) => ({ ...prev, [model.id]: response.data }));
     } catch (error) {
       const message =
