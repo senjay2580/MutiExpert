@@ -108,6 +108,10 @@ export default function BotToolsPage() {
       header: '工具名称',
       sortable: true,
       width: '200px',
+      resizable: true,
+      sticky: 'left',
+      accessor: (t) => t.name,
+      exportValue: (t) => t.name,
       render: (t) => (
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground font-mono truncate">{t.name}</div>
@@ -119,6 +123,9 @@ export default function BotToolsPage() {
       key: 'action_type',
       header: '类型',
       width: '80px',
+      type: 'badge',
+      accessor: (t) => (t.action_type === 'query' ? '查询' : '修改'),
+      exportValue: (t) => (t.action_type === 'query' ? '查询' : '修改'),
       render: (t) => (
         <Badge variant="outline" className={cn('text-[10px]', t.action_type === 'query' ? 'text-blue-600 border-blue-200 dark:border-blue-800 dark:text-blue-400' : 'text-amber-600 border-amber-200 dark:border-amber-800 dark:text-amber-400')}>
           {t.action_type === 'query' ? '查询' : '修改'}
@@ -129,6 +136,10 @@ export default function BotToolsPage() {
       key: 'endpoint',
       header: '端点',
       width: '220px',
+      sortable: true,
+      resizable: true,
+      accessor: (t) => `${t.method} ${t.endpoint}`,
+      exportValue: (t) => `${t.method} ${t.endpoint}`,
       render: (t) => (
         <div className="flex items-center gap-1.5">
           <Badge variant="outline" className="text-[9px] font-mono px-1.5 shrink-0">{t.method}</Badge>
@@ -140,12 +151,18 @@ export default function BotToolsPage() {
       key: 'parameters',
       header: '参数签名',
       width: '260px',
+      resizable: true,
+      exportValue: (t) => {
+        const props = (t.parameters as { properties?: Record<string, unknown> })?.properties;
+        return props ? Object.keys(props).join(', ') : '无参数';
+      },
       render: (t) => <ParamBadges parameters={t.parameters} />,
     },
     {
       key: 'toggle',
       header: '开关',
       width: '60px',
+      exportValue: (t) => (t.enabled ? '启用' : '禁用'),
       render: (t) => (
         <Switch checked={t.enabled} onCheckedChange={() => toggleMutation.mutate(t.id)} className="scale-90" />
       ),
@@ -155,6 +172,38 @@ export default function BotToolsPage() {
   const actions: DataTableAction<BotTool>[] = [
     { label: '查看签名', icon: 'lucide:code-2', onClick: (t) => setDetailTool(t) },
   ];
+
+  const getRowExpandedContent = (t: BotTool) => (
+    <div className="grid gap-3 text-xs sm:grid-cols-2">
+      <div>
+        <div className="mb-1 font-medium text-muted-foreground">端点信息</div>
+        <div className="flex items-center gap-1.5">
+          <Badge variant="outline" className="font-mono text-xs">{t.method}</Badge>
+          <span className="font-mono text-sm text-muted-foreground">{t.endpoint}</span>
+        </div>
+      </div>
+      {t.description && (
+        <div>
+          <div className="mb-1 font-medium text-muted-foreground">描述</div>
+          <div className="text-foreground">{t.description}</div>
+        </div>
+      )}
+      <div className="sm:col-span-2">
+        <div className="mb-1 font-medium text-muted-foreground">参数定义（JSON Schema）</div>
+        <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed max-h-48">
+          {JSON.stringify(t.parameters, null, 2)}
+        </pre>
+      </div>
+      {t.param_mapping && Object.keys(t.param_mapping).length > 0 && (
+        <div className="sm:col-span-2">
+          <div className="mb-1 font-medium text-muted-foreground">参数映射</div>
+          <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed">
+            {JSON.stringify(t.param_mapping, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -192,14 +241,19 @@ export default function BotToolsPage() {
         data={tools}
         columns={columns}
         rowKey={(t) => t.id}
+        isLoading={isLoading}
         searchPlaceholder="搜索工具名称或端点..."
         searchAccessor={(t) => t.name + (t.description ?? '') + t.endpoint}
         actions={actions}
         facetedFilters={facetedFilters}
         selectable
         bulkActions={bulkActions}
+        enableColumnReorder
+        exportable
+        exportFileName="Bot工具.csv"
+        getRowExpandedContent={getRowExpandedContent}
         emptyIcon="lucide:wrench"
-        emptyTitle={isLoading ? '加载中...' : '还没有工具'}
+        emptyTitle="还没有工具"
         emptyDescription="点击「同步工具」从后端 API 自动发现接口定义"
         emptyActionLabel="同步工具"
         emptyActionClick={() => syncMutation.mutate()}

@@ -212,7 +212,15 @@ export default function Header() {
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <button className="inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-accent cursor-pointer">
-                  <Icon icon="lucide:zap" className="size-4 fill-amber-500 text-amber-700 dark:fill-amber-400 dark:text-amber-600" />
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 1024 1024">
+                    <defs>
+                      <linearGradient id="zap-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#FBBF24" />
+                        <stop offset="100%" stopColor="#F59E0B" />
+                      </linearGradient>
+                    </defs>
+                    <path fill="url(#zap-grad)" d="M848 359.3H627.7L825.8 109c4.1-5.3.4-13-6.3-13H436c-2.8 0-5.5 1.5-6.9 4L170 547.5c-3.1 5.3.7 12 6.9 12h174.4l-89.4 357.6c-1.9 7.8 7.5 13.3 13.3 7.7L853.5 373c5.2-4.9 1.7-13.7-5.5-13.7"/>
+                  </svg>
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>

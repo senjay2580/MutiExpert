@@ -132,7 +132,6 @@ async def upload_document(
 async def create_link_document(
     kb_id: UUID,
     data: LinkDocumentCreate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
@@ -140,33 +139,17 @@ async def create_link_document(
     if not kb:
         raise HTTPException(status_code=404, detail="Knowledge base not found")
 
-    try:
-        text = await fetch_url_text(data.source_url)
-    except UnsafeUrlError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except ValueError as e:
-        message = str(e) or "Failed to fetch URL content"
-        if "too large" in message.lower():
-            raise HTTPException(status_code=413, detail=message)
-        raise HTTPException(status_code=400, detail=message)
-
-    if not text:
-        raise HTTPException(status_code=400, detail="No readable text found at URL")
-
     doc = Document(
         knowledge_base_id=kb_id,
         title=data.title,
         file_type="link",
         source_url=data.source_url,
-        content_text=text,
-        file_size=len(text.encode("utf-8")),
-        status="processing",
+        status="ready",
     )
     db.add(doc)
     kb.document_count = (kb.document_count or 0) + 1
     await db.commit()
     await db.refresh(doc)
-    background_tasks.add_task(process_document, doc.id)
     return doc
 
 

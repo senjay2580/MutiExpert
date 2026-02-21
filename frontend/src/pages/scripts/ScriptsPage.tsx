@@ -16,7 +16,13 @@ import { PageHeader } from '@/components/composed/page-header';
 import { StatCard } from '@/components/composed/stat-card';
 import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
-import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableAction,
+  type FacetedFilterDef,
+  type BulkAction,
+} from '@/components/composed/data-table';
 import { scriptService } from '@/services/scriptService';
 import type { ScriptTestResult } from '@/services/scriptService';
 import type { UserScript } from '@/types';
@@ -170,6 +176,20 @@ export default function ScriptsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scripts'] }),
   });
 
+  const bulkToggleMutation = useMutation({
+    mutationFn: async ({ ids, enabled }: { ids: string[]; enabled: boolean }) => {
+      for (const id of ids) await scriptService.update(id, { enabled });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scripts'] }),
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await scriptService.delete(id);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scripts'] }),
+  });
+
   const handleTest = async (script: UserScript) => {
     setTestingId(script.id);
     try {
@@ -226,6 +246,10 @@ export default function ScriptsPage() {
       header: '脚本名称',
       sortable: true,
       width: '260px',
+      resizable: true,
+      sticky: 'left',
+      accessor: (s) => s.name,
+      exportValue: (s) => s.name,
       render: (s) => (
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground truncate">{s.name}</div>
@@ -241,6 +265,8 @@ export default function ScriptsPage() {
       key: 'status',
       header: '状态',
       width: '90px',
+      accessor: (s) => (s.enabled ? 1 : 0),
+      exportValue: (s) => (s.enabled ? '启用' : '禁用'),
       render: (s) => (
         <Badge
           variant={s.enabled ? 'default' : 'outline'}
@@ -265,6 +291,14 @@ export default function ScriptsPage() {
       key: 'last_test',
       header: '最近测试',
       width: '180px',
+      sortable: true,
+      resizable: true,
+      type: 'date',
+      accessor: (s) => s.last_test_at ?? '',
+      exportValue: (s) =>
+        s.last_test_at
+          ? `${formatTime(s.last_test_at)} (${s.last_test_status === 'success' ? '通过' : '失败'})`
+          : '尚未测试',
       render: (s) =>
         s.last_test_at ? (
           <div>
@@ -345,6 +379,84 @@ export default function ScriptsPage() {
     },
   ];
 
+  // ======================== Faceted Filters ========================
+
+  const facetedFilters = useMemo((): FacetedFilterDef<UserScript>[] => [
+    {
+      key: 'enabled',
+      label: '状态',
+      icon: 'lucide:toggle-right',
+      options: [
+        { value: 'enabled', label: '启用', icon: 'lucide:check-circle-2' },
+        { value: 'disabled', label: '禁用', icon: 'lucide:x-circle' },
+      ],
+      accessor: (s) => (s.enabled ? 'enabled' : 'disabled'),
+    },
+    {
+      key: 'test_status',
+      label: '测试状态',
+      icon: 'lucide:flask-conical',
+      options: [
+        { value: 'success', label: '通过', icon: 'lucide:check' },
+        { value: 'failed', label: '失败', icon: 'lucide:x' },
+        { value: 'untested', label: '未测试', icon: 'lucide:minus' },
+      ],
+      accessor: (s) => {
+        if (!s.last_test_status) return 'untested';
+        return s.last_test_status === 'success' ? 'success' : 'failed';
+      },
+    },
+  ], []);
+
+  // ======================== Bulk Actions ========================
+
+  const bulkActions = useMemo((): BulkAction[] => [
+    {
+      label: '批量启用',
+      icon: 'lucide:check-circle-2',
+      onClick: (ids) => bulkToggleMutation.mutate({ ids, enabled: true }),
+    },
+    {
+      label: '批量禁用',
+      icon: 'lucide:x-circle',
+      onClick: (ids) => bulkToggleMutation.mutate({ ids, enabled: false }),
+    },
+    {
+      label: '批量删除',
+      icon: 'lucide:trash-2',
+      variant: 'destructive',
+      onClick: (ids) => bulkDeleteMutation.mutate(ids),
+    },
+  ], [bulkToggleMutation, bulkDeleteMutation]);
+
+  // ======================== Row Expansion ========================
+
+  const getRowExpandedContent = (s: UserScript) => (
+    <div className="space-y-2">
+      {s.description && (
+        <div className="text-xs">
+          <span className="font-medium text-muted-foreground">描述：</span>
+          <span className="text-foreground">{s.description}</span>
+        </div>
+      )}
+      <div>
+        <div className="mb-1 text-xs font-medium text-muted-foreground">脚本内容预览</div>
+        <pre className="max-h-48 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all">
+          {s.script_content.slice(0, 1000)}
+          {s.script_content.length > 1000 && '\n...（已截断）'}
+        </pre>
+      </div>
+      {s.last_test_output && (
+        <div>
+          <div className="mb-1 text-xs font-medium text-muted-foreground">最近输出</div>
+          <pre className="max-h-32 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all">
+            {s.last_test_output.slice(0, 500)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-6 h-full">
       <PageHeader
@@ -402,11 +514,19 @@ export default function ScriptsPage() {
         data={scripts}
         columns={columns}
         rowKey={(s) => s.id}
+        isLoading={isLoading}
         searchPlaceholder="搜索脚本名称..."
         searchAccessor={(s) => s.name + (s.description ?? '')}
         actions={actions}
+        facetedFilters={facetedFilters}
+        selectable
+        bulkActions={bulkActions}
+        enableColumnReorder
+        exportable
+        exportFileName="用户脚本.csv"
+        getRowExpandedContent={getRowExpandedContent}
         emptyIcon="lucide:file-code"
-        emptyTitle={isLoading ? '加载中...' : '还没有脚本'}
+        emptyTitle="还没有脚本"
         emptyDescription="创建自动化脚本，供定时任务和 AI 助手调用"
         emptyActionLabel="创建第一个脚本"
         emptyActionClick={openCreate}

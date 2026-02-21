@@ -46,6 +46,8 @@ async def reprocess_document(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    if doc.file_type == "link":
+        raise HTTPException(status_code=400, detail="Link documents do not support reprocessing")
     # 清除旧分块
     await db.execute(sa_delete(DocumentChunk).where(DocumentChunk.document_id == doc_id))
     doc.status = "processing"

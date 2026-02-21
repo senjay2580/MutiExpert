@@ -826,6 +826,31 @@ export default function AIAssistantChatPage() {
                 className="!min-h-[44px] !max-h-[200px] resize-none !border-0 !bg-transparent !px-4 !py-3 !text-sm !leading-relaxed !shadow-none !ring-0 focus-visible:!ring-0 focus-visible:!bg-transparent"
               />
               <div className="flex items-center gap-1.5 border-t border-border/30 px-3 py-2">
+                {/* 左侧：模型选择器 + 模式按钮 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-7 gap-1.5 rounded-full px-2.5 text-[11px] font-medium">
+                      <ProviderIcon provider={normalizedCurrent} size={14} />
+                      {currentModelName}
+                      <Icon icon="lucide:chevron-down" width={10} height={10} className="opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuLabel>选择模型</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {(modelConfigs.length ? modelConfigs : [
+                      { id: 'claude', name: 'Claude', provider: 'anthropic' },
+                      { id: 'openai', name: 'OpenAI', provider: 'openai' },
+                    ]).map((model) => (
+                      <DropdownMenuItem key={model.id} className="gap-2" onClick={() => setCurrentModel(model.id as ModelProvider)}>
+                        <ProviderIcon provider={model.id} size={16} />
+                        <span className="flex-1">{model.name}</span>
+                        {model.id === normalizedCurrent && <Icon icon="lucide:check" width={14} height={14} className="text-primary" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <div className="h-4 w-px bg-border/40" />
                 <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-0.5">
                   <Button
                     variant={modes.has('knowledge') ? 'secondary' : 'ghost'}
@@ -867,30 +892,7 @@ export default function AIAssistantChatPage() {
                 {modes.has('knowledge') && (
                   <span className="text-[10px] text-muted-foreground">{effectiveKbCount} 个知识库</span>
                 )}
-                <div className="ml-auto flex items-center gap-1.5">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-7 gap-1.5 rounded-full px-2.5 text-[11px] font-medium">
-                        <ProviderIcon provider={normalizedCurrent} size={14} />
-                        {currentModelName}
-                        <Icon icon="lucide:chevron-down" width={10} height={10} className="opacity-50" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuLabel>选择模型</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {(modelConfigs.length ? modelConfigs : [
-                        { id: 'claude', name: 'Claude', provider: 'anthropic' },
-                        { id: 'openai', name: 'OpenAI', provider: 'openai' },
-                      ]).map((model) => (
-                        <DropdownMenuItem key={model.id} className="gap-2" onClick={() => setCurrentModel(model.id as ModelProvider)}>
-                          <ProviderIcon provider={model.id} size={16} />
-                          <span className="flex-1">{model.name}</span>
-                          {model.id === normalizedCurrent && <Icon icon="lucide:check" width={14} height={14} className="text-primary" />}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                <div className="ml-auto">
                   <Button variant="default" size="icon-sm" className="size-7 rounded-full shadow-sm" disabled={!input.trim() && !isSending} onClick={handlePrimaryAction}>
                     {isSending ? <Icon icon="lucide:square" width={14} height={14} /> : <Icon icon="lucide:arrow-up" width={14} height={14} />}
                   </Button>

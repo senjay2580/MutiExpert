@@ -22,7 +22,6 @@ import { cn } from '@/lib/utils';
 import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import { useAppStore } from '@/stores/useAppStore';
 import type { ModelProvider } from '@/types';
-import { illustrationPresets } from '@/lib/illustrations';
 import { ProviderIcon } from '@/components/composed/provider-icon';
 
 type ModelConfig = {
@@ -54,7 +53,7 @@ export default function AIAssistantPage() {
   const normalizedCurrent = currentModel === 'codex' ? 'openai' : currentModel;
   const setCurrentModel = useAppStore((s) => s.setCurrentModel);
 
-  const { data: knowledgeBases = [], isLoading: loadingKnowledge } = useQuery({
+  const { data: knowledgeBases = [] } = useQuery({
     queryKey: ['knowledge-bases', 'all'],
     queryFn: () => knowledgeBaseService.list(),
   });
@@ -111,24 +110,6 @@ export default function AIAssistantPage() {
   const handleRenameCancel = () => { setRenamingId(null); setRenameDraft(''); };
   const handleRenameSave = () => { if (renamingId) { updateConversation.mutate({ id: renamingId, title: renameDraft.trim() || null }); } handleRenameCancel(); };
   const handleTogglePin = (id: string, pin: boolean) => updateConversation.mutate({ id, is_pinned: pin });
-
-  const randomKnowledgeBases = useMemo(() => {
-    const names = knowledgeBases
-      .map((kb) => kb.name)
-      .filter((name): name is string => Boolean(name?.trim()));
-    if (names.length === 0) return [];
-    const shuffled = [...names];
-    for (let i = shuffled.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled.slice(0, 5);
-  }, [knowledgeBases]);
-
-  const knowledgeTickerItems = useMemo(
-    () => (randomKnowledgeBases.length ? [...randomKnowledgeBases, ...randomKnowledgeBases] : []),
-    [randomKnowledgeBases],
-  );
 
   const handlePrompt = (text: string) => {
     setQuestion(text);
@@ -298,46 +279,6 @@ export default function AIAssistantPage() {
                   {prompt.text}
                 </Button>
               ))}
-            </div>
-
-            <div className="mt-6 w-full max-w-4xl">
-              <div className={`ai-knowledge-ticker${knowledgeTickerItems.length === 0 ? ' ai-knowledge-empty-mode' : ''}`}>
-                {loadingKnowledge ? (
-                  <div className="ai-knowledge-empty">加载知识库中...</div>
-                ) : knowledgeTickerItems.length === 0 ? (
-                  <div className="ai-knowledge-empty">
-                    <div className="ai-knowledge-empty-icon">
-                      <img
-                        src={illustrationPresets.emptyKnowledge}
-                        alt="暂无知识库"
-                        className="ai-knowledge-empty-illustration"
-                      />
-                    </div>
-                    <span className="ai-knowledge-empty-text">暂无知识库可展示</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 gap-1.5 rounded-full text-xs"
-                      onClick={() => navigate('/knowledge')}
-                    >
-                      <Icon icon="lucide:plus" width={14} height={14} />
-                      新建知识库
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="ai-knowledge-track" aria-label="随机知识库滚动展示">
-                    {knowledgeTickerItems.map((name, index) => (
-                      <span
-                        key={`${name}-${index}`}
-                        className="ai-knowledge-chip"
-                        title={name}
-                      >
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           </section>
         </div>

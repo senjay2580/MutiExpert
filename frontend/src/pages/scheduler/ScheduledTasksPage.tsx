@@ -23,7 +23,14 @@ import {
 import { PageHeader } from '@/components/composed/page-header';
 import { StatCard } from '@/components/composed/stat-card';
 import { CreateButton, SolidButton } from '@/components/composed/solid-button';
-import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
+import { ConfirmDialog } from '@/components/composed/confirm-dialog';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableAction,
+  type FacetedFilterDef,
+  type BulkAction,
+} from '@/components/composed/data-table';
 import { illustrationPresets } from '@/lib/illustrations';
 import { scheduledTaskService } from '@/services/scheduledTaskService';
 import { scriptService } from '@/services/scriptService';
@@ -39,6 +46,13 @@ const CRON_PRESETS = [
 ];
 
 type TaskType = 'ai_query' | 'feishu_push' | 'skill_exec' | 'script_exec';
+
+const TASK_TYPE_LABEL: Record<TaskType, string> = {
+  ai_query: 'AI 问答',
+  feishu_push: '飞书推送',
+  skill_exec: '技能执行',
+  script_exec: '脚本执行',
+};
 
 type FormData = {
   name: string;
@@ -81,6 +95,10 @@ const buildColumns = (
     header: '任务名称',
     sortable: true,
     width: '300px',
+    resizable: true,
+    sticky: 'left',
+    accessor: (task) => task.name,
+    exportValue: (task) => task.name,
     render: (task) => (
       <div className="min-w-0">
         <div className="text-sm font-medium text-foreground truncate">{task.name}</div>
@@ -97,6 +115,9 @@ const buildColumns = (
     header: '执行频率',
     sortable: true,
     width: '140px',
+    resizable: true,
+    accessor: (task) => task.cron_expression,
+    exportValue: (task) => `${describeCron(task.cron_expression)} (${task.cron_expression})`,
     render: (task) => (
       <div>
         <div className="text-xs text-foreground">{describeCron(task.cron_expression)}</div>
@@ -108,10 +129,13 @@ const buildColumns = (
     key: 'type',
     header: '类型',
     width: '120px',
+    type: 'badge',
+    accessor: (task) => TASK_TYPE_LABEL[task.task_type as TaskType] ?? task.task_type,
+    exportValue: (task) => TASK_TYPE_LABEL[task.task_type as TaskType] ?? task.task_type,
     render: (task) => (
       <div>
         <Badge variant="outline" className="text-[10px] capitalize">
-          {task.task_type}
+          {TASK_TYPE_LABEL[task.task_type as TaskType] ?? task.task_type}
         </Badge>
         {task.task_type === 'script_exec' && task.script_id && (
           <div className="text-[10px] text-muted-foreground truncate max-w-[100px] mt-0.5">
@@ -125,6 +149,8 @@ const buildColumns = (
     key: 'status',
     header: '状态',
     width: '90px',
+    accessor: (task) => (task.enabled ? 1 : 0),
+    exportValue: (task) => (task.enabled ? '活跃' : '已暂停'),
     render: (task) => (
       <Badge
         variant={task.enabled ? 'default' : 'outline'}
@@ -147,6 +173,14 @@ const buildColumns = (
     key: 'last_run',
     header: '上次执行',
     width: '160px',
+    sortable: true,
+    resizable: true,
+    type: 'date',
+    accessor: (task) => task.last_run_at ?? '',
+    exportValue: (task) =>
+      task.last_run_at
+        ? `${formatTime(task.last_run_at)} (${task.last_run_status === 'success' ? '成功' : '失败'})`
+        : '尚未执行',
     render: (task) =>
       task.last_run_at ? (
         <div>
@@ -185,6 +219,7 @@ export default function ScheduledTasksPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
+  const [deleteTarget, setDeleteTarget] = useState<ScheduledTask | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['scheduled-tasks'],
@@ -203,6 +238,26 @@ export default function ScheduledTasksPage() {
 
   const deleteMutation = useMutation({
     mutationFn: scheduledTaskService.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] });
+      setDeleteTarget(null);
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await scheduledTaskService.delete(id);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+  });
+
+  const bulkToggleMutation = useMutation({
+    mutationFn: async ({ ids, enabled }: { ids: string[]; enabled: boolean }) => {
+      for (const id of ids) {
+        const task = tasks.find((t) => t.id === id);
+        if (task && task.enabled !== enabled) await scheduledTaskService.toggle(id);
+      }
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
   });
 
@@ -226,12 +281,6 @@ export default function ScheduledTasksPage() {
 
   const handleToggle = (id: string) => {
     toggleMutation.mutate(id);
-  };
-
-  const handleDelete = (task: ScheduledTask) => {
-    if (confirm(`确定删除「${task.name}」？`)) {
-      deleteMutation.mutate(task.id);
-    }
   };
 
   const openCreate = () => {
@@ -339,9 +388,88 @@ export default function ScheduledTasksPage() {
       label: '删除',
       icon: 'lucide:trash-2',
       variant: 'destructive',
-      onClick: handleDelete,
+      onClick: (task) => setDeleteTarget(task),
     },
   ];
+
+  const facetedFilters = useMemo((): FacetedFilterDef<ScheduledTask>[] => [
+    {
+      key: 'task_type',
+      label: '类型',
+      icon: 'lucide:tag',
+      options: [
+        { value: 'ai_query', label: 'AI 问答', icon: 'lucide:brain' },
+        { value: 'feishu_push', label: '飞书推送', icon: 'lucide:send' },
+        { value: 'skill_exec', label: '技能执行', icon: 'lucide:zap' },
+        { value: 'script_exec', label: '脚本执行', icon: 'lucide:file-code' },
+      ],
+      accessor: (t) => t.task_type,
+    },
+    {
+      key: 'enabled',
+      label: '状态',
+      icon: 'lucide:toggle-right',
+      options: [
+        { value: 'active', label: '活跃', icon: 'lucide:check-circle-2' },
+        { value: 'paused', label: '已暂停', icon: 'lucide:pause-circle' },
+      ],
+      accessor: (t) => (t.enabled ? 'active' : 'paused'),
+    },
+  ], []);
+
+  const bulkActions = useMemo((): BulkAction[] => [
+    {
+      label: '批量启用',
+      icon: 'lucide:check-circle-2',
+      onClick: (ids) => bulkToggleMutation.mutate({ ids, enabled: true }),
+    },
+    {
+      label: '批量暂停',
+      icon: 'lucide:pause-circle',
+      onClick: (ids) => bulkToggleMutation.mutate({ ids, enabled: false }),
+    },
+    {
+      label: '批量删除',
+      icon: 'lucide:trash-2',
+      variant: 'destructive',
+      onClick: (ids) => bulkDeleteMutation.mutate(ids),
+    },
+  ], [bulkToggleMutation, bulkDeleteMutation]);
+
+  const getRowExpandedContent = (task: ScheduledTask) => {
+    const config = task.task_config as Record<string, unknown> | null;
+    const scriptName = task.script_id
+      ? scripts.find((s) => s.id === task.script_id)?.name
+      : undefined;
+
+    return (
+      <div className="grid gap-3 text-xs sm:grid-cols-2">
+        <div>
+          <div className="mb-1 font-medium text-muted-foreground">任务描述</div>
+          <div className="text-foreground">{task.description || '无描述'}</div>
+        </div>
+        <div>
+          <div className="mb-1 font-medium text-muted-foreground">Cron 表达式</div>
+          <code className="font-mono text-foreground">{task.cron_expression}</code>
+          <span className="ml-2 text-muted-foreground">({describeCron(task.cron_expression)})</span>
+        </div>
+        {scriptName && (
+          <div>
+            <div className="mb-1 font-medium text-muted-foreground">关联脚本</div>
+            <div className="text-foreground">{scriptName}</div>
+          </div>
+        )}
+        {config && Object.keys(config).length > 0 && (
+          <div className="sm:col-span-2">
+            <div className="mb-1 font-medium text-muted-foreground">任务配置</div>
+            <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed">
+              {JSON.stringify(config, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -384,18 +512,38 @@ export default function ScheduledTasksPage() {
         data={tasks}
         columns={columns}
         rowKey={(t) => t.id}
+        isLoading={isLoading}
         searchPlaceholder="搜索任务名称..."
         searchAccessor={(t) => t.name + (t.description ?? '')}
         actions={actions}
+        facetedFilters={facetedFilters}
+        selectable
+        bulkActions={bulkActions}
+        enableColumnReorder
+        exportable
+        exportFileName="定时任务.csv"
+        getRowExpandedContent={getRowExpandedContent}
         emptyIcon="lucide:clock"
         emptyIllustration={illustrationPresets.emptySchedule}
-        emptyTitle={isLoading ? '加载中...' : '还没有定时任务'}
+        emptyTitle="还没有定时任务"
         emptyDescription="创建自动化任务，让系统帮你定时处理工作"
         emptyActionLabel="创建第一个任务"
         emptyActionClick={openCreate}
         emptyActionColor="create"
         defaultRowsPerPage={10}
         cardClassName="card-glow-cyan"
+      />
+
+      {/* ======================== Delete Confirm ======================== */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title={`删除「${deleteTarget?.name}」？`}
+        description="此操作不可撤销，任务将被永久删除。"
+        confirmLabel="确认删除"
+        variant="destructive"
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+        loading={deleteMutation.isPending}
       />
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
