@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.models.extras import UserScript, BotTool
+from app.models.extras import UserScript
 from app.services.script_executor import execute_script
 
 router = APIRouter()

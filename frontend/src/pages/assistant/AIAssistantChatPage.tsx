@@ -52,6 +52,21 @@ type ChatMessage = {
 type LocationState = { initialPrompt?: string };
 type FocusMode = 'knowledge' | 'model';
 
+/* ── Clipboard fallback for HTTP contexts ── */
+function copyToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard) {
+    return navigator.clipboard.writeText(text);
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;left:-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  return Promise.resolve();
+}
+
 /* ── Code block with copy button ── */
 function CodeBlock({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
@@ -59,7 +74,7 @@ function CodeBlock({ className, children, ...props }: React.HTMLAttributes<HTMLE
   const lang = className?.replace('hljs language-', '')?.replace('language-', '') || '';
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(code);
+    await copyToClipboard(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -405,7 +420,7 @@ export default function AIAssistantChatPage() {
 
   const handleCopyMessage = async (messageId: string, content: string) => {
     try {
-      await navigator.clipboard.writeText(content);
+      await copyToClipboard(content);
       setCopiedMessageId(messageId);
       if (copyTimeoutRef.current) window.clearTimeout(copyTimeoutRef.current);
       copyTimeoutRef.current = window.setTimeout(() => setCopiedMessageId(null), 1600);
@@ -440,7 +455,7 @@ export default function AIAssistantChatPage() {
 
   const handleCopyMarkdown = async () => {
     if (!messages.length) return;
-    try { await navigator.clipboard.writeText(buildMarkdownExport()); } catch { /* ignore */ }
+    try { await copyToClipboard(buildMarkdownExport()); } catch { /* ignore */ }
   };
 
   const streamCallbacks = (assistantId: string) => ({

@@ -75,7 +75,6 @@ def format_result(result: dict[str, Any]) -> str:
         return f"操作失败 ({result.get('status_code', '?')}): {result.get('data', '未知错误')}"
 
     data = result.get("data")
-    tool_name = result.get("tool_name", "")
 
     # 列表类结果
     if isinstance(data, list):
@@ -94,7 +93,7 @@ def format_result(result: dict[str, Any]) -> str:
                 lines.append(f"{i}. {item}")
         header = f"共 {len(data)} 条结果"
         if len(data) > 20:
-            header += f"（显示前 20 条）"
+            header += "（显示前 20 条）"
         return f"{header}:\n" + "\n".join(lines)
 
     # 单对象结果

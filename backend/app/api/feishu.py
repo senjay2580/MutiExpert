@@ -160,7 +160,6 @@ async def _fallback_rag(question: str, provider: str, db) -> str:
 
 async def _send_confirm_card(svc, chat_id: str, intent, db):
     """发送确认卡片，存储待确认操作"""
-    from app.services.intent.router import IntentResult
     action = FeishuPendingAction(
         chat_id=chat_id,
         action_type=intent.tool_name,
