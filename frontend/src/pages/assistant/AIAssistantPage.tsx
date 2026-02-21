@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -211,11 +210,11 @@ export default function AIAssistantPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3 text-[11px] font-medium text-[var(--ai-input-fg)] hover:bg-white/10 hover:text-[var(--ai-input-fg)]">
+                          <button type="button" className="ai-input-chip inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium cursor-pointer transition-colors hover:brightness-110">
                             <ProviderIcon provider={normalizedCurrent} size={14} />
                             {currentModelName}
                             <Icon icon="lucide:chevron-down" width={10} height={10} className="opacity-50" />
-                          </Button>
+                          </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-56">
                           <DropdownMenuLabel>选择模型</DropdownMenuLabel>
@@ -242,10 +241,10 @@ export default function AIAssistantPage() {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <Badge variant="secondary" className="gap-1 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[10px] text-[var(--ai-input-fg)]">
+                      <span className="ai-input-chip inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px]">
                         <Icon icon="streamline-color:open-book" width={10} height={10} />
                         {knowledgeBases.length} 个知识库
-                      </Badge>
+                      </span>
                     </div>
                     <div className="ai-input-muted ml-auto flex items-center gap-2 text-xs">
                       <span>Enter 发送 · Shift+Enter 换行</span>
