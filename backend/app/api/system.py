@@ -101,6 +101,8 @@ async def update_model_config(
         extras["requires_openai_auth"] = data.requires_openai_auth
     if data.model_migrations is not None:
         extras["model_migrations"] = data.model_migrations
+    if data.available_models is not None:
+        extras["available_models"] = data.available_models
     config.extras = extras
 
     await db.commit()

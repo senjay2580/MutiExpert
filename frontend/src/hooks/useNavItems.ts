@@ -15,6 +15,8 @@ export function useNavItems() {
     { path: '/assistant',  icon: 'streamline-color:chat-bubble-text-square', label: 'AI 问答', iconClass: 'text-rose-500' },
     { path: '/knowledge',  icon: navIcons.knowledge,  label: '知识库',  iconClass: 'text-indigo-500' },
     { path: '/scheduler',  icon: navIcons.scheduler,   label: '定时任务', iconClass: 'text-cyan-500' },
+    { path: '/scripts',    icon: 'lucide:file-code',   label: '用户脚本', iconClass: 'text-violet-500' },
+    { path: '/bot-tools',  icon: 'lucide:wrench',      label: 'Bot Tools', iconClass: 'text-orange-500' },
     { path: '/boards',     icon: navIcons.boards,    label: '画板', iconClass: 'text-amber-500' },
   ];
 

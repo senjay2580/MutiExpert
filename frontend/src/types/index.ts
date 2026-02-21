@@ -120,11 +120,41 @@ export interface ScheduledTask {
   name: string;
   description: string | null;
   cron_expression: string;
-  task_type: 'skill_exec' | 'ai_query' | 'feishu_push';
+  task_type: 'skill_exec' | 'ai_query' | 'feishu_push' | 'script_exec';
   task_config: Record<string, unknown>;
   enabled: boolean;
+  script_id: string | null;
   last_run_at: string | null;
   last_run_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserScript {
+  id: string;
+  name: string;
+  description: string | null;
+  script_content: string;
+  script_type: string;
+  created_by: string;
+  last_test_at: string | null;
+  last_test_status: string | null;
+  last_test_output: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BotTool {
+  id: string;
+  name: string;
+  description: string;
+  action_type: 'query' | 'mutation';
+  endpoint: string;
+  method: string;
+  param_mapping: Record<string, string>;
+  parameters: Record<string, unknown>;
+  enabled: boolean;
   created_at: string;
   updated_at: string;
 }

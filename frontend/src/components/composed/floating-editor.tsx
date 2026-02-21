@@ -140,10 +140,14 @@ function FloatingEditorWindow({
         ref={containerRef}
         className={cn(
           'fixed z-[60] flex flex-col bg-background overflow-hidden',
-          'border border-border/60 shadow-2xl shadow-black/20',
-          maximized ? 'rounded-none' : 'rounded-2xl',
+          'border border-white/15',
+          'rounded-none',
         )}
-        style={windowStyle}
+        style={{
+          ...windowStyle,
+          backgroundImage: "linear-gradient(145deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 45%, transparent 100%)",
+          boxShadow: "rgba(0,0,0,0.4) 0px 2px 4px, rgba(0,0,0,0.3) 0px 7px 13px -3px, rgba(0,0,0,0.2) 0px -3px 0px inset, inset 0 1px 0 rgba(255,255,255,0.1)",
+        }}
       >
         {/* ── macOS Title Bar ── */}
         <div

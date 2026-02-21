@@ -41,13 +41,6 @@ export function ConfirmDialog({
         </DialogHeader>
         <DialogFooter>
           <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            取消
-          </Button>
-          <Button
             variant={variant}
             onClick={onConfirm}
             disabled={loading}

@@ -12,6 +12,7 @@ class AIModelConfigUpdate(BaseModel):
     wire_api: str | None = None
     requires_openai_auth: bool | None = None
     model_migrations: dict[str, str] | None = None
+    available_models: list[dict[str, str]] | None = None
 
 
 class AvailableModel(BaseModel):

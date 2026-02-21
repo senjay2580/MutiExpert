@@ -14,7 +14,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/composed/page-header';
-import { CreateButton, SolidButton, CancelButton } from '@/components/composed/solid-button';
+import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { EmptyState } from '@/components/composed/empty-state';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { ItemContextMenu, type ItemAction } from '@/components/composed/item-context-menu';
@@ -218,7 +218,6 @@ export default function BoardListPage() {
             </div>
           </div>
           <DialogFooter>
-            <CancelButton size="sm" onClick={closeDialog} />
             <SolidButton
               color="violet"
               size="sm"

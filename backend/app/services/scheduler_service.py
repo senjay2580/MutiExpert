@@ -11,6 +11,7 @@ from app.services.rag_service import retrieve_context, build_rag_prompt
 from app.services.ai_service import stream_chat
 from app.services.feishu_service import get_feishu_service
 from app.services.skill_executor import execute_skill
+from app.services.script_executor import execute_script
 
 
 async def _generate_text(messages: list[dict], provider: str, system_prompt: str, db) -> str:
@@ -100,6 +101,30 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
                 else:
                     await svc.send_webhook_message(title, content)
             status = "success"
+
+        elif task.task_type == "script_exec":
+            from app.models.extras import UserScript
+            script_id = task.script_id or config.get("script_id")
+            if not script_id:
+                raise RuntimeError("Missing script_id")
+            sr = await db.execute(select(UserScript).where(UserScript.id == script_id))
+            script = sr.scalar_one_or_none()
+            if not script:
+                raise RuntimeError(f"Script {script_id} not found")
+            result = await execute_script(script.script_content, timeout_seconds=config.get("timeout", 30))
+            if not result.success:
+                raise RuntimeError(result.error or "Script execution failed")
+            if config.get("push_to_feishu"):
+                svc = await get_feishu_service(db)
+                chat_id = config.get("feishu_chat_id") or svc.default_chat_id
+                title = config.get("feishu_title") or f"脚本任务：{script.name}"
+                content = result.output or "(无输出)"
+                if chat_id:
+                    await svc.send_text_message(chat_id, content)
+                else:
+                    await svc.send_webhook_message(title, content)
+            status = "success"
+
         else:
             raise RuntimeError(f"Unknown task_type: {task.task_type}")
 

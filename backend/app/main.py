@@ -10,8 +10,12 @@ from app.services.scheduler_service import SchedulerService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: auto-create tables
+    # Startup: auto-create tables + seed bot tools
     await init_db()
+    from app.database import AsyncSessionLocal
+    from app.services.intent.seed import ensure_default_tools
+    async with AsyncSessionLocal() as db:
+        await ensure_default_tools(db)
     scheduler = SchedulerService()
     await scheduler.start()
     yield
@@ -32,6 +36,7 @@ PUBLIC_PATHS = {
     "/health",
     "/api/v1/health",
     "/api/v1/feishu/webhook",
+    "/api/v1/feishu/card-action",
 }
 
 

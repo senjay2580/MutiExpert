@@ -22,6 +22,7 @@ class FeishuService:
         verification_token: str = "",
         encrypt_key: str = "",
         default_chat_id: str = "",
+        default_provider: str = "claude",
     ):
         self.app_id = app_id
         self.app_secret = app_secret
@@ -29,6 +30,7 @@ class FeishuService:
         self.verification_token = verification_token
         self.encrypt_key = encrypt_key
         self.default_chat_id = default_chat_id
+        self.default_provider = default_provider
         self._tenant_token: str | None = None
         self._tenant_token_expire_at: datetime | None = None
 
@@ -103,6 +105,42 @@ class FeishuService:
                 json={
                     "msg_type": "text",
                     "content": json.dumps({"text": text}),
+                },
+            )
+            return {"success": resp.status_code == 200, "data": resp.json()}
+
+    async def send_interactive_card(self, chat_id: str, card: dict) -> dict:
+        """发送消息卡片（用于确认操作等交互场景）"""
+        token = await self._get_tenant_token()
+        if not token:
+            return {"success": False, "error": "Tenant token not available"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://open.feishu.cn/open-apis/im/v1/messages",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"receive_id_type": "chat_id"},
+                json={
+                    "receive_id": chat_id,
+                    "msg_type": "interactive",
+                    "content": json.dumps(card),
+                },
+            )
+            data = resp.json()
+            message_id = data.get("data", {}).get("message_id", "")
+            return {"success": resp.status_code == 200, "data": data, "message_id": message_id}
+
+    async def update_card(self, message_id: str, card: dict) -> dict:
+        """更新已发送的消息卡片内容"""
+        token = await self._get_tenant_token()
+        if not token:
+            return {"success": False, "error": "Tenant token not available"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.patch(
+                f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "msg_type": "interactive",
+                    "content": json.dumps(card),
                 },
             )
             return {"success": resp.status_code == 200, "data": resp.json()}
@@ -198,6 +236,7 @@ async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
     verification_token = settings.feishu_verification_token
     encrypt_key = settings.feishu_encrypt_key
     default_chat_id = settings.feishu_default_chat_id
+    default_provider = "claude"
 
     if db is not None:
         result = await db.execute(select(FeishuConfig).limit(1))
@@ -210,6 +249,7 @@ async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
             verification_token = config.verification_token or ""
             encrypt_key = config.encrypt_key or ""
             default_chat_id = config.default_chat_id or ""
+            default_provider = getattr(config, "default_provider", None) or "claude"
 
     return FeishuService(
         app_id=app_id,
@@ -218,4 +258,5 @@ async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
         verification_token=verification_token,
         encrypt_key=encrypt_key,
         default_chat_id=default_chat_id,
+        default_provider=default_provider,
     )

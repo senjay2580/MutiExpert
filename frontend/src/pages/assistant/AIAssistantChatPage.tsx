@@ -534,8 +534,10 @@ export default function AIAssistantChatPage() {
     <div className="flex h-[calc(100svh-var(--topbar-height))]">
       {/* ── Main chat area ── */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Grid background */}
+        <div className="grid-bg" />
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border/40 bg-background/80 px-4 py-2.5 backdrop-blur-sm">
+        <div className="relative z-[1] flex items-center justify-between border-b border-border/40 bg-background/80 px-4 py-2.5 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <TooltipProvider>
               <Tooltip>
@@ -593,7 +595,7 @@ export default function AIAssistantChatPage() {
         </div>
 
         {/* Messages */}
-        <div ref={messageListRef} className="flex-1 overflow-y-auto">
+        <div ref={messageListRef} className="relative z-[1] flex-1 overflow-y-auto">
           {loadingMessages ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">加载对话中...</div>
           ) : messages.length === 0 ? (
@@ -605,7 +607,7 @@ export default function AIAssistantChatPage() {
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+            <div className="mx-auto max-w-4xl space-y-5 px-4 py-6">
               {messages.map((msg) => (
                 <div key={msg.id} className={cn('group/msg flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                   {msg.role === 'assistant' && (
@@ -685,14 +687,14 @@ export default function AIAssistantChatPage() {
 
         {/* Error */}
         {sendError && (
-          <div className="mx-auto max-w-3xl px-4">
+          <div className="relative z-[1] mx-auto max-w-4xl px-4">
             <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive">发送失败：{sendError}</div>
           </div>
         )}
 
         {/* Input */}
-        <div className="border-t border-border/40 bg-background/80 backdrop-blur-sm">
-          <div className="mx-auto max-w-3xl px-4 py-3">
+        <div className="relative z-[1] border-t border-border/40 bg-background/80 backdrop-blur-sm">
+          <div className="mx-auto max-w-4xl px-4 py-3">
             {editingMessageId && (
               <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
                 <span className="flex items-center gap-1.5">
@@ -737,8 +739,8 @@ export default function AIAssistantChatPage() {
                 <div className="ml-auto flex items-center gap-1.5">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-full px-2.5 text-[11px]">
-                        <Icon icon="lucide:cpu" width={12} height={12} />
+                      <Button variant="ghost" size="sm" className="h-7 gap-1.5 rounded-full px-2.5 text-[11px] font-medium">
+                        <ProviderIcon provider={normalizedCurrent} size={14} />
                         {currentModelName}
                         <Icon icon="lucide:chevron-down" width={10} height={10} className="opacity-50" />
                       </Button>
@@ -750,8 +752,9 @@ export default function AIAssistantChatPage() {
                         { id: 'claude', name: 'Claude', provider: 'anthropic' },
                         { id: 'openai', name: 'OpenAI', provider: 'openai' },
                       ]).map((model) => (
-                        <DropdownMenuItem key={model.id} className="justify-between" onClick={() => setCurrentModel(model.id as ModelProvider)}>
-                          <span>{model.name}</span>
+                        <DropdownMenuItem key={model.id} className="gap-2" onClick={() => setCurrentModel(model.id as ModelProvider)}>
+                          <ProviderIcon provider={model.id} size={16} />
+                          <span className="flex-1">{model.name}</span>
                           {model.id === normalizedCurrent && <Icon icon="lucide:check" width={14} height={14} className="text-primary" />}
                         </DropdownMenuItem>
                       ))}

@@ -479,18 +479,13 @@ h1, h2, h3, h4, h5, h6 {
     rgba(0, 0, 0, 0.45) 0px -3px 0px inset !important;
 }
 
-/* ===== Dashboard Grid Hero ===== */
+/* ===== Grid Background (reusable) ===== */
 
-.dashboard-hero {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius);
-}
-
-.dashboard-hero .grid-bg {
+.grid-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
+  pointer-events: none;
   background-image:
     linear-gradient(to right, #e2e8f0 1px, transparent 1px),
     linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
@@ -499,10 +494,16 @@ h1, h2, h3, h4, h5, h6 {
   -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 60%, transparent 100%);
 }
 
-.dark .dashboard-hero .grid-bg {
+.dark .grid-bg {
   background-image:
     linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px);
+}
+
+.dashboard-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
 }
 
 /* ===== Hero Title Loader Effect ===== */
@@ -1377,6 +1378,101 @@ h1, h2, h3, h4, h5, h6 {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
+
+/* ===== Background Scrolling Text ===== */
+.bg-scroll-text {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -5;
+}
+
+.bg-scroll-track {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+  height: 100%;
+  white-space: nowrap;
+}
+
+.bg-scroll-row {
+  display: inline-flex;
+  gap: 0;
+  width: max-content;
+  font-size: clamp(4rem, 8vw, 7rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.04);
+  user-select: none;
+}
+
+.bg-scroll-row span {
+  padding: 0 0.3em;
+}
+
+.bg-scroll-row:nth-child(odd) {
+  animation: bg-scroll-left 35s linear infinite;
+}
+
+.bg-scroll-row:nth-child(even) {
+  animation: bg-scroll-right 40s linear infinite;
+}
+
+.dark .bg-scroll-row {
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.03);
+}
+
+@keyframes bg-scroll-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes bg-scroll-right {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-scroll-row { animation: none !important; }
+}
+
+/* ===== AI Sidebar Weather Card Style ===== */
+.ai-sidebar-weather {
+  background:
+    radial-gradient(178.94% 106.41% at 26.42% 106.41%, #FFF7B1 0%, rgba(255,255,255,0) 71.88%),
+    #FFFFFF;
+  box-shadow:
+    0px 155px 62px rgba(0,0,0,0.01),
+    0px 87px 52px rgba(0,0,0,0.05),
+    0px 39px 39px rgba(0,0,0,0.09),
+    0px 10px 21px rgba(0,0,0,0.1);
+  border-left: none;
+  border-radius: 23px 0 0 23px;
+  color: rgba(87,77,51,1);
+}
+
+.ai-sidebar-weather .sidebar-title { color: rgba(87,77,51,0.85); }
+.ai-sidebar-weather .sidebar-subtitle { color: rgba(87,77,51,0.5); }
+.ai-sidebar-weather .sidebar-muted { color: rgba(87,77,51,0.4); }
+
+/* Dark mode */
+.dark .ai-sidebar-weather {
+  background:
+    radial-gradient(178.94% 106.41% at 26.42% 106.41%, rgba(255,247,177,0.08) 0%, rgba(255,255,255,0) 71.88%),
+    var(--background);
+  box-shadow:
+    0px 39px 39px rgba(0,0,0,0.2),
+    0px 10px 21px rgba(0,0,0,0.25);
+  color: var(--foreground);
+}
+
+.dark .ai-sidebar-weather .sidebar-title { color: var(--foreground); }
+.dark .ai-sidebar-weather .sidebar-subtitle { color: var(--muted-foreground); }
+.dark .ai-sidebar-weather .sidebar-muted { color: var(--muted-foreground); }
 
 /* Claude Chat prose — minimal markdown rendering */
 .prose-cc p { margin: 0.4em 0; }

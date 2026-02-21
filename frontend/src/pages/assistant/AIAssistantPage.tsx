@@ -23,6 +23,7 @@ import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import { useAppStore } from '@/stores/useAppStore';
 import type { ModelProvider } from '@/types';
 import { illustrationPresets } from '@/lib/illustrations';
+import { ProviderIcon } from '@/components/composed/provider-icon';
 
 type ModelConfig = {
   id: string;
@@ -48,6 +49,7 @@ export default function AIAssistantPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const siteName = useSiteSettingsStore((s) => s.siteName);
+  const logoUrl = useSiteSettingsStore((s) => s.logoUrl);
   const brandName = siteName?.trim() ? siteName : 'MutiExpert';
   const currentModel = useAppStore((s) => s.currentModel);
   const normalizedCurrent = currentModel === 'codex' ? 'openai' : currentModel;
@@ -155,8 +157,26 @@ export default function AIAssistantPage() {
     <div className="flex h-[calc(100svh-var(--topbar-height))]">
       {/* ── Main content ── */}
       <div className="relative flex-1 overflow-y-auto pb-6 pt-6">
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-orange-50/80 via-amber-50/80 to-yellow-100/80 dark:from-slate-950/70 dark:via-slate-900/40 dark:to-slate-950/80" />
-        <div className="pointer-events-none absolute inset-0 -z-10 opacity-70 [background:radial-gradient(circle_at_15%_12%,rgba(251,191,36,0.28),transparent_58%),radial-gradient(circle_at_82%_18%,rgba(251,146,60,0.20),transparent_58%),radial-gradient(circle_at_78%_60%,rgba(248,113,113,0.18),transparent_60%),radial-gradient(circle_at_52%_85%,rgba(250,204,21,0.16),transparent_60%)] dark:opacity-40" />
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-white via-amber-50/50 to-orange-50/30 dark:from-slate-950/70 dark:via-slate-900/40 dark:to-slate-950/80" />
+        <div className="pointer-events-none absolute inset-0 -z-10 opacity-50 [background:radial-gradient(circle_at_15%_12%,rgba(251,191,36,0.18),transparent_58%),radial-gradient(circle_at_82%_18%,rgba(255,237,213,0.25),transparent_58%),radial-gradient(circle_at_78%_60%,rgba(252,211,77,0.12),transparent_60%),radial-gradient(circle_at_52%_85%,rgba(254,243,199,0.20),transparent_60%)] dark:opacity-40" />
+
+        {/* Background scrolling text */}
+        <div className="bg-scroll-text" aria-hidden="true">
+          <div className="bg-scroll-track">
+            <div className="bg-scroll-row">
+              <span>KNOWLEDGE</span><span>EXPERT</span><span>INSIGHT</span><span>WISDOM</span><span>INTELLIGENCE</span>
+              <span>KNOWLEDGE</span><span>EXPERT</span><span>INSIGHT</span><span>WISDOM</span><span>INTELLIGENCE</span>
+            </div>
+            <div className="bg-scroll-row">
+              <span>AI</span><span>MULTI</span><span>DISCOVER</span><span>ANALYZE</span><span>CREATE</span><span>INNOVATE</span>
+              <span>AI</span><span>MULTI</span><span>DISCOVER</span><span>ANALYZE</span><span>CREATE</span><span>INNOVATE</span>
+            </div>
+            <div className="bg-scroll-row">
+              <span>STRATEGY</span><span>GROWTH</span><span>VISION</span><span>FUTURE</span><span>CONNECT</span>
+              <span>STRATEGY</span><span>GROWTH</span><span>VISION</span><span>FUTURE</span><span>CONNECT</span>
+            </div>
+          </div>
+        </div>
 
         {/* Sidebar toggle in top-right */}
         {!sidebarOpen && (
@@ -181,9 +201,12 @@ export default function AIAssistantPage() {
           </div>
 
           <section className="relative mx-auto flex min-h-[320px] max-w-4xl flex-col items-center justify-center text-center">
-            <Badge variant="secondary" className="rounded-full px-3 py-1 text-[11px] font-medium">
-              全量知识库检索
-            </Badge>
+            <div className="hero-title-loader mb-2" style={{ fontSize: '0.875rem', height: 'auto', fontWeight: 500 }}>
+              {'全量知识库检索'.split('').map((ch, i) => (
+                <span key={i} className="hero-letter">{ch}</span>
+              ))}
+              <div className="hero-glow" />
+            </div>
             <div className="hero-brand-title mt-4" aria-label={brandName}>
               {brandName}
             </div>
@@ -206,15 +229,12 @@ export default function AIAssistantPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        模型
-                      </span>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="ai-input-chip gap-1 rounded-full text-[10px]">
-                            <Icon icon="lucide:cpu" width={10} height={10} />
+                          <Button variant="outline" size="sm" className="ai-input-chip gap-1.5 rounded-full text-[11px] font-medium">
+                            <ProviderIcon provider={normalizedCurrent} size={14} />
                             {currentModelName}
-                            <Icon icon="lucide:chevron-down" width={12} height={12} />
+                            <Icon icon="lucide:chevron-down" width={10} height={10} className="opacity-50" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-56">
@@ -230,11 +250,12 @@ export default function AIAssistantPage() {
                               return (
                                 <DropdownMenuItem
                                   key={model.id}
-                                  className="justify-between"
+                                  className="gap-2"
                                   onClick={() => setCurrentModel(model.id as ModelProvider)}
                                 >
-                                  <span>{model.name}</span>
-                                  {isActive && <Icon icon="lucide:check" width={14} height={14} />}
+                                  <ProviderIcon provider={model.id} size={16} />
+                                  <span className="flex-1">{model.name}</span>
+                                  {isActive && <Icon icon="lucide:check" width={14} height={14} className="text-primary" />}
                                 </DropdownMenuItem>
                               );
                             })
@@ -326,18 +347,19 @@ export default function AIAssistantPage() {
 
       {/* ── Right sidebar: conversation history ── */}
       <div className={cn(
-        'h-full w-[300px] shrink-0 border-l border-border/40 bg-background/50 backdrop-blur-sm transition-all duration-300',
-        sidebarOpen ? 'translate-x-0' : 'hidden',
+        'ai-sidebar-weather relative h-full shrink-0 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.15,0.83,0.66,1)]',
+        sidebarOpen ? 'w-[300px] opacity-100' : 'w-0 opacity-0',
       )}>
-        <div className="flex h-full flex-col p-4">
+        <div className={cn(
+          'relative z-10 flex h-full w-[300px] flex-col p-4 transition-transform duration-500 ease-[cubic-bezier(0.15,0.83,0.66,1)]',
+          sidebarOpen ? 'translate-x-0' : 'translate-x-full',
+        )}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground">
-                <Icon icon="lucide:message-square" width={16} height={16} />
-              </div>
+              <img src={logoUrl} alt="Logo" className="size-8 rounded-lg object-contain grayscale" />
               <div>
-                <div className="text-sm font-semibold text-foreground">会话历史</div>
-                <div className="text-[11px] text-muted-foreground">管理最近对话</div>
+                <div className="sidebar-title text-sm font-semibold">会话历史</div>
+                <div className="sidebar-subtitle text-[11px]">管理最近对话</div>
               </div>
             </div>
             <div className="flex items-center gap-1">

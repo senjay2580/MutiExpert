@@ -77,9 +77,10 @@ class ScheduledTask(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)  # e.g. "0 9 * * 1" = 每周一9点
-    task_type: Mapped[str] = mapped_column(String(50), nullable=False)  # skill_exec | ai_query | feishu_push
-    task_config = mapped_column(JSONB, default=dict)  # skill_id, prompt, kb_ids, feishu_chat_id 等
+    task_type: Mapped[str] = mapped_column(String(50), nullable=False)  # skill_exec | ai_query | feishu_push | script_exec
+    task_config = mapped_column(JSONB, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    script_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("user_scripts.id", ondelete="SET NULL"))
     last_run_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     last_run_status: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
@@ -123,6 +124,54 @@ class SiteSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class UserScript(Base):
+    __tablename__ = "user_scripts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    script_content: Mapped[str] = mapped_column(Text, nullable=False)
+    script_type: Mapped[str] = mapped_column(String(20), default="typescript")
+    created_by: Mapped[str] = mapped_column(String(100), default="web")
+    last_test_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    last_test_status: Mapped[str | None] = mapped_column(String(20))
+    last_test_output: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FeishuPendingAction(Base):
+    __tablename__ = "feishu_pending_actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chat_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    message_id: Mapped[str | None] = mapped_column(String(100))
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    action_payload = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (Index("idx_pending_actions_status", "status", "expires_at"),)
+
+
+class BotTool(Base):
+    __tablename__ = "bot_tools"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    action_type: Mapped[str] = mapped_column(String(20), nullable=False, default="query")
+    endpoint: Mapped[str] = mapped_column(String(200), nullable=False)
+    method: Mapped[str] = mapped_column(String(10), nullable=False, default="GET")
+    param_mapping = mapped_column(JSONB, default=dict)
+    parameters = mapped_column(JSONB, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class FeishuConfig(Base):
     __tablename__ = "feishu_config"
 
@@ -134,5 +183,6 @@ class FeishuConfig(Base):
     encrypt_key: Mapped[str | None] = mapped_column(String(200))
     default_chat_id: Mapped[str | None] = mapped_column(String(200))
     bot_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_provider: Mapped[str] = mapped_column(String(50), default="claude")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

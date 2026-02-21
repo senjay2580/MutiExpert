@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select';
 import { SearchBar } from '@/components/composed/search-bar';
 import { EmptyState } from '@/components/composed/empty-state';
-import { CreateButton, SolidButton, CancelButton } from '@/components/composed/solid-button';
+import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { AnimatedList, AnimatedItem } from '@/components/composed/animated';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { ItemContextMenu, type ItemAction } from '@/components/composed/item-context-menu';
@@ -228,21 +228,19 @@ export default function KnowledgePage() {
 
   return (
     <div className="flex h-full flex-col gap-5">
-      {/* ---- Hero with illustration ---- */}
-      <Card className="relative gap-0 overflow-hidden border-indigo-200/50 bg-gradient-to-br from-indigo-50/80 via-white to-violet-50/60 py-0 dark:border-indigo-500/20 dark:from-indigo-950/30 dark:via-background dark:to-violet-950/20">
-        <div className="flex items-center gap-6 px-6 py-5">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-bold text-foreground">行业知识库</h1>
-            <p className="mt-1 text-sm text-muted-foreground">按行业分类管理你的知识资源，让每一份资料都井然有序</p>
-          </div>
-          <img
-            src={illustrationPresets.knowledgeHero}
-            alt="Knowledge illustration"
-            className="hidden h-28 w-28 object-contain opacity-90 sm:block lg:h-32 lg:w-32"
-            draggable={false}
-          />
+      {/* ---- Hero ---- */}
+      <div className="flex items-center gap-6 px-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-bold text-foreground">行业知识库</h1>
+          <p className="mt-1 text-sm text-muted-foreground">按行业分类管理你的知识资源，让每一份资料都井然有序</p>
         </div>
-      </Card>
+        <img
+          src={illustrationPresets.knowledgeHero}
+          alt="Knowledge illustration"
+          className="hidden h-28 w-28 object-contain opacity-90 sm:block lg:h-32 lg:w-32"
+          draggable={false}
+        />
+      </div>
 
       {/* ---- Stats Chart ---- */}
       <KnowledgeStatsCard
@@ -472,7 +470,6 @@ export default function KnowledgePage() {
             </div>
           </div>
           <DialogFooter>
-            <CancelButton size="sm" onClick={() => { setShowCreateDialog(false); setNewKBName(''); setNewKBDesc(''); setNewKBIndustry(''); }} />
             <SolidButton color="indigo" size="sm" onClick={handleCreateKB} disabled={!newKBName.trim()} loading={createMutation.isPending} loadingText="创建中...">
               创建
             </SolidButton>
@@ -522,7 +519,6 @@ export default function KnowledgePage() {
             </div>
           </div>
           <DialogFooter>
-            <CancelButton size="sm" onClick={closeIndustryDialog} />
             <SolidButton
               color="indigo"
               size="sm"

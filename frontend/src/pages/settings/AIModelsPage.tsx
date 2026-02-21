@@ -54,6 +54,8 @@ export default function AIModelsPage() {
   const [saving, setSaving] = useState<Record<string, boolean>>();
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+  const [localModels, setLocalModels] = useState<Record<string, AvailableModel[]>>({});
+  const [newModelInput, setNewModelInput] = useState<Record<string, string>>({});
 
   const { data: models = [], isLoading, refetch } = useQuery({
     queryKey: ['ai-models'],
@@ -78,6 +80,17 @@ export default function AIModelsPage() {
       }
       return changed ? next : prev;
     });
+    setLocalModels((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const model of models) {
+        if (!next[model.id]) {
+          next[model.id] = model.available_models || [];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [models]);
 
   const saveConfig = async (model: ModelConfig) => {
@@ -91,6 +104,7 @@ export default function AIModelsPage() {
         reasoning_effort: form.reasoning_effort || null,
         disable_response_storage: form.disable_response_storage,
         preferred_auth_method: form.preferred_auth_method || null,
+        available_models: localModels[model.id] || [],
       };
       if (keys[model.id]) payload.api_key = keys[model.id];
       await api.put(`/config/models/${model.id}`, payload);
@@ -139,7 +153,7 @@ export default function AIModelsPage() {
           const isExpanded = expandedId === model.id;
           const isSelected = normalizedCurrent === model.id;
           const form = forms[model.id];
-          const hasModels = (model.available_models?.length ?? 0) > 0;
+          const modelList = localModels[model.id] || model.available_models || [];
 
           return (
             <div
@@ -178,9 +192,9 @@ export default function AIModelsPage() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {hasModels
-                        ? model.available_models!.slice(0, 3).map((m) => m.name).join(', ') +
-                          (model.available_models!.length > 3 ? '...' : '')
+                      {modelList.length > 0
+                        ? modelList.slice(0, 3).map((m) => m.name).join(', ') +
+                          (modelList.length > 3 ? '...' : '')
                         : model.model || model.provider}
                     </p>
                   </div>
@@ -214,11 +228,9 @@ export default function AIModelsPage() {
                     </div>
 
                     {/* Model selector */}
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                        {hasModels ? '默认模型' : '模型名称'}
-                      </label>
-                      {hasModels ? (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">模型名称</label>
+                      {(localModels[model.id]?.length ?? 0) > 0 && (
                         <select
                           value={form.model}
                           onChange={(e) =>
@@ -226,19 +238,80 @@ export default function AIModelsPage() {
                           }
                           className="w-full h-9 px-3 rounded-md border border-input bg-background text-xs focus:ring-2 ring-primary/20 outline-none"
                         >
-                          {model.available_models!.map((m) => (
-                            <option key={m.id} value={m.id}>{m.name}</option>
+                          {localModels[model.id].map((m) => (
+                            <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
                           ))}
                         </select>
-                      ) : (
+                      )}
+                      <div className="flex gap-2 mt-1.5">
                         <Input
-                          placeholder="模型名称"
-                          value={form.model}
-                          onChange={(e) =>
-                            setForms((prev) => ({ ...prev, [model.id]: { ...prev[model.id], model: e.target.value } }))
-                          }
-                          className="text-xs"
+                          placeholder="输入模型名称，如 gpt-4o"
+                          value={newModelInput[model.id] || ''}
+                          onChange={(e) => setNewModelInput((prev) => ({ ...prev, [model.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = (newModelInput[model.id] || '').trim();
+                              if (!val) return;
+                              const list = localModels[model.id] || [];
+                              if (list.some((m) => m.id === val)) return;
+                              const updated = [...list, { id: val, name: val }];
+                              setLocalModels((prev) => ({ ...prev, [model.id]: updated }));
+                              setForms((prev) => ({ ...prev, [model.id]: { ...prev[model.id], model: val } }));
+                              setNewModelInput((prev) => ({ ...prev, [model.id]: '' }));
+                            }
+                          }}
+                          className="text-xs flex-1"
                         />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const val = (newModelInput[model.id] || '').trim();
+                            if (!val) return;
+                            const list = localModels[model.id] || [];
+                            if (list.some((m) => m.id === val)) return;
+                            const updated = [...list, { id: val, name: val }];
+                            setLocalModels((prev) => ({ ...prev, [model.id]: updated }));
+                            setForms((prev) => ({ ...prev, [model.id]: { ...prev[model.id], model: val } }));
+                            setNewModelInput((prev) => ({ ...prev, [model.id]: '' }));
+                          }}
+                        >
+                          添加
+                        </Button>
+                      </div>
+                      {(localModels[model.id]?.length ?? 0) > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {localModels[model.id].map((m) => (
+                            <span
+                              key={m.id}
+                              className={cn(
+                                'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border',
+                                form.model === m.id
+                                  ? 'bg-primary/10 border-primary/30 text-primary'
+                                  : 'bg-muted/50 border-border text-muted-foreground',
+                              )}
+                            >
+                              {m.name}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = localModels[model.id].filter((x) => x.id !== m.id);
+                                  setLocalModels((prev) => ({ ...prev, [model.id]: updated }));
+                                  if (form.model === m.id) {
+                                    setForms((prev) => ({
+                                      ...prev,
+                                      [model.id]: { ...prev[model.id], model: updated[0]?.id || '' },
+                                    }));
+                                  }
+                                }}
+                                className="text-muted-foreground hover:text-destructive"
+                              >
+                                <Icon icon="lucide:x" width={12} height={12} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
 

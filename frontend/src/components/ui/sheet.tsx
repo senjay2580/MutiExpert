@@ -49,11 +49,13 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  showWindowDots = true,
   style,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
+  showWindowDots?: boolean
 }) {
   return (
     <SheetPortal>
@@ -61,24 +63,36 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
           side === "right" &&
-            "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm",
+            "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l border-white/15 sm:max-w-sm",
           side === "left" &&
-            "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm",
+            "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r border-white/15 sm:max-w-sm",
           side === "top" &&
-            "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b",
+            "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b border-white/15",
           side === "bottom" &&
-            "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
+            "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t border-white/15",
           className
         )}
-        style={{ willChange: "transform", ...style }}
+        style={{
+          willChange: "transform",
+          backgroundImage: "linear-gradient(145deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 45%, transparent 100%)",
+          boxShadow: "rgba(0,0,0,0.4) 0px 2px 4px, rgba(0,0,0,0.3) 0px 7px 13px -3px, rgba(0,0,0,0.2) 0px -3px 0px inset, inset 0 1px 0 rgba(255,255,255,0.1)",
+          ...style,
+        }}
         {...props}
       >
+        {showWindowDots && (
+          <div className="flex items-center gap-1.5 px-4 pt-3 -mb-2">
+            <span className="size-3 rounded-full bg-blue-500" />
+            <span className="size-3 rounded-full bg-purple-500" />
+            <span className="size-3 rounded-full bg-pink-500" />
+          </div>
+        )}
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
-            <Icon icon="streamline-color:delete-1" className="size-4" />
+          <SheetPrimitive.Close className="absolute top-3 right-3 flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-all duration-200 hover:bg-muted hover:text-foreground hover:rotate-90 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background focus:outline-hidden disabled:pointer-events-none">
+            <Icon icon="lucide:x" className="size-4" />
             <span className="sr-only">Close</span>
           </SheetPrimitive.Close>
         )}

@@ -57,11 +57,11 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-md" showCloseButton={false}>
+      <DialogContent className="overflow-hidden rounded-2xl p-0 sm:max-w-md" showCloseButton={false} showWindowDots={false}>
         <DialogTitle className="sr-only">命令面板</DialogTitle>
         <DialogDescription className="sr-only">搜索命令或页面</DialogDescription>
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2.5">
-          <CommandInput placeholder="输入命令或搜索..." />
+        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-3 [&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-3 [&_[cmdk-item]]:rounded-xl">
+          <CommandInput placeholder="输入命令或搜索..." className="px-4 py-3" />
           <CommandList>
             <CommandEmpty>没有找到匹配的命令</CommandEmpty>
 

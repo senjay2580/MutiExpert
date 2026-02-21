@@ -8,6 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SaveButton, SolidButton } from '@/components/composed/solid-button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface FeishuConfig {
   app_id: string;
@@ -17,6 +24,7 @@ interface FeishuConfig {
   encrypt_key: string;
   default_chat_id: string;
   bot_enabled: boolean;
+  default_provider: string;
 }
 
 export default function IntegrationsPage() {
@@ -37,6 +45,7 @@ export default function IntegrationsPage() {
           encrypt_key: '',
           default_chat_id: '',
           bot_enabled: false,
+          default_provider: 'claude',
         }} />
       </div>
     );
@@ -58,6 +67,7 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
   const [encryptKey, setEncryptKey] = useState(initialConfig.encrypt_key || '');
   const [defaultChatId, setDefaultChatId] = useState(initialConfig.default_chat_id || '');
   const [botEnabled, setBotEnabled] = useState(initialConfig.bot_enabled ?? false);
+  const [defaultProvider, setDefaultProvider] = useState(initialConfig.default_provider || 'claude');
   const [saved, setSaved] = useState(false);
 
   const saveMutation = useMutation({
@@ -70,6 +80,7 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
         encrypt_key: encryptKey,
         default_chat_id: defaultChatId,
         bot_enabled: botEnabled,
+        default_provider: defaultProvider,
       }),
     onSuccess: () => {
       setSaved(true);
@@ -166,6 +177,21 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
               <div className="text-[11px] text-muted-foreground">开启后可接收飞书消息并回复</div>
             </div>
             <Switch checked={botEnabled} onCheckedChange={setBotEnabled} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">机器人默认模型</label>
+            <Select value={defaultProvider} onValueChange={setDefaultProvider}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="claude">Claude</SelectItem>
+                <SelectItem value="deepseek">DeepSeek</SelectItem>
+                <SelectItem value="qwen">通义千问</SelectItem>
+                <SelectItem value="openai">OpenAI</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">飞书机器人意图识别使用的 AI 模型，也可在飞书对话中发送"切换到 deepseek"动态切换</p>
           </div>
         </div>
 

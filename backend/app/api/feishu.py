@@ -1,21 +1,22 @@
 import json
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.config import get_settings
 from app.database import get_db, AsyncSessionLocal
-from app.models.extras import FeishuConfig
-from app.models.knowledge import KnowledgeBase
+from app.models.extras import FeishuConfig, FeishuPendingAction
 from app.services.feishu_service import (
     get_feishu_service,
     verify_feishu_signature,
     decrypt_feishu_event,
     encrypt_secret,
 )
+from app.services.intent.router import recognize_intent
+from app.services.intent.executor import execute_action, format_result
 from app.services.rag_service import retrieve_context, build_rag_prompt
 from app.services.ai_service import stream_chat
-from app.services.skill_executor import load_registry
 
 router = APIRouter()
 
@@ -28,6 +29,7 @@ class FeishuConfigUpdate(BaseModel):
     encrypt_key: str | None = None
     default_chat_id: str | None = None
     bot_enabled: bool | None = None
+    default_provider: str | None = None
 
 
 class FeishuMessageRequest(BaseModel):
@@ -90,9 +92,10 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
 
 
 async def _handle_feishu_question(parsed: dict):
-    """后台任务：用 RAG + AI 回答飞书消息并回复"""
+    """后台任务：意图识别 → 自动路由 → 回复飞书"""
     question = parsed["text"]
     message_id = parsed.get("message_id")
+    chat_id = parsed.get("chat_id")
     if not message_id:
         return
     if parsed.get("sender_type") in {"app", "bot"}:
@@ -102,44 +105,108 @@ async def _handle_feishu_question(parsed: dict):
         svc = None
         async with AsyncSessionLocal() as db:
             svc = await get_feishu_service(db)
-            # 绑定默认 chat_id
+
+            # 特殊指令：绑定
             if question.strip().lower() in {"绑定", "bind", "绑定机器人"}:
                 result = await db.execute(select(FeishuConfig).limit(1))
                 config = result.scalar_one_or_none()
                 if config:
-                    config.default_chat_id = parsed.get("chat_id")
+                    config.default_chat_id = chat_id
                     await db.commit()
-                if svc is not None:
-                    await svc.reply_message(message_id, "已绑定当前会话为默认推送目标。")
+                await svc.reply_message(message_id, "已绑定当前会话为默认推送目标。")
                 return
 
-            # 获取所有知识库 ID 用于检索
-            result = await db.execute(select(KnowledgeBase.id))
-            kb_ids = [row[0] for row in result.all()]
+            # 意图识别
+            provider = svc.default_provider or "claude"
+            intent = await recognize_intent(question, provider, db)
 
-            context, sources = await retrieve_context(db, question, kb_ids) if kb_ids else ("", [])
+            if not intent.has_tool_call:
+                # 没有 tool_call → 走 RAG 问答兜底
+                if intent.text_response and not intent.text_response.startswith("暂未配置"):
+                    await svc.reply_message(message_id, intent.text_response)
+                else:
+                    response = await _fallback_rag(question, provider, db)
+                    await svc.reply_message(message_id, response)
+                return
 
-            # 加载 Skills 信息
-            skills_info = ""
-            try:
-                registry = load_registry()
-                if registry:
-                    skills_info = "\n".join(f"- {s['name']}: {s.get('description', '')}" for s in registry)
-            except Exception:
-                pass
+            # 有 tool_call
+            if intent.action_type == "mutation":
+                # 修改操作 → 发确认卡片
+                await _send_confirm_card(svc, chat_id, intent, db)
+            else:
+                # 查询操作 → 直接执行
+                result = await execute_action(intent)
+                text = format_result(result)
+                await svc.reply_message(message_id, text)
 
-            system_prompt = build_rag_prompt(context, question, skills_info) if context else ""
-            messages = [{"role": "user", "content": question}]
-
-            full_response = ""
-            async for chunk in stream_chat(messages, "claude", system_prompt, db=db):
-                full_response += chunk
-
-        if svc is not None:
-            await svc.reply_message(message_id, full_response or "抱歉，暂时无法回答这个问题。")
     except Exception as e:
         if svc is not None:
             await svc.reply_message(message_id, f"处理出错: {str(e)}")
+
+
+async def _fallback_rag(question: str, provider: str, db) -> str:
+    """RAG 问答兜底"""
+    from app.models.knowledge import KnowledgeBase
+    result = await db.execute(select(KnowledgeBase.id))
+    kb_ids = [row[0] for row in result.all()]
+    context, sources = await retrieve_context(db, question, kb_ids) if kb_ids else ("", [])
+    system_prompt = build_rag_prompt(context, question) if context else ""
+    messages = [{"role": "user", "content": question}]
+    full_response = ""
+    async for chunk in stream_chat(messages, provider, system_prompt, db=db):
+        full_response += chunk
+    return full_response or "抱歉，暂时无法回答这个问题。"
+
+
+async def _send_confirm_card(svc, chat_id: str, intent, db):
+    """发送确认卡片，存储待确认操作"""
+    from app.services.intent.router import IntentResult
+    action = FeishuPendingAction(
+        chat_id=chat_id,
+        action_type=intent.tool_name,
+        action_payload={
+            "tool_name": intent.tool_name,
+            "tool_args": intent.tool_args,
+            "endpoint": intent.endpoint,
+            "method": intent.method,
+            "param_mapping": intent.param_mapping,
+        },
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+    )
+    db.add(action)
+    await db.commit()
+    await db.refresh(action)
+
+    args_text = "\n".join(f"  {k}: {v}" for k, v in (intent.tool_args or {}).items())
+    card = {
+        "header": {
+            "title": {"tag": "plain_text", "content": f"确认操作: {intent.tool_name}"},
+            "template": "orange",
+        },
+        "elements": [
+            {"tag": "markdown", "content": f"**操作参数:**\n{args_text or '(无参数)'}"},
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "确认执行"},
+                        "type": "primary",
+                        "value": {"action_id": str(action.id), "confirm": True},
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "取消"},
+                        "value": {"action_id": str(action.id), "confirm": False},
+                    },
+                ],
+            },
+        ],
+    }
+    resp = await svc.send_interactive_card(chat_id, card)
+    if resp.get("message_id"):
+        action.message_id = resp["message_id"]
+        await db.commit()
 
 
 @router.get("/config")
@@ -164,6 +231,7 @@ async def get_feishu_config(db: AsyncSession = Depends(get_db)):
         "encrypt_key": "",
         "default_chat_id": config.default_chat_id or "",
         "bot_enabled": config.bot_enabled,
+        "default_provider": config.default_provider or "claude",
     }
 
 
@@ -190,6 +258,8 @@ async def update_feishu_config(data: FeishuConfigUpdate, db: AsyncSession = Depe
         config.default_chat_id = data.default_chat_id
     if data.bot_enabled is not None:
         config.bot_enabled = data.bot_enabled
+    if data.default_provider is not None:
+        config.default_provider = data.default_provider
 
     await db.commit()
     await db.refresh(config)
@@ -216,3 +286,77 @@ async def send_feishu_message(data: FeishuMessageRequest, db: AsyncSession = Dep
     if not result["success"]:
         raise HTTPException(status_code=400, detail="Failed to send message")
     return result
+
+
+@router.post("/card-action")
+async def feishu_card_action(request: Request):
+    """飞书消息卡片按钮回调"""
+    body = await request.json()
+    action = body.get("action", {})
+    value = action.get("value", {})
+    action_id = value.get("action_id")
+    confirm = value.get("confirm", False)
+
+    if not action_id:
+        return {"code": 0}
+
+    async with AsyncSessionLocal() as db:
+        from sqlalchemy import select as sa_select
+        result = await db.execute(
+            sa_select(FeishuPendingAction).where(FeishuPendingAction.id == action_id)
+        )
+        pending = result.scalar_one_or_none()
+        if not pending or pending.status != "pending":
+            return {"code": 0}
+
+        svc = await get_feishu_service(db)
+
+        if not confirm:
+            pending.status = "cancelled"
+            await db.commit()
+            if pending.message_id:
+                await svc.update_card(pending.message_id, {
+                    "header": {"title": {"tag": "plain_text", "content": "操作已取消"}, "template": "grey"},
+                    "elements": [{"tag": "markdown", "content": "用户取消了此操作。"}],
+                })
+            return {"code": 0}
+
+        # 检查过期
+        from datetime import datetime as dt
+        if dt.utcnow() > pending.expires_at:
+            pending.status = "expired"
+            await db.commit()
+            if pending.message_id:
+                await svc.update_card(pending.message_id, {
+                    "header": {"title": {"tag": "plain_text", "content": "操作已过期"}, "template": "grey"},
+                    "elements": [{"tag": "markdown", "content": "确认超时（5分钟），请重新发起。"}],
+                })
+            return {"code": 0}
+
+        # 执行操作
+        from app.services.intent.router import IntentResult
+        from app.services.intent.executor import execute_action, format_result
+        payload = pending.action_payload or {}
+        intent = IntentResult(
+            has_tool_call=True,
+            tool_name=payload.get("tool_name", ""),
+            tool_args=payload.get("tool_args"),
+            action_type="mutation",
+            endpoint=payload.get("endpoint", ""),
+            method=payload.get("method", "POST"),
+            param_mapping=payload.get("param_mapping"),
+        )
+        exec_result = await execute_action(intent)
+        text = format_result(exec_result)
+
+        pending.status = "confirmed"
+        await db.commit()
+
+        if pending.message_id:
+            template = "green" if exec_result.get("success") else "red"
+            await svc.update_card(pending.message_id, {
+                "header": {"title": {"tag": "plain_text", "content": "操作已执行"}, "template": template},
+                "elements": [{"tag": "markdown", "content": text}],
+            })
+
+    return {"code": 0}

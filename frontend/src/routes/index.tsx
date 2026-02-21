@@ -11,6 +11,8 @@ import BasicSettingsPage from '../pages/settings/BasicSettingsPage';
 import IntegrationsPage from '../pages/settings/IntegrationsPage';
 import DataManagementPage from '../pages/settings/DataManagementPage';
 import ScheduledTasksPage from '../pages/scheduler/ScheduledTasksPage';
+import ScriptsPage from '../pages/scripts/ScriptsPage';
+import BotToolsPage from '../pages/bot-tools/BotToolsPage';
 import BoardListPage from '../pages/boards/BoardListPage';
 import BoardEditorPage from '../pages/boards/BoardEditorPage';
 import HelpCenterPage from '../pages/help/HelpCenterPage';
@@ -27,6 +29,8 @@ export const router = createBrowserRouter([
       { path: 'knowledge', element: <KnowledgePage /> },
       { path: 'knowledge/:industryId', element: <KnowledgeDetailPage /> },
       { path: 'scheduler', element: <ScheduledTasksPage /> },
+      { path: 'scripts', element: <ScriptsPage /> },
+      { path: 'bot-tools', element: <BotToolsPage /> },
       { path: 'boards', element: <BoardListPage /> },
       { path: 'boards/:boardId', element: <BoardEditorPage /> },
       { path: 'help', element: <HelpCenterPage /> },

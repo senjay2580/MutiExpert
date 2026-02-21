@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api import industries, knowledge_bases, documents, chat, network, feishu, skills, calendar, dashboard, system, scheduled_tasks, todos, site_settings, data_management, boards
+from app.api import industries, knowledge_bases, documents, chat, network, feishu, skills, calendar, dashboard, system, scheduled_tasks, todos, site_settings, data_management, boards, scripts, bot_tools
 
 api_router = APIRouter()
 
@@ -18,3 +18,5 @@ api_router.include_router(todos.router, prefix="/todos", tags=["todos"])
 api_router.include_router(site_settings.router, prefix="/site-settings", tags=["site-settings"])
 api_router.include_router(data_management.router, prefix="/data", tags=["data-management"])
 api_router.include_router(boards.router, prefix="/boards", tags=["boards"])
+api_router.include_router(scripts.router, prefix="/scripts", tags=["scripts"])
+api_router.include_router(bot_tools.router, prefix="/bot-tools", tags=["bot-tools"])

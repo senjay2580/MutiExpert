@@ -211,8 +211,8 @@ export default function Header() {
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <button className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer">
-                  <Icon icon="lucide:zap" className="size-4" />
+                <button className="inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-accent cursor-pointer">
+                  <Icon icon="lucide:zap" className="size-4 fill-amber-500 text-amber-700 dark:fill-amber-400 dark:text-amber-600" />
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>

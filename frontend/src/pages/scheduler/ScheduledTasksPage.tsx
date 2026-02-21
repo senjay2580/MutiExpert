@@ -22,11 +22,12 @@ import {
 } from '@/components/ui/select';
 import { PageHeader } from '@/components/composed/page-header';
 import { StatCard } from '@/components/composed/stat-card';
-import { CreateButton, SolidButton, CancelButton } from '@/components/composed/solid-button';
+import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
 import { illustrationPresets } from '@/lib/illustrations';
 import { scheduledTaskService } from '@/services/scheduledTaskService';
-import type { ScheduledTask } from '@/types';
+import { scriptService } from '@/services/scriptService';
+import type { ScheduledTask, UserScript } from '@/types';
 
 // ======================== Config ========================
 
@@ -37,7 +38,7 @@ const CRON_PRESETS = [
   { label: '每天 18:00', value: '0 18 * * *' },
 ];
 
-type TaskType = 'ai_query' | 'feishu_push' | 'skill_exec';
+type TaskType = 'ai_query' | 'feishu_push' | 'skill_exec' | 'script_exec';
 
 type FormData = {
   name: string;
@@ -51,6 +52,7 @@ type FormData = {
   feishu_content: string;
   skill_name: string;
   skill_params: string;
+  script_id: string;
 };
 
 const EMPTY_FORM: FormData = {
@@ -65,12 +67,14 @@ const EMPTY_FORM: FormData = {
   feishu_content: '',
   skill_name: '',
   skill_params: '{}',
+  script_id: '',
 };
 
 // ======================== Columns ========================
 
 const buildColumns = (
   onToggle: (id: string) => void,
+  scripts: UserScript[],
 ): DataTableColumn<ScheduledTask>[] => [
   {
     key: 'name',
@@ -105,9 +109,16 @@ const buildColumns = (
     header: '类型',
     width: '120px',
     render: (task) => (
-      <Badge variant="outline" className="text-[10px] capitalize">
-        {task.task_type}
-      </Badge>
+      <div>
+        <Badge variant="outline" className="text-[10px] capitalize">
+          {task.task_type}
+        </Badge>
+        {task.task_type === 'script_exec' && task.script_id && (
+          <div className="text-[10px] text-muted-foreground truncate max-w-[100px] mt-0.5">
+            {scripts.find((s) => s.id === task.script_id)?.name ?? task.script_id}
+          </div>
+        )}
+      </div>
     ),
   },
   {
@@ -180,6 +191,11 @@ export default function ScheduledTasksPage() {
     queryFn: scheduledTaskService.list,
   });
 
+  const { data: scripts = [] } = useQuery({
+    queryKey: ['scripts'],
+    queryFn: scriptService.list,
+  });
+
   const toggleMutation = useMutation({
     mutationFn: scheduledTaskService.toggle,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
@@ -239,6 +255,7 @@ export default function ScheduledTasksPage() {
       feishu_content: String(config.content || ''),
       skill_name: String(config.skill_name || ''),
       skill_params: JSON.stringify(config.params || {}, null, 2),
+      script_id: task.script_id || '',
     });
     setShowCreate(true);
   };
@@ -276,6 +293,20 @@ export default function ScheduledTasksPage() {
       }
     }
 
+    if (form.task_type === 'script_exec') {
+      const payload: Partial<ScheduledTask> = {
+        name: form.name,
+        description: form.description || null,
+        cron_expression: form.cron_expression,
+        task_type: form.task_type,
+        task_config: taskConfig,
+        script_id: form.script_id || null,
+        enabled: true,
+      };
+      saveMutation.mutate({ id: editingTask?.id, data: payload });
+      return;
+    }
+
     const payload: Partial<ScheduledTask> = {
       name: form.name,
       description: form.description || null,
@@ -288,7 +319,7 @@ export default function ScheduledTasksPage() {
     saveMutation.mutate({ id: editingTask?.id, data: payload });
   };
 
-  const columns = useMemo(() => buildColumns(handleToggle), [handleToggle]);
+  const columns = useMemo(() => buildColumns(handleToggle, scripts), [handleToggle, scripts]);
   const totalTasks = tasks.length;
   const activeTasks = tasks.filter((task) => task.enabled).length;
   const pausedTasks = totalTasks - activeTasks;
@@ -396,6 +427,7 @@ export default function ScheduledTasksPage() {
                   <SelectItem value="ai_query">AI 问答</SelectItem>
                   <SelectItem value="feishu_push">飞书推送</SelectItem>
                   <SelectItem value="skill_exec">技能执行</SelectItem>
+                  <SelectItem value="script_exec">脚本执行</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -517,9 +549,29 @@ export default function ScheduledTasksPage() {
                 )}
               </div>
             )}
+
+            {form.task_type === 'script_exec' && (
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground mb-1 block">选择脚本</label>
+                <Select
+                  value={form.script_id}
+                  onValueChange={(value) => setForm({ ...form, script_id: value })}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="选择要执行的脚本" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {scripts.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <CancelButton onClick={() => setShowCreate(false)} />
             <SolidButton
               color="cyan"
               onClick={handleCreateOrUpdate}
