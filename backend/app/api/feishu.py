@@ -151,7 +151,7 @@ async def _fallback_rag(question: str, provider: str, db) -> str:
     result = await db.execute(select(KnowledgeBase.id))
     kb_ids = [row[0] for row in result.all()]
     context, sources = await retrieve_context(db, question, kb_ids) if kb_ids else ("", [])
-    system_prompt = await build_system_prompt(db, compact=True)
+    system_prompt = await build_system_prompt(db, provider=provider, compact=True)
     if context:
         system_prompt += "\n\n" + build_rag_context(context, question)
     messages = [{"role": "user", "content": question}]

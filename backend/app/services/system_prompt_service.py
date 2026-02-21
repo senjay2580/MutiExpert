@@ -17,6 +17,13 @@ IDENTITY = """\
 你是 MutiExpert 智能助手，一个多行业知识管理平台的 AI 核心。
 平台帮助用户跨行业整合知识、自动化工作流、管理日常事务。"""
 
+PROVIDER_LABELS: dict[str, str] = {
+    "claude": "Claude (Anthropic)",
+    "openai": "GPT (OpenAI)",
+    "deepseek": "DeepSeek",
+    "qwen": "通义千问 (Qwen)",
+}
+
 GUIDELINES = """\
 行为准则：
 - 回复使用中文，语气专业但友好
@@ -30,6 +37,7 @@ GUIDELINES = """\
 async def build_system_prompt(
     db: AsyncSession,
     *,
+    provider: str = "",
     include_tools: bool = True,
     include_scripts: bool = True,
     include_tasks: bool = True,
@@ -41,6 +49,7 @@ async def build_system_prompt(
 
     Args:
         db: 数据库会话
+        provider: 当前使用的模型提供商 ID（claude/openai/deepseek/qwen）
         include_tools: 是否包含 Bot Tools 信息
         include_scripts: 是否包含用户脚本信息
         include_tasks: 是否包含定时任务信息
@@ -48,7 +57,12 @@ async def build_system_prompt(
         include_skills: 是否包含 Skills 信息
         compact: 紧凑模式（用于 intent router 等 token 敏感场景）
     """
-    sections: list[str] = [IDENTITY]
+    identity = IDENTITY
+    if provider:
+        label = PROVIDER_LABELS.get(provider, provider)
+        identity += f"\n当前底层模型：{label}。请勿自称其他模型的名字。"
+
+    sections: list[str] = [identity]
 
     if not compact:
         sections.append(GUIDELINES)

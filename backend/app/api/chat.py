@@ -148,7 +148,7 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
     context, sources = await _build_context(db, conv, data.content)
 
     # 统一系统提示词（身份 + 能力 + RAG 上下文 + 记忆）
-    system_prompt = await build_system_prompt(db)
+    system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
     if context:
         system_prompt += "\n\n" + build_rag_context(context, data.content)
     if conv.memory_enabled and conv.memory_summary:
@@ -214,7 +214,7 @@ async def regenerate_last_answer(conv_id: UUID, data: MessageCreate | None = Non
     await db.commit()
 
     context, sources = await _build_context(db, conv, last_user.content)
-    system_prompt = await build_system_prompt(db)
+    system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
     if context:
         system_prompt += "\n\n" + build_rag_context(context, last_user.content)
     if conv.memory_enabled and conv.memory_summary:
@@ -279,7 +279,7 @@ async def edit_last_user_message(
     await db.commit()
 
     context, sources = await _build_context(db, conv, message.content)
-    system_prompt = await build_system_prompt(db)
+    system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
     if context:
         system_prompt += "\n\n" + build_rag_context(context, message.content)
     if conv.memory_enabled and conv.memory_summary:

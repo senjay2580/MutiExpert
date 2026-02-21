@@ -44,6 +44,7 @@ async def recognize_intent(
     # 使用统一系统提示词（紧凑模式，节省 token）
     system_prompt = await build_system_prompt(
         db,
+        provider=provider,
         compact=True,
         include_scripts=False,
         include_tasks=False,

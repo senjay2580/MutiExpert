@@ -56,7 +56,7 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
                 kb_ids = [row[0] for row in result.all()]
             context, sources = await retrieve_context(db, prompt, kb_ids) if kb_ids else ("", [])
             from app.services.system_prompt_service import build_system_prompt
-            system_prompt = await build_system_prompt(db, compact=True, include_scripts=False, include_tasks=False)
+            system_prompt = await build_system_prompt(db, provider=provider, compact=True, include_scripts=False, include_tasks=False)
             if context:
                 system_prompt += "\n\n" + build_rag_context(context, prompt)
             response = await _generate_text([
