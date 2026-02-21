@@ -24,6 +24,29 @@ import type { Document as DocType } from '@/types';
 import { useBreadcrumbStore } from '@/stores/useBreadcrumbStore';
 import { ChatPanel } from '@/components/composed/chat-panel';
 import { FloatingEditor } from '@/components/composed/floating-editor';
+import { toast } from 'sonner';
+
+/* ---------------------------------------------------------------- */
+/*  Helpers                                                          */
+/* ---------------------------------------------------------------- */
+
+function isValidHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const resp = (error as { response?: { data?: { detail?: string } } }).response;
+    if (resp?.data?.detail) return resp.data.detail;
+  }
+  if (error instanceof Error) return error.message;
+  return '操作失败，请重试';
+}
 
 /* ================================================================ */
 /*  useResizablePanel — VSCode-style drag-to-resize hook             */
@@ -119,6 +142,10 @@ export default function KnowledgeDetailPage() {
     onSuccess: () => {
       invalidate();
       setDeleteDocId(null);
+      toast.success('文档已删除');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -128,6 +155,9 @@ export default function KnowledgeDetailPage() {
     try {
       for (const file of Array.from(files)) await knowledgeBaseService.uploadDocument(kbId, file);
       invalidate();
+      toast.success('文档上传成功');
+    } catch (error) {
+      toast.error(getErrorMessage(error));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -147,6 +177,10 @@ export default function KnowledgeDetailPage() {
       setAddMode(null);
       setLinkTitle('');
       setLinkUrl('');
+      toast.success('链接添加成功');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -161,6 +195,10 @@ export default function KnowledgeDetailPage() {
       setAddMode(null);
       setArticleTitle('');
       setArticleHtml('');
+      toast.success('文章创建成功');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -309,11 +347,14 @@ export default function KnowledgeDetailPage() {
                 onChange={(e) => setLinkUrl(e.target.value)}
                 className="h-8 text-xs"
               />
+              {linkUrl.trim() && !isValidHttpUrl(linkUrl.trim()) && (
+                <p className="text-[11px] text-destructive">请输入有效的 HTTP/HTTPS 链接</p>
+              )}
               <SolidButton
                 color="indigo"
                 size="sm"
                 onClick={() => linkMutation.mutate()}
-                disabled={!linkTitle.trim() || !linkUrl.trim()}
+                disabled={!linkTitle.trim() || !isValidHttpUrl(linkUrl.trim())}
                 loading={linkMutation.isPending}
                 loadingText="添加中..."
                 className="w-full"
@@ -589,26 +630,30 @@ function DocRow({
   onDelete: () => void;
 }) {
   const typeConf = typeIconConfig[doc.file_type] ?? { icon: 'streamline-color:new-file', color: '#6B7280' };
-  const sizeStr = doc.file_size
+  const sizeStr = doc.file_size && doc.file_type !== 'link'
     ? doc.file_size > 1048576
       ? (doc.file_size / 1048576).toFixed(1) + ' MB'
       : (doc.file_size / 1024).toFixed(0) + ' KB'
     : '';
 
-  const canPreview = !!(doc.source_url || doc.file_url);
-  const canDownload = !!doc.file_url;
+  const canPreview = true;
+  const canDownload = doc.file_type !== 'link';
 
   const handlePreview = () => {
-    if (doc.source_url) window.open(doc.source_url, '_blank');
-    else if (doc.file_url) window.open(doc.file_url, '_blank');
+    if (doc.file_type === 'link' && doc.source_url) {
+      window.open(doc.source_url, '_blank');
+    } else {
+      window.open(documentService.previewUrl(doc.id), '_blank');
+    }
   };
 
   const handleDownload = () => {
-    if (!doc.file_url) return;
     const a = document.createElement('a');
-    a.href = doc.file_url;
+    a.href = documentService.downloadUrl(doc.id);
     a.download = doc.title;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
   };
 
   return (

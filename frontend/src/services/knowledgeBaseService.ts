@@ -48,4 +48,7 @@ export const documentService = {
 
   reprocess: (id: string) =>
     api.post(`/documents/${id}/reprocess`).then((r) => r.data),
+
+  downloadUrl: (id: string) => `/api/v1/documents/${id}/download`,
+  previewUrl: (id: string) => `/api/v1/documents/${id}/preview`,
 };

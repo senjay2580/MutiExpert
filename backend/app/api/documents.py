@@ -1,5 +1,7 @@
 from uuid import UUID
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import Response, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete as sa_delete
 from app.database import get_db
@@ -52,3 +54,68 @@ async def reprocess_document(
     await db.commit()
     background_tasks.add_task(process_document, doc_id)
     return {"message": "Reprocessing started", "document_id": str(doc_id)}
+
+
+@router.get("/{doc_id}/download")
+async def download_document(doc_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Document).where(Document.id == doc_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.file_type in ("md", "pdf", "docx"):
+        content = doc.content_text or ""
+        if doc.file_type == "md":
+            ext, media = ".md", "text/markdown; charset=utf-8"
+        else:
+            ext, media = ".txt", "text/plain; charset=utf-8"
+        safe_title = doc.title.rsplit(".", 1)[0] if "." in doc.title else doc.title
+        filename_encoded = quote(safe_title + ext)
+        return Response(
+            content=content.encode("utf-8"),
+            media_type=media,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"},
+        )
+    elif doc.file_type == "article":
+        content = doc.content_html or doc.content_text or ""
+        filename_encoded = quote(doc.title + ".html")
+        return Response(
+            content=content.encode("utf-8"),
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"},
+        )
+    elif doc.file_type == "link":
+        if doc.source_url:
+            return RedirectResponse(url=doc.source_url)
+        raise HTTPException(status_code=400, detail="No source URL available")
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {doc.file_type}")
+
+
+@router.get("/{doc_id}/preview")
+async def preview_document(doc_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Document).where(Document.id == doc_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.file_type in ("md", "pdf", "docx"):
+        content = doc.content_text or ""
+        return Response(content=content, media_type="text/plain; charset=utf-8")
+    elif doc.file_type == "article":
+        content = doc.content_html or ""
+        html_page = (
+            "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            f"<title>{doc.title}</title>"
+            "<style>body{max-width:800px;margin:0 auto;padding:2rem;"
+            "font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#333}"
+            "img{max-width:100%}</style>"
+            f"</head><body>{content}</body></html>"
+        )
+        return Response(content=html_page, media_type="text/html; charset=utf-8")
+    elif doc.file_type == "link":
+        if doc.source_url:
+            return RedirectResponse(url=doc.source_url)
+        raise HTTPException(status_code=400, detail="No source URL available")
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {doc.file_type}")

@@ -141,7 +141,7 @@ function FloatingEditorWindow({
         className={cn(
           'fixed z-[60] flex flex-col bg-background overflow-hidden',
           'border border-white/15',
-          'rounded-none',
+          maximized ? 'rounded-none' : 'rounded-2xl',
         )}
         style={{
           ...windowStyle,

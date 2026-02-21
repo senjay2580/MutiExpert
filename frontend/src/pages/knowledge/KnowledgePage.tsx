@@ -34,6 +34,16 @@ import { industryService } from '@/services/industryService';
 import { knowledgeBaseService } from '@/services/knowledgeBaseService';
 import { illustrationPresets } from '@/lib/illustrations';
 import type { KnowledgeBase, Industry } from '@/types';
+import { toast } from 'sonner';
+
+function getErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const resp = (error as { response?: { data?: { detail?: string } } }).response;
+    if (resp?.data?.detail) return resp.data.detail;
+  }
+  if (error instanceof Error) return error.message;
+  return '操作失败，请重试';
+}
 
 const PAGE_SIZE = 9;
 
@@ -86,6 +96,10 @@ export default function KnowledgePage() {
       setNewKBName('');
       setNewKBDesc('');
       setNewKBIndustry('');
+      toast.success('知识库创建成功');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -94,6 +108,10 @@ export default function KnowledgePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['knowledge-bases'] });
       setDeleteTarget(null);
+      toast.success('知识库已删除');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -103,6 +121,10 @@ export default function KnowledgePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['industries'] });
       closeIndustryDialog();
+      toast.success('行业创建成功');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -112,6 +134,10 @@ export default function KnowledgePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['industries'] });
       closeIndustryDialog();
+      toast.success('行业更新成功');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -123,6 +149,10 @@ export default function KnowledgePage() {
         setSelectedIndustry(null);
       }
       setDeleteIndTarget(null);
+      toast.success('行业已删除');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
     },
   });
 
