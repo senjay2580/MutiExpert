@@ -382,7 +382,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
                   <Skeleton className="h-4 w-2/3 bg-[var(--cc-border)]" />
                 </div>
               ) : messages.length === 0 ? (
-                <WelcomeState />
+                <WelcomeState provider={normalizedModel} providerLabel={providerLabel} />
               ) : (
                 messages.map((msg) => (
                   <CCMessage key={msg.id} message={msg} providerLabel={providerLabel} provider={normalizedModel} />
@@ -554,14 +554,14 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
 /*  Welcome State                                                    */
 /* ================================================================ */
 
-function WelcomeState() {
+function WelcomeState({ provider, providerLabel }: { provider: string; providerLabel: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--cc-accent)]/10">
-        <Icon icon="lucide:sparkles" width={26} height={26} className="text-[var(--cc-accent)]" />
+        <ProviderIcon provider={provider} size={26} />
       </div>
       <p className="mt-4 text-[15px] font-semibold text-[var(--cc-fg)]">
-        Knowledge AI
+        {providerLabel}
       </p>
       <p className="mt-1.5 max-w-[260px] text-[12px] leading-relaxed text-[var(--cc-fg-muted)]">
         基于知识库文档进行智能问答。输入你的问题，AI 将结合文档内容为你解答。

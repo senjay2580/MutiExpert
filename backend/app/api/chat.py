@@ -3,8 +3,6 @@ import asyncio
 import logging
 import time
 import math
-
-logger = logging.getLogger(__name__)
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,6 +25,8 @@ from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
 from app.services.system_prompt_service import build_system_prompt
 from app.services.pipeline_service import PipelineRequest, run_stream as pipeline_run_stream
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
