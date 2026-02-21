@@ -17,8 +17,8 @@ class ConversationResponse(BaseModel):
     model_provider: str
     is_pinned: bool
     pinned_at: datetime | None
-    channel: str
-    default_modes: list[str]
+    channel: str = "web"
+    default_modes: list[str] = []
     created_at: datetime
     updated_at: datetime
 

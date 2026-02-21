@@ -180,7 +180,7 @@ function NavGroup({
               >
                 <Icon icon={item.icon} className={cn(
                   'transition-colors duration-150',
-                  active ? item.iconClass : 'text-sidebar-foreground/50',
+                  item.iconClass || 'text-sidebar-foreground/50',
                 )} />
                 <span>{item.label}</span>
                 <HelpButton path={item.path} onHelp={onHelp} />

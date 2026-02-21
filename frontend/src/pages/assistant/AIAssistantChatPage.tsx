@@ -144,6 +144,7 @@ export default function AIAssistantChatPage() {
 
   const abortRef = useRef<(() => void) | null>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
   const currentConvIdRef = useRef<string | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const copyTimeoutRef = useRef<number | null>(null);
@@ -338,7 +339,7 @@ export default function AIAssistantChatPage() {
   }, [activeConvId, conversations]);
 
   useEffect(() => {
-    if (!messageListRef.current) return;
+    if (!messageListRef.current || userScrolledUpRef.current) return;
     messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
   }, [messages]);
 
@@ -534,6 +535,7 @@ export default function AIAssistantChatPage() {
     if (!text || isSending) return;
     setInput('');
     setSendError(null);
+    userScrolledUpRef.current = false;
 
     if (editingMessageId && activeConvId) {
       setIsSending(true);
@@ -670,7 +672,16 @@ export default function AIAssistantChatPage() {
         </div>
 
         {/* Messages */}
-        <div ref={messageListRef} className="relative z-[1] flex-1 overflow-y-auto">
+        <div
+          ref={messageListRef}
+          className="relative z-[1] flex-1 overflow-y-auto"
+          onScroll={() => {
+            const el = messageListRef.current;
+            if (!el) return;
+            const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            userScrolledUpRef.current = !nearBottom;
+          }}
+        >
           {loadingMessages ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">加载对话中...</div>
           ) : messages.length === 0 ? (
@@ -882,7 +893,7 @@ export default function AIAssistantChatPage() {
           {/* Sidebar header */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <Icon icon="lucide:message-square" width={16} height={16} />
               </div>
               <div>

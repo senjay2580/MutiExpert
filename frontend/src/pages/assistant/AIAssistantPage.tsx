@@ -49,7 +49,6 @@ export default function AIAssistantPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const siteName = useSiteSettingsStore((s) => s.siteName);
-  const logoUrl = useSiteSettingsStore((s) => s.logoUrl);
   const brandName = siteName?.trim() ? siteName : 'MutiExpert';
   const currentModel = useAppStore((s) => s.currentModel);
   const normalizedCurrent = currentModel === 'codex' ? 'openai' : currentModel;
@@ -356,7 +355,12 @@ export default function AIAssistantPage() {
         )}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <img src={logoUrl} alt="Logo" className="size-8 rounded-lg object-contain grayscale" />
+              <div className={cn(
+                'flex size-8 items-center justify-center rounded-lg',
+                filteredConversations.length > 0 ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground',
+              )}>
+                <Icon icon="lucide:message-square" width={16} height={16} />
+              </div>
               <div>
                 <div className="sidebar-title text-sm font-semibold">会话历史</div>
                 <div className="sidebar-subtitle text-[11px]">管理最近对话</div>
