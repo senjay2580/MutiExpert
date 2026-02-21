@@ -1,136 +1,120 @@
-"""Bot Tools CRUD API"""
+"""Bot Tools API — 自动从 OpenAPI schema 同步接口定义，用户只控制开关"""
 from __future__ import annotations
 
+import logging
+import re
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.routing import APIRoute
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.extras import BotTool
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-
-class BotToolCreate(BaseModel):
-    name: str
-    description: str
-    action_type: str = "query"
-    endpoint: str
-    method: str = "GET"
-    param_mapping: dict | None = None
-    parameters: dict | None = None
-
-
-class BotToolUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    action_type: str | None = None
-    endpoint: str | None = None
-    method: str | None = None
-    param_mapping: dict | None = None
-    parameters: dict | None = None
-    enabled: bool | None = None
-
-
 EXCLUDED_PREFIXES = ("/api/v1/bot-tools", "/api/v1/health", "/api/v1/config")
+MUTATION_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
-@router.get("/available-endpoints")
-async def available_endpoints(request: Request):
-    """扫描 FastAPI 所有业务路由，返回可选端点列表"""
-    endpoints = []
-    for route in request.app.routes:
-        if not isinstance(route, APIRoute):
-            continue
-        path = route.path
-        if any(path.startswith(p) for p in EXCLUDED_PREFIXES):
-            continue
-        if not path.startswith("/api/v1/"):
-            continue
-        summary = route.summary or route.name.replace("_", " ").title()
-        tags = list(route.tags) if route.tags else []
-        for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
-            endpoints.append({
-                "path": path,
-                "method": method,
-                "summary": summary,
-                "tags": tags,
-            })
-    endpoints.sort(key=lambda e: (e["path"], e["method"]))
-    return endpoints
+# ── 辅助函数 ─────────────────────────────────────────────────
+
+def _resolve_ref(schema: dict, ref: str) -> dict:
+    """解析 $ref 引用，如 #/components/schemas/Foo"""
+    parts = ref.lstrip("#/").split("/")
+    node = schema
+    for p in parts:
+        node = node.get(p, {})
+    return node
 
 
-@router.get("/")
-async def list_tools(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(BotTool).order_by(BotTool.name))
-    return [_tool_to_dict(t) for t in result.scalars().all()]
+def _extract_parameters(openapi: dict, path: str, method: str) -> dict:
+    """从 OpenAPI schema 提取端点的参数定义，转为 function calling JSON Schema。"""
+    props: dict = {}
+    required: list[str] = []
+    method_lower = method.lower()
+    path_obj = openapi.get("paths", {}).get(path, {})
+    op = path_obj.get(method_lower, {})
+    if not op:
+        return {"type": "object", "properties": {}}
 
+    # 1. path / query parameters
+    for param in op.get("parameters", []):
+        name = param.get("name", "")
+        p_schema = param.get("schema", {})
+        if "$ref" in p_schema:
+            p_schema = _resolve_ref(openapi, p_schema["$ref"])
+        prop: dict = {"type": p_schema.get("type", "string")}
+        desc = param.get("description") or p_schema.get("title")
+        if desc:
+            prop["description"] = desc
+        if "enum" in p_schema:
+            prop["enum"] = p_schema["enum"]
+        props[name] = prop
+        if param.get("required"):
+            required.append(name)
 
-@router.post("/")
-async def create_tool(data: BotToolCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(BotTool).where(BotTool.name == data.name))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail=f"Tool '{data.name}' already exists")
-    tool = BotTool(
-        name=data.name,
-        description=data.description,
-        action_type=data.action_type,
-        endpoint=data.endpoint,
-        method=data.method,
-        param_mapping=data.param_mapping or {},
-        parameters=data.parameters or {},
+    # 2. requestBody (JSON)
+    body = op.get("requestBody", {})
+    body_schema = (
+        body.get("content", {}).get("application/json", {}).get("schema", {})
     )
-    db.add(tool)
-    await db.commit()
-    await db.refresh(tool)
-    return _tool_to_dict(tool)
+    if "$ref" in body_schema:
+        body_schema = _resolve_ref(openapi, body_schema["$ref"])
+    if body_schema.get("properties"):
+        for name, p_schema in body_schema["properties"].items():
+            if "$ref" in p_schema:
+                p_schema = _resolve_ref(openapi, p_schema["$ref"])
+            prop = {"type": p_schema.get("type", "string")}
+            desc = p_schema.get("description") or p_schema.get("title")
+            if desc:
+                prop["description"] = desc
+            if "enum" in p_schema:
+                prop["enum"] = p_schema["enum"]
+            if "default" in p_schema:
+                prop["default"] = p_schema["default"]
+            props[name] = prop
+        for r in body_schema.get("required", []):
+            if r not in required:
+                required.append(r)
+
+    result: dict = {"type": "object", "properties": props}
+    if required:
+        result["required"] = required
+    return result
 
 
-@router.get("/{tool_id}")
-async def get_tool(tool_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    tool = await _get_tool_or_404(tool_id, db)
-    return _tool_to_dict(tool)
+def _path_to_tool_name(method: str, path: str) -> str:
+    """从 method + path 生成 snake_case 工具名。"""
+    clean = path.replace("/api/v1/", "").strip("/")
+    clean = re.sub(r"\{[^}]+\}", "by_id", clean)
+    clean = re.sub(r"[^a-zA-Z0-9]+", "_", clean).strip("_")
+    prefix_map = {"GET": "get", "POST": "create", "PUT": "update", "PATCH": "patch", "DELETE": "delete"}
+    prefix = prefix_map.get(method, method.lower())
+    return f"{prefix}_{clean}"
 
 
-@router.put("/{tool_id}")
-async def update_tool(tool_id: uuid.UUID, data: BotToolUpdate, db: AsyncSession = Depends(get_db)):
-    tool = await _get_tool_or_404(tool_id, db)
-    for field in ("name", "description", "action_type", "endpoint", "method", "param_mapping", "parameters", "enabled"):
-        val = getattr(data, field, None)
-        if val is not None:
-            setattr(tool, field, val)
-    tool.updated_at = datetime.utcnow()
-    await db.commit()
-    await db.refresh(tool)
-    return _tool_to_dict(tool)
-
-
-@router.delete("/{tool_id}")
-async def delete_tool(tool_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    tool = await _get_tool_or_404(tool_id, db)
-    await db.delete(tool)
-    await db.commit()
-    return {"message": "已删除"}
-
-
-@router.post("/{tool_id}/toggle")
-async def toggle_tool(tool_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    tool = await _get_tool_or_404(tool_id, db)
-    tool.enabled = not tool.enabled
-    tool.updated_at = datetime.utcnow()
-    await db.commit()
-    return {"enabled": tool.enabled}
-
-
-async def _get_tool_or_404(tool_id: uuid.UUID, db: AsyncSession) -> BotTool:
-    result = await db.execute(select(BotTool).where(BotTool.id == tool_id))
-    tool = result.scalar_one_or_none()
-    if not tool:
-        raise HTTPException(status_code=404, detail="Tool not found")
-    return tool
+def _build_param_mapping(openapi: dict, path: str, method: str) -> dict:
+    """自动生成 param_mapping：参数名 → query.x / path.x / body.x"""
+    mapping: dict = {}
+    method_lower = method.lower()
+    path_obj = openapi.get("paths", {}).get(path, {})
+    op = path_obj.get(method_lower, {})
+    if not op:
+        return mapping
+    for param in op.get("parameters", []):
+        name = param.get("name", "")
+        location = param.get("in", "query")
+        mapping[name] = f"{location}.{name}"
+    body = op.get("requestBody", {})
+    body_schema = body.get("content", {}).get("application/json", {}).get("schema", {})
+    if "$ref" in body_schema:
+        body_schema = _resolve_ref(openapi, body_schema["$ref"])
+    for name in body_schema.get("properties", {}):
+        if name not in mapping:
+            mapping[name] = f"body.{name}"
+    return mapping
 
 
 def _tool_to_dict(t: BotTool) -> dict:
@@ -147,3 +131,104 @@ def _tool_to_dict(t: BotTool) -> dict:
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
     }
+
+
+# ── API 端点 ─────────────────────────────────────────────────
+
+@router.get("/")
+async def list_tools(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BotTool).order_by(BotTool.name))
+    return [_tool_to_dict(t) for t in result.scalars().all()]
+
+
+@router.post("/{tool_id}/toggle")
+async def toggle_tool(tool_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BotTool).where(BotTool.id == tool_id))
+    tool = result.scalar_one_or_none()
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    tool.enabled = not tool.enabled
+    tool.updated_at = datetime.utcnow()
+    await db.commit()
+    return {"enabled": tool.enabled}
+
+
+@router.post("/sync")
+async def sync_tools(request: Request, db: AsyncSession = Depends(get_db)):
+    """从 OpenAPI schema 自动扫描所有业务端点，同步到 BotTool 表。
+
+    - 新发现的端点 → 创建（默认 disabled）
+    - 已存在的端点 → 更新签名（保留 enabled 状态）
+    - 已消失的端点 → 标记 disabled
+    """
+    openapi = request.app.openapi()
+    paths = openapi.get("paths", {})
+
+    # 收集所有有效端点
+    discovered: dict[str, dict] = {}  # key = "METHOD /path"
+    for path, path_obj in paths.items():
+        if any(path.startswith(p) for p in EXCLUDED_PREFIXES):
+            continue
+        if not path.startswith("/api/v1/"):
+            continue
+        for method_lower, op in path_obj.items():
+            if method_lower in ("parameters", "servers", "summary", "description"):
+                continue
+            method = method_lower.upper()
+            if method in ("HEAD", "OPTIONS"):
+                continue
+            key = f"{method} {path}"
+            summary = op.get("summary") or op.get("operationId", "").replace("_", " ").title()
+            discovered[key] = {
+                "name": _path_to_tool_name(method, path),
+                "description": summary,
+                "action_type": "mutation" if method in MUTATION_METHODS else "query",
+                "endpoint": path,
+                "method": method,
+                "parameters": _extract_parameters(openapi, path, method),
+                "param_mapping": _build_param_mapping(openapi, path, method),
+            }
+
+    # 加载现有工具（以 method+endpoint 为键）
+    result = await db.execute(select(BotTool))
+    existing: dict[str, BotTool] = {}
+    for t in result.scalars().all():
+        existing[f"{t.method} {t.endpoint}"] = t
+
+    created = 0
+    updated = 0
+    removed = 0
+
+    # upsert
+    for key, info in discovered.items():
+        if key in existing:
+            tool = existing[key]
+            tool.description = info["description"]
+            tool.parameters = info["parameters"]
+            tool.param_mapping = info["param_mapping"]
+            tool.action_type = info["action_type"]
+            tool.updated_at = datetime.utcnow()
+            updated += 1
+        else:
+            tool = BotTool(
+                name=info["name"],
+                description=info["description"],
+                action_type=info["action_type"],
+                endpoint=info["endpoint"],
+                method=info["method"],
+                parameters=info["parameters"],
+                param_mapping=info["param_mapping"],
+                enabled=False,
+            )
+            db.add(tool)
+            created += 1
+
+    # 标记已消失的端点为 disabled
+    for key, tool in existing.items():
+        if key not in discovered and tool.enabled:
+            tool.enabled = False
+            tool.updated_at = datetime.utcnow()
+            removed += 1
+
+    await db.commit()
+    return {"created": created, "updated": updated, "removed": removed, "total": len(discovered)}

@@ -141,12 +141,15 @@ export default function AIAssistantChatPage() {
   const [renameDraft, setRenameDraft] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  // 用 useState 持有初始 prompt，StrictMode 下 state 会被正确保留（ref 不会）
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(
+    () => (location.state as LocationState | null)?.initialPrompt ?? null,
+  );
 
   const abortRef = useRef<(() => void) | null>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const currentConvIdRef = useRef<string | null>(null);
-  const pendingPromptRef = useRef<string | null>(null);
   const copyTimeoutRef = useRef<number | null>(null);
   const creatingConvRef = useRef(false);
 
@@ -351,10 +354,10 @@ export default function AIAssistantChatPage() {
     };
   }, [activeConvId]);
 
+  // 清除 location.state 防止浏览器后退时重复触发
   useEffect(() => {
     const state = location.state as LocationState | null;
     if (state?.initialPrompt) {
-      pendingPromptRef.current = state.initialPrompt;
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, location.pathname, navigate]);
@@ -579,6 +582,8 @@ export default function AIAssistantChatPage() {
         creatingConvRef.current = false;
         setActiveConvId(convId);
         navigate(`/assistant/chat/${convId}`, { replace: true });
+        // 乐观更新：立即把新会话插入缓存，侧边栏即时可见
+        queryClient.setQueryData<import('@/types').Conversation[]>(['conversations'], (old) => [conv, ...(old ?? [])]);
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else { currentConvIdRef.current = convId; }
       const cb = registryCallbacks(assistantMsg.id, convId, userMsg);
@@ -596,11 +601,11 @@ export default function AIAssistantChatPage() {
   const handlePrimaryAction = () => { if (isSending) { cancelStreaming(); return; } handleSend(); };
 
   useEffect(() => {
-    if (!pendingPromptRef.current || isSending || loadingKnowledge) return;
-    const prompt = pendingPromptRef.current;
-    pendingPromptRef.current = null;
+    if (!pendingPrompt || isSending || loadingKnowledge) return;
+    const prompt = pendingPrompt;
+    setPendingPrompt(null);
     handleSend(prompt);
-  }, [handleSend, isSending, loadingKnowledge]);
+  }, [pendingPrompt, handleSend, isSending, loadingKnowledge]);
 
   const currentModelName = modelConfigs.find((m) => m.id === normalizedCurrent)?.name || (normalizedCurrent === 'openai' ? 'OpenAI' : 'Claude');
   const totalKbCount = knowledgeBases.length;
