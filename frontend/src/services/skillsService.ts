@@ -11,6 +11,8 @@ export const skillsService = {
   delete: (id: string) => api.delete(`/skills/${id}`),
   toggle: (id: string) =>
     api.post<{ enabled: boolean }>(`/skills/${id}/toggle`).then((r) => r.data),
+  bulkEnable: (ids: string[], enabled: boolean) =>
+    api.post<{ updated: number }>('/skills/bulk-enable', { ids, enabled }).then((r) => r.data),
 
   // References
   listRefs: (skillId: string) =>

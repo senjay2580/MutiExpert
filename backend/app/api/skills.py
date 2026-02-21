@@ -57,6 +57,11 @@ class ScriptLinkCreate(BaseModel):
     sort_order: int = 0
 
 
+class BulkEnableRequest(BaseModel):
+    ids: list[uuid.UUID] = []
+    enabled: bool = True
+
+
 # ── Skill CRUD ───────────────────────────────────────────────
 
 @router.get("/")
@@ -148,6 +153,24 @@ async def toggle_skill(skill_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     skill.updated_at = datetime.utcnow()
     await db.commit()
     return {"enabled": skill.enabled}
+
+
+@router.post("/bulk-enable")
+async def bulk_enable_skills(data: BulkEnableRequest, db: AsyncSession = Depends(get_db)):
+    """批量启用/禁用技能"""
+    if not data.ids:
+        return {"updated": 0}
+    result = await db.execute(
+        select(Skill).where(Skill.id.in_(data.ids))
+    )
+    count = 0
+    for skill in result.scalars().all():
+        if skill.enabled != data.enabled:
+            skill.enabled = data.enabled
+            skill.updated_at = datetime.utcnow()
+            count += 1
+    await db.commit()
+    return {"updated": count}
 
 
 # ── Reference CRUD ───────────────────────────────────────────

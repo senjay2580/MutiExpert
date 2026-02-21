@@ -6,6 +6,7 @@ import re
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -19,6 +20,11 @@ MUTATION_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 # ── 辅助函数 ─────────────────────────────────────────────────
+
+class BulkEnableRequest(BaseModel):
+    ids: list[uuid.UUID] = []
+    enabled: bool = True
+
 
 def _resolve_ref(schema: dict, ref: str) -> dict:
     """解析 $ref 引用，如 #/components/schemas/Foo"""
@@ -151,6 +157,24 @@ async def toggle_tool(tool_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     tool.updated_at = datetime.utcnow()
     await db.commit()
     return {"enabled": tool.enabled}
+
+
+@router.post("/bulk-enable")
+async def bulk_enable(data: BulkEnableRequest, db: AsyncSession = Depends(get_db)):
+    """批量启用/禁用工具"""
+    if not data.ids:
+        return {"updated": 0}
+    result = await db.execute(
+        select(BotTool).where(BotTool.id.in_(data.ids))
+    )
+    count = 0
+    for tool in result.scalars().all():
+        if tool.enabled != data.enabled:
+            tool.enabled = data.enabled
+            tool.updated_at = datetime.utcnow()
+            count += 1
+    await db.commit()
+    return {"updated": count}
 
 
 @router.post("/sync")

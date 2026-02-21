@@ -9,7 +9,13 @@ import {
 import { PageHeader } from '@/components/composed/page-header';
 import { StatCard } from '@/components/composed/stat-card';
 import { SolidButton } from '@/components/composed/solid-button';
-import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
+import {
+  DataTable,
+  type BulkAction,
+  type DataTableAction,
+  type DataTableColumn,
+  type FacetedFilterDef,
+} from '@/components/composed/data-table';
 import { botToolService } from '@/services/botToolService';
 import type { BotTool } from '@/types';
 
@@ -45,6 +51,11 @@ export default function BotToolsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bot-tools'] }),
   });
 
+  const bulkEnableMutation = useMutation({
+    mutationFn: (p: { ids: string[]; enabled: boolean }) => botToolService.bulkEnable(p.ids, p.enabled),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bot-tools'] }),
+  });
+
   const syncMutation = useMutation({
     mutationFn: botToolService.sync,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bot-tools'] }),
@@ -54,6 +65,42 @@ export default function BotToolsPage() {
   const enabledTools = tools.filter((t) => t.enabled).length;
   const queryTools = tools.filter((t) => t.action_type === 'query').length;
   const mutationTools = tools.filter((t) => t.action_type === 'mutation').length;
+
+  const facetedFilters = useMemo((): FacetedFilterDef<BotTool>[] => [
+    {
+      key: 'action_type',
+      label: '类型',
+      icon: 'lucide:tag',
+      options: [
+        { value: 'query', label: '查询', icon: 'lucide:search' },
+        { value: 'mutation', label: '修改', icon: 'lucide:pencil' },
+      ],
+      accessor: (t) => t.action_type,
+    },
+    {
+      key: 'enabled',
+      label: '状态',
+      icon: 'lucide:toggle-right',
+      options: [
+        { value: 'enabled', label: '启用', icon: 'lucide:check-circle-2' },
+        { value: 'disabled', label: '禁用', icon: 'lucide:x-circle' },
+      ],
+      accessor: (t) => (t.enabled ? 'enabled' : 'disabled'),
+    },
+  ], []);
+
+  const bulkActions = useMemo((): BulkAction[] => [
+    {
+      label: '批量启用',
+      icon: 'lucide:check-circle-2',
+      onClick: (ids) => bulkEnableMutation.mutate({ ids, enabled: true }),
+    },
+    {
+      label: '批量禁用',
+      icon: 'lucide:x-circle',
+      onClick: (ids) => bulkEnableMutation.mutate({ ids, enabled: false }),
+    },
+  ], [bulkEnableMutation]);
 
   const columns = useMemo((): DataTableColumn<BotTool>[] => [
     {
@@ -146,8 +193,11 @@ export default function BotToolsPage() {
         columns={columns}
         rowKey={(t) => t.id}
         searchPlaceholder="搜索工具名称或端点..."
-        searchAccessor={(t) => t.name + t.description + t.endpoint}
+        searchAccessor={(t) => t.name + (t.description ?? '') + t.endpoint}
         actions={actions}
+        facetedFilters={facetedFilters}
+        selectable
+        bulkActions={bulkActions}
         emptyIcon="lucide:wrench"
         emptyTitle={isLoading ? '加载中...' : '还没有工具'}
         emptyDescription="点击「同步工具」从后端 API 自动发现接口定义"

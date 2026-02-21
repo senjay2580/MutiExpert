@@ -16,7 +16,13 @@ import { PageHeader } from '@/components/composed/page-header';
 import { StatCard } from '@/components/composed/stat-card';
 import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
-import { DataTable, type DataTableColumn, type DataTableAction } from '@/components/composed/data-table';
+import {
+  DataTable,
+  type BulkAction,
+  type DataTableAction,
+  type DataTableColumn,
+  type FacetedFilterDef,
+} from '@/components/composed/data-table';
 import TiptapEditor from '@/components/editor/TiptapEditor';
 import { skillsService } from '@/services/skillsService';
 import { scriptService } from '@/services/scriptService';
@@ -111,6 +117,11 @@ export default function SkillsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['skills'] }),
   });
 
+  const bulkEnableMutation = useMutation({
+    mutationFn: (p: { ids: string[]; enabled: boolean }) => skillsService.bulkEnable(p.ids, p.enabled),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['skills'] }),
+  });
+
   const addRefMutation = useMutation({
     mutationFn: (data: { name: string; ref_type: string; content: string }) =>
       skillsService.createRef(detailId!, data),
@@ -156,6 +167,43 @@ export default function SkillsPage() {
   const enabled = skills.filter((s) => s.enabled).length;
   const promptCount = skills.filter((s) => s.skill_type === 'prompt').length;
   const scriptCount = skills.filter((s) => s.skill_type === 'script' || s.skill_type === 'hybrid').length;
+
+  const facetedFilters = useMemo((): FacetedFilterDef<Skill>[] => [
+    {
+      key: 'skill_type',
+      label: '类型',
+      icon: 'lucide:tag',
+      options: [
+        { value: 'prompt', label: '提示词', icon: 'lucide:message-square' },
+        { value: 'script', label: '脚本', icon: 'lucide:code' },
+        { value: 'hybrid', label: '混合', icon: 'lucide:layers' },
+      ],
+      accessor: (s) => s.skill_type,
+    },
+    {
+      key: 'enabled',
+      label: '状态',
+      icon: 'lucide:toggle-right',
+      options: [
+        { value: 'enabled', label: '启用', icon: 'lucide:check-circle-2' },
+        { value: 'disabled', label: '禁用', icon: 'lucide:x-circle' },
+      ],
+      accessor: (s) => (s.enabled ? 'enabled' : 'disabled'),
+    },
+  ], []);
+
+  const bulkActions = useMemo((): BulkAction[] => [
+    {
+      label: '批量启用',
+      icon: 'lucide:check-circle-2',
+      onClick: (ids) => bulkEnableMutation.mutate({ ids, enabled: true }),
+    },
+    {
+      label: '批量禁用',
+      icon: 'lucide:x-circle',
+      onClick: (ids) => bulkEnableMutation.mutate({ ids, enabled: false }),
+    },
+  ], [bulkEnableMutation]);
 
   // ── Columns ────────────────────────────────────────────────
   const columns = useMemo((): DataTableColumn<Skill>[] => [
@@ -250,6 +298,9 @@ export default function SkillsPage() {
             searchPlaceholder="搜索技能名称..."
             searchAccessor={(s) => s.name + (s.description || '')}
             actions={actions}
+            facetedFilters={facetedFilters}
+            selectable
+            bulkActions={bulkActions}
             emptyIcon="lucide:sparkles"
             emptyTitle={isLoading ? '加载中...' : '还没有技能'}
             emptyDescription="创建技能让 AI 获得专业能力"
