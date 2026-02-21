@@ -74,7 +74,8 @@ async def execute_yaml_skill(
         [{"role": "user", "content": prompt}],
         provider="claude",
     ):
-        full_response += chunk
+        if chunk.type == "text":
+            full_response += chunk.content
 
     return full_response
 

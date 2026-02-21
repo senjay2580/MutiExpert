@@ -23,6 +23,7 @@ from app.schemas.chat import (
 from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
 from app.services.system_prompt_service import build_system_prompt
+from app.services.pipeline_service import PipelineRequest, run_stream as pipeline_run_stream
 
 router = APIRouter()
 
@@ -46,6 +47,7 @@ async def create_conversation(data: ConversationCreate, db: AsyncSession = Depen
         title=data.title,
         knowledge_base_ids=data.knowledge_base_ids,
         model_provider=data.model_provider,
+        default_modes=data.default_modes,
     )
     db.add(conv)
     await db.commit()
@@ -119,6 +121,8 @@ async def update_conversation(
     if data.is_pinned is not None:
         conv.is_pinned = data.is_pinned
         conv.pinned_at = datetime.utcnow() if data.is_pinned else None
+    if data.default_modes is not None:
+        conv.default_modes = data.default_modes
     conv.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(conv)
@@ -145,9 +149,15 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
         conv.title = data.content[:50] + ("..." if len(data.content) > 50 else "")
         await db.commit()
 
-    context, sources = await _build_context(db, conv, data.content)
+    # 决定增强模式
+    modes = set(data.modes or conv.default_modes or ["knowledge"])
+    use_pipeline = bool(modes & {"tools", "search"})
 
-    # 统一系统提示词（身份 + 能力 + RAG 上下文 + 记忆）
+    if use_pipeline:
+        return _stream_pipeline_response(db, conv, conv_id, data.content, modes)
+
+    # 纯 knowledge / 纯模型 → 走现有流式路径（向后兼容）
+    context, sources = await _build_context(db, conv, data.content)
     system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
     if context:
         system_prompt += "\n\n" + build_rag_context(context, data.content)
@@ -160,12 +170,8 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
     history = list(reversed(history_result.scalars().all()))
     messages = [{"role": m.role, "content": m.content} for m in history]
     return _stream_assistant_response(
-        db=db,
-        conv=conv,
-        conv_id=conv_id,
-        messages=messages,
-        system_prompt=system_prompt,
-        sources=sources,
+        db=db, conv=conv, conv_id=conv_id,
+        messages=messages, system_prompt=system_prompt, sources=sources,
     )
 
 
@@ -394,7 +400,8 @@ async def _update_conversation_memory(conv_id: UUID) -> None:
             system_prompt="",
             db=session,
         ):
-            summary += chunk
+            if chunk.type == "text":
+                summary += chunk.content
 
         summary = summary.strip()
         if summary:
@@ -441,11 +448,16 @@ def _stream_assistant_response(
 
     async def event_stream():
         full_content = ""
+        full_thinking = ""
         started = time.monotonic()
         try:
             async for chunk in stream_chat(messages, provider, system_prompt, db=db):
-                full_content += chunk
-                yield f"event: chunk\ndata: {json.dumps({'content': chunk, 'type': 'text'})}\n\n"
+                if chunk.type == "thinking":
+                    full_thinking += chunk.content
+                    yield f"event: thinking\ndata: {json.dumps({'content': chunk.content})}\n\n"
+                else:
+                    full_content += chunk.content
+                    yield f"event: chunk\ndata: {json.dumps({'content': chunk.content, 'type': 'text'})}\n\n"
             if sources:
                 source_data = [
                     {"chunk_id": s["chunk_id"], "document_title": s["document_title"],
@@ -459,6 +471,7 @@ def _stream_assistant_response(
                 conversation_id=conv_id,
                 role="assistant",
                 content=full_content,
+                thinking_content=full_thinking or None,
                 sources=sources,
                 model_used=provider,
                 latency_ms=latency_ms,
@@ -478,6 +491,116 @@ def _stream_assistant_response(
                 "cost_usd": assistant_msg.cost_usd,
             }
             yield f"event: done\ndata: {json.dumps(payload)}\n\n"
+            if conv.memory_enabled:
+                asyncio.create_task(_update_conversation_memory(conv_id))
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def _stream_pipeline_response(
+    db: AsyncSession,
+    conv: Conversation,
+    conv_id: UUID,
+    message: str,
+    modes: set[str],
+) -> StreamingResponse:
+    """通过统一管道处理消息（支持工具调用 + 网络搜索 + RAG）"""
+    provider = _resolve_provider(conv.model_provider)
+
+    # 加载历史
+    async def _load_history() -> list[dict]:
+        result = await db.execute(
+            select(Message).where(Message.conversation_id == conv_id)
+            .order_by(Message.created_at.desc()).limit(10)
+        )
+        msgs = list(reversed(result.scalars().all()))
+        # 排除最后一条（刚保存的 user_msg）
+        return [{"role": m.role, "content": m.content} for m in msgs]
+
+    async def event_stream():
+        started = time.monotonic()
+        full_content = ""
+        full_thinking = ""
+        all_sources: list[dict] = []
+        all_tool_calls: list[dict] = []
+
+        try:
+            history = await _load_history()
+            kb_ids = []
+            for kid in (conv.knowledge_base_ids or []):
+                try:
+                    kb_ids.append(UUID(kid))
+                except Exception:
+                    continue
+
+            request = PipelineRequest(
+                message=message,
+                conversation_id=conv_id,
+                channel=conv.channel or "web",
+                provider=provider,
+                modes=modes,
+                knowledge_base_ids=kb_ids,
+                history=history,
+            )
+
+            async for event in pipeline_run_stream(request, db):
+                if event.type == "text_chunk":
+                    chunk = event.data.get("content", "")
+                    full_content += chunk
+                    yield f"event: chunk\ndata: {json.dumps({'content': chunk, 'type': 'text'})}\n\n"
+                elif event.type == "thinking":
+                    chunk = event.data.get("content", "")
+                    full_thinking += chunk
+                    yield f"event: thinking\ndata: {json.dumps({'content': chunk})}\n\n"
+                elif event.type == "sources":
+                    all_sources = event.data.get("sources", [])
+                    source_data = [
+                        {"chunk_id": s.get("chunk_id", ""), "document_title": s.get("document_title", ""),
+                         "snippet": s.get("content", "")[:200], "score": s.get("score", 0)}
+                        for s in all_sources
+                    ]
+                    yield f"event: sources\ndata: {json.dumps({'sources': source_data})}\n\n"
+                elif event.type == "tool_start":
+                    yield f"event: tool_start\ndata: {json.dumps(event.data)}\n\n"
+                elif event.type == "tool_result":
+                    yield f"event: tool_result\ndata: {json.dumps(event.data)}\n\n"
+                elif event.type == "done":
+                    all_tool_calls = event.data.get("tool_calls", [])
+
+            latency_ms = int((time.monotonic() - started) * 1000)
+            completion_tokens = _estimate_tokens(full_content)
+            prompt_tokens = _estimate_tokens(message)
+
+            assistant_msg = Message(
+                conversation_id=conv_id,
+                role="assistant",
+                content=full_content,
+                thinking_content=full_thinking or None,
+                sources=all_sources,
+                tool_calls=all_tool_calls,
+                model_used=provider,
+                latency_ms=latency_ms,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                tokens_used=(prompt_tokens + completion_tokens) if (prompt_tokens or completion_tokens) else None,
+            )
+            db.add(assistant_msg)
+            conv.updated_at = datetime.utcnow()
+            await db.commit()
+
+            payload = {
+                "message_id": str(assistant_msg.id),
+                "latency_ms": latency_ms,
+                "tokens_used": assistant_msg.tokens_used,
+                "prompt_tokens": assistant_msg.prompt_tokens,
+                "completion_tokens": assistant_msg.completion_tokens,
+                "cost_usd": assistant_msg.cost_usd,
+                "tool_calls": all_tool_calls,
+            }
+            yield f"event: done\ndata: {json.dumps(payload)}\n\n"
+
             if conv.memory_enabled:
                 asyncio.create_task(_update_conversation_memory(conv_id))
         except Exception as e:

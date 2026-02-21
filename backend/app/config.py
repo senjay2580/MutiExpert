@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     api_key: str = ""  # If set, require X-API-Key / Bearer token for most endpoints
     max_link_fetch_size: int = 2000000  # 2MB max remote HTML/text fetch
 
+    # Third-party integrations
+    tavily_api_key: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

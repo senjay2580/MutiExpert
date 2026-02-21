@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.config import get_settings
-from app.models.extras import AIModelConfig
+from app.models.extras import AIModelConfig, SiteSetting
 from app.schemas.ai_models import AIModelConfigUpdate, AIModelConfigOut
 from app.services.ai_model_config import DEFAULT_MODEL_CONFIGS, list_configs
 from app.services.ai_service import stream_chat
@@ -129,8 +129,42 @@ async def test_model_connection(
             return {"ok": False, "message": "无响应"}
         if isinstance(first_chunk, str) and first_chunk.lower().startswith("error:"):
             return {"ok": False, "message": first_chunk.replace("Error:", "").strip()}
+        from app.services.ai_service import StreamChunk
+        if isinstance(first_chunk, StreamChunk) and first_chunk.content.lower().startswith("error:"):
+            return {"ok": False, "message": first_chunk.content.replace("Error:", "").strip()}
         return {"ok": True, "message": "连接成功"}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         await generator.aclose()
+
+
+# ── Tavily 配置 ──────────────────────────────────────────────
+
+@router.get("/config/tavily")
+async def get_tavily_config(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(SiteSetting.value).where(SiteSetting.key == "tavily_api_key")
+    )
+    raw = result.scalar_one_or_none() or ""
+    # 脱敏：只返回前4位 + 掩码
+    masked = (raw[:4] + "****" + raw[-4:]) if len(raw) > 8 else ("****" if raw else "")
+    return {"api_key_set": bool(raw), "api_key_masked": masked}
+
+
+@router.put("/config/tavily")
+async def update_tavily_config(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    api_key = (data.get("api_key") or "").strip()
+    result = await db.execute(
+        select(SiteSetting).where(SiteSetting.key == "tavily_api_key")
+    )
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.value = api_key
+    else:
+        db.add(SiteSetting(key="tavily_api_key", value=api_key))
+    await db.commit()
+    return {"message": "Tavily API Key 已保存"}

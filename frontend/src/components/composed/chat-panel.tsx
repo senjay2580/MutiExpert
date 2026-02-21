@@ -140,6 +140,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
       abortRef.current = streamMessage(
         convId, text, normalizedModel,
         (chunk) => setMessages((p) => p.map((m) => m.id === aId ? { ...m, content: m.content + chunk } : m)),
+        () => {},  // onThinking — chat-panel 不展示 thinking
         (sources) => {
           const mapped: MessageSource[] = sources.map((s) => ({
             document_name: s.document_title, content_preview: s.snippet,

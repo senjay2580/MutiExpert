@@ -45,6 +45,8 @@ export interface Conversation {
   model_provider: ModelProvider;
   is_pinned: boolean;
   pinned_at: string | null;
+  channel: string;
+  default_modes: string[];
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +56,7 @@ export interface Message {
   conversation_id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  thinking_content: string | null;
   sources: SourceReference[];
   model_used: string | null;
   tokens_used: number | null;
@@ -157,4 +160,46 @@ export interface BotTool {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string | null;
+  skill_type: 'prompt' | 'script' | 'hybrid';
+  content: string | null;
+  icon: string | null;
+  sort_order: number;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  ref_count?: number;
+  script_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillDetail extends Skill {
+  references: SkillReference[];
+  scripts: SkillScriptLink[];
+}
+
+export interface SkillReference {
+  id: string;
+  skill_id: string;
+  name: string;
+  ref_type: 'markdown' | 'pdf' | 'image' | 'url';
+  content: string | null;
+  file_path: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillScriptLink {
+  id: string;
+  skill_id: string;
+  script_id: string | null;
+  script_name: string | null;
+  sort_order: number;
+  created_at: string;
 }

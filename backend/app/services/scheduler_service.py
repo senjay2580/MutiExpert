@@ -17,7 +17,8 @@ from app.services.script_executor import execute_script
 async def _generate_text(messages: list[dict], provider: str, system_prompt: str, db) -> str:
     full_response = ""
     async for chunk in stream_chat(messages, provider, system_prompt, db=db):
-        full_response += chunk
+        if chunk.type == "text":
+            full_response += chunk.content
     return full_response
 
 

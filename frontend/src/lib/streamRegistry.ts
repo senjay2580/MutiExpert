@@ -23,6 +23,8 @@ export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  thinking?: string;
+  isThinkingStreaming?: boolean;
   sources?: MessageSource[];
   isStreaming?: boolean;
   model_used?: string | null;
@@ -38,6 +40,7 @@ export type StreamEntry = {
   assistantMessageId: string;
   userMessage: ChatMessage;
   content: string;
+  thinking: string;
   sources: MessageSource[];
   isStreaming: boolean;
   abort: (() => void) | null;
@@ -72,6 +75,13 @@ export function appendChunk(conversationId: string, chunk: string): void {
   const entry = streams.get(conversationId);
   if (!entry) return;
   entry.content += chunk;
+  entry.onUpdate?.(entry);
+}
+
+export function appendThinking(conversationId: string, chunk: string): void {
+  const entry = streams.get(conversationId);
+  if (!entry) return;
+  entry.thinking += chunk;
   entry.onUpdate?.(entry);
 }
 

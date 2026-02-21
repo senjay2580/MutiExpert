@@ -55,6 +55,7 @@ export default function IntegrationsPage() {
     <div className="space-y-4">
       <PageHeader title="第三方集成" description="连接外部服务，扩展平台能力" />
       <FeishuCard key={`${config.app_id}:${config.webhook_url}`} initialConfig={config} />
+      <TavilyCard />
     </div>
   );
 }
@@ -266,5 +267,72 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
+  );
+}
+
+function TavilyCard() {
+  const [apiKey, setApiKey] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const { data: tavilyConfig } = useQuery({
+    queryKey: ['tavily-config'],
+    queryFn: () => api.get<{ api_key_set: boolean; api_key_masked: string }>('/config/tavily').then((r) => r.data),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.put('/config/tavily', { api_key: apiKey }),
+    onSuccess: () => {
+      setSaved(true);
+      setApiKey('');
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  return (
+    <Card className="gap-4 py-5">
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
+              <Icon icon="lucide:search" width={18} height={18} className="text-blue-500" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-foreground">Tavily 网络搜索</div>
+              <div className="text-xs text-muted-foreground">为 AI 提供实时网络搜索能力</div>
+            </div>
+          </div>
+          {tavilyConfig?.api_key_set ? (
+            <Badge className="bg-green-500/10 text-green-600 border-transparent">已配置</Badge>
+          ) : (
+            <Badge variant="outline">未配置</Badge>
+          )}
+        </div>
+        <div className="space-y-3">
+          {tavilyConfig?.api_key_set && (
+            <p className="text-[11px] text-muted-foreground">
+              当前 Key: {tavilyConfig.api_key_masked}（输入新 Key 可覆盖）
+            </p>
+          )}
+          <Field
+            label="API Key"
+            value={apiKey}
+            onChange={setApiKey}
+            placeholder="tvly-xxxxxxxxxxxxxxxx"
+            type="password"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            在聊天页开启「搜索」模式后，AI 会自动调用 Tavily 搜索实时信息。
+            前往 <a href="https://tavily.com" target="_blank" rel="noreferrer" className="underline">tavily.com</a> 获取 API Key。
+          </p>
+        </div>
+        <SaveButton
+          onClick={() => saveMutation.mutate()}
+          loading={saveMutation.isPending}
+          disabled={!apiKey.trim()}
+        >
+          {saved ? '已保存' : '保存'}
+        </SaveButton>
+      </CardContent>
+    </Card>
   );
 }

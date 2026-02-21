@@ -6,18 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.config import get_settings
 from app.database import get_db, AsyncSessionLocal
-from app.models.extras import FeishuConfig, FeishuPendingAction
+from app.models.extras import Conversation, Message, FeishuConfig, FeishuPendingAction
 from app.services.feishu_service import (
     get_feishu_service,
     verify_feishu_signature,
     decrypt_feishu_event,
     encrypt_secret,
 )
-from app.services.intent.router import recognize_intent
-from app.services.intent.executor import execute_action, format_result
-from app.services.rag_service import retrieve_context, build_rag_context
-from app.services.ai_service import stream_chat
-from app.services.system_prompt_service import build_system_prompt
+from app.services.pipeline_service import PipelineRequest, run as pipeline_run
 
 router = APIRouter()
 
@@ -93,7 +89,7 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
 
 
 async def _handle_feishu_question(parsed: dict):
-    """后台任务：意图识别 → 自动路由 → 回复飞书"""
+    """后台任务：通过统一管道处理飞书消息，维护对话历史"""
     question = parsed["text"]
     message_id = parsed.get("message_id")
     chat_id = parsed.get("chat_id")
@@ -117,48 +113,100 @@ async def _handle_feishu_question(parsed: dict):
                 await svc.reply_message(message_id, "已绑定当前会话为默认推送目标。")
                 return
 
-            # 意图识别
             provider = svc.default_provider or "claude"
-            intent = await recognize_intent(question, provider, db)
 
-            if not intent.has_tool_call:
-                # 没有 tool_call → 走 RAG 问答兜底
-                if intent.text_response and not intent.text_response.startswith("暂未配置"):
-                    await svc.reply_message(message_id, intent.text_response)
-                else:
-                    response = await _fallback_rag(question, provider, db)
-                    await svc.reply_message(message_id, response)
-                return
+            # 1. 查找或创建飞书会话
+            conv = await _get_or_create_feishu_conversation(db, chat_id)
 
-            # 有 tool_call
-            if intent.action_type == "mutation":
-                # 修改操作 → 发确认卡片
-                await _send_confirm_card(svc, chat_id, intent, db)
-            else:
-                # 查询操作 → 直接执行
-                result = await execute_action(intent)
-                text = format_result(result)
-                await svc.reply_message(message_id, text)
+            # 2. 保存用户消息
+            user_msg = Message(conversation_id=conv.id, role="user", content=question)
+            db.add(user_msg)
+            conv.updated_at = datetime.utcnow()
+            if not conv.title:
+                conv.title = question[:50] + ("..." if len(question) > 50 else "")
+            await db.commit()
+
+            # 3. 加载历史消息
+            history = await _load_feishu_history(db, conv.id)
+
+            # 4. 收集知识库 ID
+            from app.models.knowledge import KnowledgeBase
+            kb_result = await db.execute(select(KnowledgeBase.id))
+            kb_ids = [row[0] for row in kb_result.all()]
+
+            # 5. 通过统一管道处理
+            request = PipelineRequest(
+                message=question,
+                conversation_id=conv.id,
+                channel="feishu",
+                provider=provider,
+                modes=set(conv.default_modes or ["knowledge", "tools"]),
+                knowledge_base_ids=kb_ids,
+                history=history,
+            )
+            result = await pipeline_run(request, db)
+            response_text = result.get("text", "") or "抱歉，暂时无法回答这个问题。"
+
+            # 6. 保存 AI 回复
+            assistant_msg = Message(
+                conversation_id=conv.id,
+                role="assistant",
+                content=response_text,
+                sources=result.get("sources", []),
+                tool_calls=result.get("tool_calls", []),
+                model_used=provider,
+            )
+            db.add(assistant_msg)
+            conv.updated_at = datetime.utcnow()
+            await db.commit()
+
+            # 7. 回复飞书
+            # 截断过长回复（飞书文本消息限制约 4000 字符）
+            reply_text = response_text[:3800]
+            if len(response_text) > 3800:
+                reply_text += "\n\n...(回复过长已截断)"
+            await svc.reply_message(message_id, reply_text)
 
     except Exception as e:
         if svc is not None:
             await svc.reply_message(message_id, f"处理出错: {str(e)}")
 
 
-async def _fallback_rag(question: str, provider: str, db) -> str:
-    """RAG 问答兜底"""
-    from app.models.knowledge import KnowledgeBase
-    result = await db.execute(select(KnowledgeBase.id))
-    kb_ids = [row[0] for row in result.all()]
-    context, sources = await retrieve_context(db, question, kb_ids) if kb_ids else ("", [])
-    system_prompt = await build_system_prompt(db, provider=provider, compact=True)
-    if context:
-        system_prompt += "\n\n" + build_rag_context(context, question)
-    messages = [{"role": "user", "content": question}]
-    full_response = ""
-    async for chunk in stream_chat(messages, provider, system_prompt, db=db):
-        full_response += chunk
-    return full_response or "抱歉，暂时无法回答这个问题。"
+async def _get_or_create_feishu_conversation(db: AsyncSession, chat_id: str) -> Conversation:
+    """根据 feishu_chat_id 查找会话，不存在则创建"""
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.channel == "feishu",
+            Conversation.feishu_chat_id == chat_id,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        conv = Conversation(
+            channel="feishu",
+            feishu_chat_id=chat_id,
+            title="飞书对话",
+            default_modes=["knowledge", "tools"],
+        )
+        db.add(conv)
+        await db.commit()
+        await db.refresh(conv)
+    return conv
+
+
+async def _load_feishu_history(db: AsyncSession, conv_id, limit: int = 10) -> list[dict]:
+    """加载飞书会话的最近历史消息"""
+    result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conv_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    msgs = list(reversed(result.scalars().all()))
+    # 排除最后一条（刚保存的 user_msg）
+    if msgs and msgs[-1].role == "user":
+        msgs = msgs[:-1]
+    return [{"role": m.role, "content": m.content} for m in msgs]
 
 
 async def _send_confirm_card(svc, chat_id: str, intent, db):

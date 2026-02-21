@@ -61,7 +61,8 @@ async def generate_insights(db: AsyncSession) -> list[dict]:
         provider="claude",
         db=db,
     ):
-        full_response += chunk
+        if chunk.type == "text":
+            full_response += chunk.content
 
     # 解析并保存洞察
     import json

@@ -13,6 +13,7 @@ import DataManagementPage from '../pages/settings/DataManagementPage';
 import ScheduledTasksPage from '../pages/scheduler/ScheduledTasksPage';
 import ScriptsPage from '../pages/scripts/ScriptsPage';
 import BotToolsPage from '../pages/bot-tools/BotToolsPage';
+import SkillsPage from '../pages/skills/SkillsPage';
 import BoardListPage from '../pages/boards/BoardListPage';
 import BoardEditorPage from '../pages/boards/BoardEditorPage';
 import HelpCenterPage from '../pages/help/HelpCenterPage';
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
       { path: 'scheduler', element: <ScheduledTasksPage /> },
       { path: 'scripts', element: <ScriptsPage /> },
       { path: 'bot-tools', element: <BotToolsPage /> },
+      { path: 'skills', element: <SkillsPage /> },
       { path: 'boards', element: <BoardListPage /> },
       { path: 'boards/:boardId', element: <BoardEditorPage /> },
       { path: 'help', element: <HelpCenterPage /> },

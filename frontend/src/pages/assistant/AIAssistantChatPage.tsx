@@ -25,13 +25,14 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark-dimmed.css';
 import { illustrations } from '@/lib/illustrations';
+import { ThinkingBlock } from '@/components/composed/thinking-block';
 import * as streamRegistry from '@/lib/streamRegistry';
 import type { ChatMessage, MessageSource } from '@/lib/streamRegistry';
 
 type ModelConfig = { id: string; name: string; provider: string };
 
 type LocationState = { initialPrompt?: string };
-type FocusMode = 'knowledge' | 'model';
+type ChatMode = 'knowledge' | 'search' | 'tools';
 
 /* ── Clipboard fallback for HTTP contexts ── */
 function copyToClipboard(text: string): Promise<void> {
@@ -134,7 +135,7 @@ export default function AIAssistantChatPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [focusMode, setFocusMode] = useState<FocusMode>('knowledge');
+  const [modes, setModes] = useState<Set<ChatMode>>(new Set(['knowledge']));
   const [selectedKbIds, setSelectedKbIds] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -247,6 +248,7 @@ export default function AIAssistantChatPage() {
           id: m.id,
           role: m.role as 'user' | 'assistant',
           content: m.content,
+          thinking: m.thinking_content || undefined,
           sources: m.sources?.map((s) => ({
             document_name: s.document_title,
             content_preview: s.snippet,
@@ -324,7 +326,14 @@ export default function AIAssistantChatPage() {
     if (!activeConvId) return;
     const conv = conversations.find((c) => c.id === activeConvId);
     if (!conv) return;
-    setFocusMode(conv.knowledge_base_ids?.length ? 'knowledge' : 'model');
+    const restored = new Set<ChatMode>();
+    const dm = conv.default_modes as string[] | undefined;
+    if (dm?.length) {
+      dm.forEach((m) => restored.add(m as ChatMode));
+    } else if (conv.knowledge_base_ids?.length) {
+      restored.add('knowledge');
+    }
+    setModes(restored);
     setSelectedKbIds(conv.knowledge_base_ids ?? []);
   }, [activeConvId, conversations]);
 
@@ -391,21 +400,28 @@ export default function AIAssistantChatPage() {
 
   const handleRenameCancel = () => { setRenamingId(null); setRenameDraft(''); };
 
-  const handleTogglePin = (convId: string, nextPinned: boolean) => {
-    updateConversation.mutate({ id: convId, is_pinned: nextPinned });
+  const toggleMode = (mode: ChatMode) => {
+    setModes((prev) => {
+      const next = new Set(prev);
+      if (next.has(mode)) next.delete(mode); else next.add(mode);
+      return next;
+    });
+    if (!activeConvId) return;
+    if (mode === 'knowledge') {
+      const willHaveKb = !modes.has('knowledge');
+      if (!willHaveKb) {
+        updateConversation.mutate({ id: activeConvId, knowledge_base_ids: [] });
+      } else {
+        const fallbackIds = knowledgeBases.map((kb) => kb.id);
+        const knowledgeIds = selectedKbIds.length ? selectedKbIds : fallbackIds;
+        if (!selectedKbIds.length && fallbackIds.length) setSelectedKbIds(fallbackIds);
+        updateConversation.mutate({ id: activeConvId, knowledge_base_ids: knowledgeIds });
+      }
+    }
   };
 
-  const handleFocusModeChange = (mode: FocusMode) => {
-    setFocusMode(mode);
-    if (!activeConvId) return;
-    if (mode === 'model') {
-      updateConversation.mutate({ id: activeConvId, knowledge_base_ids: [] });
-      return;
-    }
-    const fallbackIds = knowledgeBases.map((kb) => kb.id);
-    const knowledgeIds = selectedKbIds.length ? selectedKbIds : fallbackIds;
-    if (!selectedKbIds.length && fallbackIds.length) setSelectedKbIds(fallbackIds);
-    updateConversation.mutate({ id: activeConvId, knowledge_base_ids: knowledgeIds });
+  const handleTogglePin = (convId: string, nextPinned: boolean) => {
+    updateConversation.mutate({ id: convId, is_pinned: nextPinned });
   };
 
   const handleRegenerate = () => {
@@ -420,7 +436,7 @@ export default function AIAssistantChatPage() {
     });
     setIsSending(true);
     const cb = registryCallbacks(assistantId, activeConvId, lastUserMsg);
-    const abort = streamRegenerate(activeConvId, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+    const abort = streamRegenerate(activeConvId, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError);
     abortRef.current = abort;
     const entry = streamRegistry.getStream(activeConvId);
     if (entry) entry.abort = abort;
@@ -480,6 +496,7 @@ export default function AIAssistantChatPage() {
       assistantMessageId: assistantId,
       userMessage: userMsg,
       content: '',
+      thinking: '',
       sources: [],
       isStreaming: true,
       abort: null,
@@ -489,7 +506,7 @@ export default function AIAssistantChatPage() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId || m.id === updated.finalMessageId
-            ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, sources: updated.sources, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
+            ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, thinking: updated.thinking || undefined, isThinkingStreaming: updated.isStreaming && !!updated.thinking && !updated.content, sources: updated.sources, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
             : m,
         ),
       );
@@ -503,6 +520,7 @@ export default function AIAssistantChatPage() {
     });
     return {
       onChunk: (chunk: string) => streamRegistry.appendChunk(convId, chunk),
+      onThinking: (chunk: string) => streamRegistry.appendThinking(convId, chunk),
       onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) =>
         streamRegistry.setSources(convId, sources.map((s) => ({ document_name: s.document_title, content_preview: s.snippet, relevance_score: s.score, document_id: s.document_id ?? '' }))),
       onDone: (messageId: string, meta?: { latency_ms?: number; tokens_used?: number | null; prompt_tokens?: number | null; completion_tokens?: number | null; cost_usd?: number | null }) =>
@@ -532,7 +550,7 @@ export default function AIAssistantChatPage() {
       try {
         const editedUserMsg: ChatMessage = { id: editingMessageId, role: 'user', content: text };
         const cb = registryCallbacks(aId, activeConvId, editedUserMsg);
-        const abort = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+        const abort = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError);
         abortRef.current = abort;
         const entry = streamRegistry.getStream(activeConvId);
         if (entry) entry.abort = abort;
@@ -549,11 +567,11 @@ export default function AIAssistantChatPage() {
       let convId = activeConvId;
       if (!convId) {
         creatingConvRef.current = true;
-        const shouldUseKb = focusMode === 'knowledge';
+        const shouldUseKb = modes.has('knowledge');
         const fallbackIds = knowledgeBases.map((kb) => kb.id);
         const kbIds = shouldUseKb ? (selectedKbIds.length ? selectedKbIds : fallbackIds) : [];
         if (shouldUseKb && !selectedKbIds.length && fallbackIds.length) setSelectedKbIds(fallbackIds);
-        const conv = await chatService.createConversation({ knowledge_base_ids: kbIds, model_provider: normalizedCurrent });
+        const conv = await chatService.createConversation({ knowledge_base_ids: kbIds, model_provider: normalizedCurrent, default_modes: [...modes] });
         convId = conv.id;
         currentConvIdRef.current = convId;
         creatingConvRef.current = false;
@@ -562,12 +580,12 @@ export default function AIAssistantChatPage() {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else { currentConvIdRef.current = convId; }
       const cb = registryCallbacks(assistantMsg.id, convId, userMsg);
-      const abort = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onSources, cb.onDone, cb.onError);
+      const abort = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError, [...modes]);
       abortRef.current = abort;
       const entry = streamRegistry.getStream(convId);
       if (entry) entry.abort = abort;
     } catch (e) { creatingConvRef.current = false; setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
-  }, [activeConvId, editingMessageId, focusMode, input, isSending, knowledgeBases, navigate, normalizedCurrent, queryClient, selectedKbIds]);
+  }, [activeConvId, editingMessageId, modes, input, isSending, knowledgeBases, navigate, normalizedCurrent, queryClient, selectedKbIds]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!isSending) handleSend(); }
@@ -584,7 +602,7 @@ export default function AIAssistantChatPage() {
 
   const currentModelName = modelConfigs.find((m) => m.id === normalizedCurrent)?.name || (normalizedCurrent === 'openai' ? 'OpenAI' : 'Claude');
   const totalKbCount = knowledgeBases.length;
-  const effectiveKbCount = focusMode === 'knowledge' ? (selectedKbIds.length ? selectedKbIds.length : totalKbCount) : 0;
+  const effectiveKbCount = modes.has('knowledge') ? (selectedKbIds.length ? selectedKbIds.length : totalKbCount) : 0;
 
   /* ── JSX ── */
   return (
@@ -608,7 +626,7 @@ export default function AIAssistantChatPage() {
             </TooltipProvider>
             <div>
               <div className="text-sm font-semibold text-foreground">{activeConversation?.title || '新建会话'}</div>
-              <div className="text-[11px] text-muted-foreground">{currentModelName} · {focusMode === 'knowledge' ? `${effectiveKbCount} 个知识库` : '纯模型'}</div>
+              <div className="text-[11px] text-muted-foreground">{currentModelName} · {[...modes].map((m) => m === 'knowledge' ? `知识库(${effectiveKbCount})` : m === 'search' ? '搜索' : '工具').join(' + ') || '纯模型'}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -667,38 +685,21 @@ export default function AIAssistantChatPage() {
             <div className="mx-auto max-w-4xl space-y-5 px-4 py-6">
               {messages.map((msg) => (
                 <div key={msg.id} className={cn('group/msg flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                  {/* AI 头像 */}
                   {msg.role === 'assistant' && (
                     <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted/60 ring-1 ring-border/20">
                       <ProviderIcon provider={msg.model_used || normalizedCurrent} size={16} />
                     </div>
                   )}
-                  <div className={cn(
-                    'max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
-                    msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'bg-muted/40 ring-1 ring-border/30',
-                  )}>
-                    {msg.role === 'assistant' ? (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={markdownComponents}>{msg.content}</ReactMarkdown>
-                        {msg.isStreaming && (
-                          <span className="ml-0.5 inline-flex items-center gap-0.5">
-                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:0ms]" />
-                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:150ms]" />
-                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:300ms]" />
-                          </span>
-                        )}
+
+                  {msg.role === 'user' ? (
+                    /* ── 用户消息：气泡 + 按钮在气泡外下方 ── */
+                    <div className="flex max-w-[80%] flex-col items-end">
+                      <div className="rounded-2xl bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm">
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
                       </div>
-                    ) : (
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    )}
-                    {msg.role === 'assistant' && msg.sources?.length ? <SourceReferences sources={msg.sources} /> : null}
-                    {!msg.isStreaming && (
-                      <div className={cn(
-                        'mt-2 flex flex-wrap items-center gap-1',
-                        msg.role === 'user' ? 'justify-end' : '',
-                      )}>
-                        {msg.role === 'assistant' && (
+                      {!msg.isStreaming && (
+                        <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100">
                           <TooltipProvider>
                             <Tooltip><TooltipTrigger asChild>
                               <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
@@ -706,36 +707,63 @@ export default function AIAssistantChatPage() {
                               </button>
                             </TooltipTrigger><TooltipContent side="bottom" className="text-xs">{copiedMessageId === msg.id ? '已复制' : '复制'}</TooltipContent></Tooltip>
                           </TooltipProvider>
+                          {msg.id === lastUserMessageId && (
+                            <TooltipProvider>
+                              <Tooltip><TooltipTrigger asChild>
+                                <button onClick={() => handleStartEditMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
+                                  <Icon icon="lucide:pencil" width={13} height={13} />
+                                </button>
+                              </TooltipTrigger><TooltipContent side="bottom" className="text-xs">编辑</TooltipContent></Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* ── AI 消息：无气泡，直接展示内容 ── */
+                    <div className="max-w-[80%] text-sm leading-relaxed">
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        {msg.thinking && (
+                          <ThinkingBlock content={msg.thinking} isStreaming={msg.isThinkingStreaming} />
                         )}
-                        {msg.role === 'assistant' && msg.id === lastAssistantMessageId && (
+                        <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={markdownComponents}>{msg.content}</ReactMarkdown>
+                        {msg.isStreaming && !msg.isThinkingStreaming && (
+                          <span className="ml-0.5 inline-flex items-center gap-0.5">
+                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:0ms]" />
+                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:150ms]" />
+                            <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:300ms]" />
+                          </span>
+                        )}
+                      </div>
+                      {msg.sources?.length ? <SourceReferences sources={msg.sources} /> : null}
+                      {!msg.isStreaming && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1">
                           <TooltipProvider>
                             <Tooltip><TooltipTrigger asChild>
-                              <button onClick={handleRegenerate} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
-                                <Icon icon="lucide:refresh-cw" width={13} height={13} />
+                              <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
+                                <Icon icon={copiedMessageId === msg.id ? 'lucide:check' : 'lucide:copy'} width={13} height={13} />
                               </button>
-                            </TooltipTrigger><TooltipContent side="bottom" className="text-xs">重新生成</TooltipContent></Tooltip>
+                            </TooltipTrigger><TooltipContent side="bottom" className="text-xs">{copiedMessageId === msg.id ? '已复制' : '复制'}</TooltipContent></Tooltip>
                           </TooltipProvider>
-                        )}
-                        {msg.role === 'user' && msg.id === lastUserMessageId && (
-                          <TooltipProvider>
-                            <Tooltip><TooltipTrigger asChild>
-                              <button onClick={() => handleStartEditMessage(msg.id, msg.content)} className="rounded-md p-1 text-primary-foreground/70 transition-colors hover:text-primary-foreground" disabled={isSending}>
-                                <Icon icon="lucide:pencil" width={13} height={13} />
-                              </button>
-                            </TooltipTrigger><TooltipContent side="bottom" className="text-xs">编辑</TooltipContent></Tooltip>
-                          </TooltipProvider>
-                        )}
-                        {msg.role === 'assistant' && (
+                          {msg.id === lastAssistantMessageId && (
+                            <TooltipProvider>
+                              <Tooltip><TooltipTrigger asChild>
+                                <button onClick={handleRegenerate} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
+                                  <Icon icon="lucide:refresh-cw" width={13} height={13} />
+                                </button>
+                              </TooltipTrigger><TooltipContent side="bottom" className="text-xs">重新生成</TooltipContent></Tooltip>
+                            </TooltipProvider>
+                          )}
                           <span className="ml-1 flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
                             <span>{getProviderLabel(msg.model_used || normalizedCurrent)}</span>
                             <span>·</span>
                             <span>{formatLatency(msg.latency_ms)}</span>
                             {msg.tokens_used ? <><span>·</span><span>{msg.tokens_used} tokens</span></> : null}
                           </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -772,25 +800,34 @@ export default function AIAssistantChatPage() {
               <div className="flex items-center gap-1.5 border-t border-border/30 px-3 py-2">
                 <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-0.5">
                   <Button
-                    variant={focusMode === 'knowledge' ? 'secondary' : 'ghost'}
+                    variant={modes.has('knowledge') ? 'secondary' : 'ghost'}
                     size="sm"
-                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', focusMode === 'knowledge' && 'shadow-sm')}
-                    onClick={() => handleFocusModeChange('knowledge')}
+                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', modes.has('knowledge') && 'shadow-sm')}
+                    onClick={() => toggleMode('knowledge')}
                   >
                     <Icon icon="lucide:book-open" width={12} height={12} className="mr-1" />
                     知识库
                   </Button>
                   <Button
-                    variant={focusMode === 'model' ? 'secondary' : 'ghost'}
+                    variant={modes.has('search') ? 'secondary' : 'ghost'}
                     size="sm"
-                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', focusMode === 'model' && 'shadow-sm')}
-                    onClick={() => handleFocusModeChange('model')}
+                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', modes.has('search') && 'shadow-sm')}
+                    onClick={() => toggleMode('search')}
                   >
-                    <Icon icon="lucide:brain" width={12} height={12} className="mr-1" />
-                    纯模型
+                    <Icon icon="lucide:search" width={12} height={12} className="mr-1" />
+                    搜索
+                  </Button>
+                  <Button
+                    variant={modes.has('tools') ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className={cn('h-6 rounded-md px-2.5 text-[11px] transition-all', modes.has('tools') && 'shadow-sm')}
+                    onClick={() => toggleMode('tools')}
+                  >
+                    <Icon icon="lucide:wrench" width={12} height={12} className="mr-1" />
+                    工具
                   </Button>
                 </div>
-                {focusMode === 'knowledge' && (
+                {modes.has('knowledge') && (
                   <span className="text-[10px] text-muted-foreground">{effectiveKbCount} 个知识库</span>
                 )}
                 <div className="ml-auto flex items-center gap-1.5">

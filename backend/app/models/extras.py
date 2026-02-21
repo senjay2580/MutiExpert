@@ -17,6 +17,9 @@ class Conversation(Base):
     memory_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     pinned_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    channel: Mapped[str] = mapped_column(String(20), default="web")  # "web" | "feishu"
+    feishu_chat_id: Mapped[str | None] = mapped_column(String(200))
+    default_modes = mapped_column(JSONB, default=lambda: ["knowledge"])  # ["knowledge","search","tools"]
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -28,7 +31,9 @@ class Message(Base):
     conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    thinking_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     sources = mapped_column(JSONB, default=list)
+    tool_calls = mapped_column(JSONB, default=list)  # [{name, args, result, success}]
     model_used: Mapped[str | None] = mapped_column(String(50))
     tokens_used: Mapped[int | None] = mapped_column(Integer)
     prompt_tokens: Mapped[int | None] = mapped_column(Integer)
@@ -45,12 +50,43 @@ class Skill(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    skill_type: Mapped[str] = mapped_column(String(20), nullable=False, default="prompt")  # prompt | script | hybrid
+    content: Mapped[str | None] = mapped_column(Text)  # HTML from TiptapEditor
+    icon: Mapped[str | None] = mapped_column(String(50))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
     config = mapped_column(JSONB, default=dict)
-    file_path: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SkillReference(Base):
+    __tablename__ = "skill_references"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    skill_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    ref_type: Mapped[str] = mapped_column(String(20), nullable=False, default="markdown")  # markdown | pdf | image | url
+    content: Mapped[str | None] = mapped_column(Text)  # markdown content or URL
+    file_path: Mapped[str | None] = mapped_column(Text)  # uploaded file path
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (Index("idx_skill_refs_skill", "skill_id"),)
+
+
+class SkillScript(Base):
+    __tablename__ = "skill_scripts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    skill_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    script_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("user_scripts.id", ondelete="SET NULL"), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (Index("idx_skill_scripts_skill", "skill_id"),)
 
 
 class CalendarEvent(Base):
