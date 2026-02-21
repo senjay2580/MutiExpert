@@ -8,7 +8,6 @@ from app.models.knowledge import KnowledgeBase, Document
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate, KnowledgeBaseResponse, DocumentResponse, LinkDocumentCreate, ArticleDocumentCreate
 from app.services.document_parser import parse_document
 from app.services.document_pipeline import process_document
-from app.services.url_fetcher import UnsafeUrlError, fetch_url_text
 
 router = APIRouter()
 
