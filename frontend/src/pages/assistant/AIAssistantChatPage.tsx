@@ -235,6 +235,13 @@ export default function AIAssistantChatPage() {
   /* ── Effects ── */
   useEffect(() => { setActiveConvId(conversationId ?? null); }, [conversationId]);
 
+  // 注册全局完成回调：流在后台完成时自动 invalidate 缓存（更新标题等）
+  useEffect(() => {
+    streamRegistry.setOnStreamComplete(() => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    });
+  }, [queryClient]);
+
   useEffect(() => {
     if (!activeConvId) {
       // Don't clear messages while a conversation is being created
@@ -271,29 +278,26 @@ export default function AIAssistantChatPage() {
       // Restore stream from registry if one was running in background
       const entry = streamRegistry.getStream(activeConvId);
       if (entry) {
-        const assistantMsg: ChatMessage = {
-          id: entry.finalMessageId || entry.assistantMessageId,
-          role: 'assistant',
-          content: entry.content,
-          sources: entry.sources,
-          isStreaming: entry.isStreaming,
-          model_used: entry.modelUsed,
-          latency_ms: entry.meta?.latency_ms ?? null,
-          tokens_used: entry.meta?.tokens_used ?? null,
-          prompt_tokens: entry.meta?.prompt_tokens ?? null,
-          completion_tokens: entry.meta?.completion_tokens ?? null,
-          cost_usd: entry.meta?.cost_usd ?? null,
-        };
-        const hasUser = mapped.some((m) => m.id === entry.userMessage.id);
-        setMessages(hasUser ? [...mapped, assistantMsg] : [...mapped, entry.userMessage, assistantMsg]);
         if (entry.isStreaming) {
+          // 流仍在进行：追加临时消息并重新订阅
+          const assistantMsg: ChatMessage = {
+            id: entry.finalMessageId || entry.assistantMessageId,
+            role: 'assistant',
+            content: entry.content,
+            thinking: entry.thinking || undefined,
+            sources: entry.sources,
+            isStreaming: true,
+            model_used: entry.modelUsed,
+          };
+          const hasUser = mapped.some((m) => m.id === entry.userMessage.id);
+          setMessages(hasUser ? [...mapped, assistantMsg] : [...mapped, entry.userMessage, assistantMsg]);
           setIsSending(true);
           abortRef.current = entry.abort;
           streamRegistry.subscribe(activeConvId, (updated) => {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === entry.assistantMessageId || m.id === updated.finalMessageId
-                  ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, sources: updated.sources, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
+                  ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, thinking: updated.thinking || undefined, sources: updated.sources, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
                   : m,
               ),
             );
@@ -305,6 +309,7 @@ export default function AIAssistantChatPage() {
             }
           });
         } else {
+          // 流已在后台完成：API 返回的 mapped 已包含完整消息，直接清理
           streamRegistry.removeStream(activeConvId);
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
         }
@@ -370,8 +375,15 @@ export default function AIAssistantChatPage() {
     setIsSending(false);
   };
 
+  // 切换/新建会话时：只 unsubscribe，不 abort 流，让后台继续完成
+  const detachStreaming = () => {
+    if (activeConvId) streamRegistry.unsubscribe(activeConvId);
+    abortRef.current = null;
+    setIsSending(false);
+  };
+
   const handleNewConversation = () => {
-    cancelStreaming();
+    detachStreaming();
     setActiveConvId(null);
     currentConvIdRef.current = null;
     setMessages([]);
@@ -383,7 +395,7 @@ export default function AIAssistantChatPage() {
   };
 
   const handleSelectConversation = (convId: string) => {
-    cancelStreaming();
+    detachStreaming();
     setSendError(null);
     setEditingMessageId(null);
     navigate(`/assistant/chat/${convId}`);

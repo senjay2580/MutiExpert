@@ -53,6 +53,13 @@ export type StreamEntry = {
 
 const streams = new Map<string, StreamEntry>();
 
+// 全局完成回调：流在后台完成时（无 subscriber）自动触发，用于 invalidate 缓存
+let _onStreamComplete: ((conversationId: string) => void) | null = null;
+
+export function setOnStreamComplete(cb: (conversationId: string) => void): void {
+  _onStreamComplete = cb;
+}
+
 export function registerStream(entry: Omit<StreamEntry, 'onUpdate'>): void {
   streams.set(entry.conversationId, { ...entry, onUpdate: null });
 }
@@ -98,7 +105,12 @@ export function markDone(conversationId: string, messageId: string, meta?: Strea
   entry.isStreaming = false;
   entry.finalMessageId = messageId;
   entry.meta = meta;
-  entry.onUpdate?.(entry);
+  if (entry.onUpdate) {
+    entry.onUpdate(entry);
+  } else {
+    // 无 subscriber（用户已切走），触发全局完成回调
+    _onStreamComplete?.(conversationId);
+  }
 }
 
 export function markError(conversationId: string, error: string): void {
@@ -106,7 +118,11 @@ export function markError(conversationId: string, error: string): void {
   if (!entry) return;
   entry.isStreaming = false;
   entry.error = error;
-  entry.onUpdate?.(entry);
+  if (entry.onUpdate) {
+    entry.onUpdate(entry);
+  } else {
+    _onStreamComplete?.(conversationId);
+  }
 }
 
 export function abortAndRemove(conversationId: string): void {
