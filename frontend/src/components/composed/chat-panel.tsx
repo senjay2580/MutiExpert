@@ -598,7 +598,6 @@ function CCMessage({ message, providerLabel, provider }: { message: ChatMessage;
       ) : (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
-            <Icon icon="lucide:sparkles" width={12} height={12} className="text-[var(--cc-accent)]" />
             <ProviderIcon provider={provider} size={12} />
             <span className="text-[11px] font-semibold text-[var(--cc-accent)]">{providerLabel}</span>
           </div>

@@ -211,7 +211,7 @@ export default function AIAssistantPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="ai-input-chip gap-1.5 rounded-full text-[11px] font-medium">
+                          <Button variant="ghost" size="sm" className="gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3 text-[11px] font-medium text-[var(--ai-input-fg)] hover:bg-white/10 hover:text-[var(--ai-input-fg)]">
                             <ProviderIcon provider={normalizedCurrent} size={14} />
                             {currentModelName}
                             <Icon icon="lucide:chevron-down" width={10} height={10} className="opacity-50" />
@@ -242,7 +242,7 @@ export default function AIAssistantPage() {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <Badge variant="secondary" className="ai-input-chip gap-1 rounded-full text-[10px]">
+                      <Badge variant="secondary" className="gap-1 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[10px] text-[var(--ai-input-fg)]">
                         <Icon icon="streamline-color:open-book" width={10} height={10} />
                         {knowledgeBases.length} 个知识库
                       </Badge>

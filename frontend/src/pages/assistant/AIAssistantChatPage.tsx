@@ -331,10 +331,14 @@ export default function AIAssistantChatPage() {
     }
   }, [activeConvId, conversations, normalizedCurrent, queryClient]);
 
+  const restoredConvRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!activeConvId) return;
+    if (!activeConvId) { restoredConvRef.current = null; return; }
+    if (restoredConvRef.current === activeConvId) return;
     const conv = conversations.find((c) => c.id === activeConvId);
     if (!conv) return;
+    restoredConvRef.current = activeConvId;
     const restored = new Set<ChatMode>();
     const dm = conv.default_modes as string[] | undefined;
     if (dm?.length) {

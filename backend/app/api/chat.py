@@ -1,7 +1,10 @@
 import json
 import asyncio
+import logging
 import time
 import math
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
@@ -151,14 +154,21 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
 
     # 决定增强模式
     modes = set(data.modes or conv.default_modes or ["knowledge"])
-    use_pipeline = bool(modes & {"tools", "search"})
-
-    if use_pipeline:
-        return _stream_pipeline_response(db, conv, conv_id, data.content, modes)
+    # tools / search 管道暂未实现，降级为纯知识库模式
+    modes.discard("tools")
+    modes.discard("search")
 
     # 纯 knowledge / 纯模型 → 走现有流式路径（向后兼容）
-    context, sources = await _build_context(db, conv, data.content)
-    system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
+    try:
+        context, sources = await _build_context(db, conv, data.content)
+    except Exception as e:
+        logger.warning("RAG context build failed, continuing without context: %s", e)
+        context, sources = "", []
+    try:
+        system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
+    except Exception as e:
+        logger.warning("System prompt build failed, using fallback: %s", e)
+        system_prompt = "你是一个智能助手。"
     if context:
         system_prompt += "\n\n" + build_rag_context(context, data.content)
     if conv.memory_enabled and conv.memory_summary:
