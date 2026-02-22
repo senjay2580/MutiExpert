@@ -64,6 +64,15 @@ async def toggle_todo(todo_id: UUID, db: AsyncSession = Depends(get_db)):
     return todo
 
 
+@router.delete("/completed", status_code=204)
+async def clear_completed(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Todo).where(Todo.completed.is_(True)))
+    todos = result.scalars().all()
+    for todo in todos:
+        await db.delete(todo)
+    await db.commit()
+
+
 @router.delete("/{todo_id}", status_code=204)
 async def delete_todo(todo_id: UUID, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Todo).where(Todo.id == todo_id))
@@ -71,13 +80,4 @@ async def delete_todo(todo_id: UUID, db: AsyncSession = Depends(get_db)):
     if not todo:
         raise HTTPException(status_code=404, detail="Todo not found")
     await db.delete(todo)
-    await db.commit()
-
-
-@router.delete("/completed", status_code=204)
-async def clear_completed(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Todo).where(Todo.completed.is_(True)))
-    todos = result.scalars().all()
-    for todo in todos:
-        await db.delete(todo)
     await db.commit()

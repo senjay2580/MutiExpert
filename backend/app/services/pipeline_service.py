@@ -275,6 +275,38 @@ def _build_tool_messages(
     return _build_tool_call_messages_openai(tc, assistant_text, tool_result_text)
 
 
+def _flatten_tool_messages(messages: list[dict], provider: str) -> list[dict]:
+    """对 deepseek/qwen 等不支持 tool 消息角色的 provider，将工具调用历史转为普通文本"""
+    if provider in ("claude", "openai"):
+        return messages  # 这两个 provider 原生支持 tool 消息
+
+    result: list[dict] = []
+    for msg in messages:
+        role = msg.get("role", "")
+        # tool 角色 → 转为 user 消息
+        if role == "tool":
+            content = msg.get("content", "")
+            result.append({"role": "user", "content": f"[工具执行结果]\n{content}"})
+        # assistant 带 tool_calls → 提取文本部分
+        elif role == "assistant" and msg.get("tool_calls"):
+            text = msg.get("content") or ""
+            tc_summary = []
+            for tc in msg["tool_calls"]:
+                fn = tc.get("function", {})
+                tc_summary.append(f"调用工具: {fn.get('name', '')}({fn.get('arguments', '')})")
+            combined = text + ("\n" if text else "") + "\n".join(tc_summary)
+            result.append({"role": "assistant", "content": combined})
+        # function_call_output (Responses API 格式) → 转为 user
+        elif msg.get("type") == "function_call_output":
+            result.append({"role": "user", "content": f"[工具执行结果]\n{msg.get('output', '')}"})
+        # function_call (Responses API 格式) → 转为 assistant
+        elif msg.get("type") == "function_call":
+            result.append({"role": "assistant", "content": f"调用工具: {msg.get('name', '')}({msg.get('arguments', '')})"})
+        else:
+            result.append(msg)
+    return result
+
+
 # ── 核心编排：流式 ─────────────────────────────────────────────
 
 async def run_stream(
@@ -365,7 +397,9 @@ async def run_stream(
             ))
 
     # 6. 最后一轮：流式输出（无工具或超过最大轮次）
-    async for chunk in stream_chat(messages, request.provider, system_prompt, db=db):
+    # 对不支持 tool 消息角色的 provider，将工具调用历史扁平化为普通文本
+    final_messages = _flatten_tool_messages(messages, request.provider)
+    async for chunk in stream_chat(final_messages, request.provider, system_prompt, db=db):
         if chunk.type == "thinking":
             yield PipelineEvent(type="thinking", data={"content": chunk.content})
         else:
