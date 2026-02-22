@@ -353,6 +353,28 @@ def _flatten_tool_messages(messages: list[dict], provider: str) -> list[dict]:
     return result
 
 
+def _extract_send_file_info(tool_result_text: str) -> dict | None:
+    """从 sandbox_send_file 的执行结果中提取文件元数据。
+
+    executor.format_result 会把 API 返回的 dict 序列化为 JSON 文本，
+    这里尝试解析其中的 file 字段。
+    """
+    try:
+        data = json.loads(tool_result_text)
+        f = data.get("file")
+        if f and f.get("filename"):
+            return {
+                "filename": f["filename"],
+                "path": f["path"],
+                "size": f.get("size", 0),
+                "mime_type": f.get("mime_type", "application/octet-stream"),
+                "url": f.get("url", ""),
+            }
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        pass
+    return None
+
+
 # ── 核心编排：流式 ─────────────────────────────────────────────
 
 async def run_stream(
@@ -402,6 +424,7 @@ async def run_stream(
     messages.append(user_msg)
 
     all_tool_calls: list[dict] = []
+    all_file_attachments: list[dict] = []
 
     # 5. 工具循环
     for round_idx in range(request.max_tool_rounds):
@@ -420,6 +443,7 @@ async def run_stream(
                 yield PipelineEvent(type="text_chunk", data={"content": result.text})
             yield PipelineEvent(type="done", data={
                 "tool_calls": all_tool_calls,
+                "file_attachments": all_file_attachments,
                 "usage": result.usage,
             })
             return
@@ -441,6 +465,13 @@ async def run_stream(
                 "name": tc.name, "result": tool_result_text[:500], "success": success,
             })
 
+            # sandbox_send_file: 提取文件附件信息
+            if tc.name == "sandbox_send_file" and success:
+                file_info = _extract_send_file_info(tool_result_text)
+                if file_info:
+                    all_file_attachments.append(file_info)
+                    yield PipelineEvent(type="file_attachment", data=file_info)
+
             # 追加工具调用消息到历史
             messages.extend(_build_tool_messages(
                 request.provider, tc, result.text, tool_result_text,
@@ -457,6 +488,7 @@ async def run_stream(
 
     yield PipelineEvent(type="done", data={
         "tool_calls": all_tool_calls,
+        "file_attachments": all_file_attachments,
     })
 
 
@@ -467,6 +499,7 @@ async def run(request: PipelineRequest, db: AsyncSession) -> dict[str, Any]:
     text_parts: list[str] = []
     all_sources: list[dict] = []
     all_tool_calls: list[dict] = []
+    all_file_attachments: list[dict] = []
     usage: dict[str, int] = {}
 
     async for event in run_stream(request, db):
@@ -474,15 +507,20 @@ async def run(request: PipelineRequest, db: AsyncSession) -> dict[str, Any]:
             text_parts.append(event.data.get("content", ""))
         elif event.type == "sources":
             all_sources = event.data.get("sources", [])
+        elif event.type == "file_attachment":
+            all_file_attachments.append(event.data)
         elif event.type == "tool_result":
             pass  # already tracked in done event
         elif event.type == "done":
             all_tool_calls = event.data.get("tool_calls", [])
+            if not all_file_attachments:
+                all_file_attachments = event.data.get("file_attachments", [])
             usage = event.data.get("usage", {})
 
     return {
         "text": "".join(text_parts),
         "sources": all_sources,
         "tool_calls": all_tool_calls,
+        "file_attachments": all_file_attachments,
         "usage": usage,
     }

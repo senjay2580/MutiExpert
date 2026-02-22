@@ -184,7 +184,7 @@ export default function AIAssistantPage() {
           </div>
         )}
 
-      <div className="px-6 sm:px-8">
+      <div className="px-6 pt-12 sm:px-8">
         <div className="space-y-6">
           <section className="relative mx-auto flex min-h-[320px] max-w-4xl flex-col items-center justify-center text-center">
             <div className="hero-title-loader mb-2" style={{ fontSize: '0.875rem', height: 'auto', fontWeight: 500 }}>

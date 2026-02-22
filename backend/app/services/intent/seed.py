@@ -184,6 +184,21 @@ DEFAULT_TOOLS = [
         },
     },
     {
+        "name": "sandbox_send_file",
+        "description": "将沙箱工作区中的文件发送到对话中，用户可直接下载。适用于生成报告、导出数据、处理完成后将结果文件交付给用户",
+        "action_type": "query",
+        "endpoint": "/api/v1/sandbox/files/send",
+        "method": "POST",
+        "param_mapping": {"path": "body.path"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径（相对于 workspace）"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "sandbox_fetch_url",
         "description": "抓取网页 URL 内容并智能提取正文。mode=auto 自动提取（SPA 页面自动 fallback Jina Reader），mode=jina 强制用 Jina Reader 渲染 JS 页面返回 Markdown，mode=raw 返回原始内容",
         "action_type": "query",

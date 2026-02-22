@@ -148,12 +148,14 @@ async def _handle_feishu_question(parsed: dict):
             response_text = result.get("text", "") or "抱歉，暂时无法回答这个问题。"
 
             # 6. 保存 AI 回复
+            file_attachments = result.get("file_attachments", [])
             assistant_msg = Message(
                 conversation_id=conv.id,
                 role="assistant",
                 content=response_text,
                 sources=result.get("sources", []),
                 tool_calls=result.get("tool_calls", []),
+                attachments=file_attachments or None,
                 model_used=provider,
             )
             db.add(assistant_msg)
@@ -166,6 +168,37 @@ async def _handle_feishu_question(parsed: dict):
             if len(response_text) > 3800:
                 reply_text += "\n\n...(回复过长已截断)"
             await svc.reply_message(message_id, reply_text)
+
+            # 8. 如有文件附件，发送下载卡片
+            if file_attachments and chat_id:
+                settings = get_settings()
+                base = settings.backend_url.rstrip("/")
+                for fa in file_attachments:
+                    size_kb = fa.get("size", 0) / 1024
+                    download_url = f"{base}{fa.get('url', '')}"
+                    card = {
+                        "header": {
+                            "title": {"tag": "plain_text", "content": "文件下载"},
+                            "template": "blue",
+                        },
+                        "elements": [
+                            {"tag": "markdown", "content": (
+                                f"**{fa.get('filename', '文件')}**\n"
+                                f"大小: {size_kb:.1f} KB\n"
+                                f"类型: {fa.get('mime_type', '未知')}"
+                            )},
+                            {
+                                "tag": "action",
+                                "actions": [{
+                                    "tag": "button",
+                                    "text": {"tag": "plain_text", "content": "下载文件"},
+                                    "type": "primary",
+                                    "url": download_url,
+                                }],
+                            },
+                        ],
+                    }
+                    await svc.send_interactive_card(chat_id, card)
 
     except Exception as e:
         if svc is not None:

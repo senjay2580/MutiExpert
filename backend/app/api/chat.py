@@ -426,6 +426,7 @@ def _stream_pipeline_response(
         full_thinking = ""
         all_sources: list[dict] = []
         all_tool_calls: list[dict] = []
+        all_file_attachments: list[dict] = []
 
         try:
             history = await _load_history()
@@ -469,8 +470,13 @@ def _stream_pipeline_response(
                     yield f"event: tool_start\ndata: {json.dumps(event.data)}\n\n"
                 elif event.type == "tool_result":
                     yield f"event: tool_result\ndata: {json.dumps(event.data)}\n\n"
+                elif event.type == "file_attachment":
+                    all_file_attachments.append(event.data)
+                    yield f"event: file_attachment\ndata: {json.dumps(event.data)}\n\n"
                 elif event.type == "done":
                     all_tool_calls = event.data.get("tool_calls", [])
+                    if not all_file_attachments:
+                        all_file_attachments = event.data.get("file_attachments", [])
 
             latency_ms = int((time.monotonic() - started) * 1000)
             completion_tokens = _estimate_tokens(full_content)
@@ -483,6 +489,7 @@ def _stream_pipeline_response(
                 thinking_content=full_thinking or None,
                 sources=all_sources,
                 tool_calls=all_tool_calls,
+                attachments=all_file_attachments or None,
                 model_used=provider,
                 latency_ms=latency_ms,
                 prompt_tokens=prompt_tokens,

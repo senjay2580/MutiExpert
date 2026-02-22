@@ -32,6 +32,10 @@ class ShellRequest(BaseModel):
     cwd: str | None = None
 
 
+class FileSendRequest(BaseModel):
+    path: str
+
+
 class FileWriteRequest(BaseModel):
     path: str
     content: str
@@ -121,6 +125,38 @@ async def api_web_search(req: SearchRequest, db: AsyncSession = Depends(get_db))
 async def api_python(req: PythonRequest):
     result = await execute_python(req.code, req.timeout)
     return _to_response(result)
+
+
+@router.post("/files/send", summary="发送工作区文件到对话（可下载）")
+async def api_send_file(req: FileSendRequest):
+    """验证文件存在并返回元数据 + 下载链接，供 AI 将文件发送到对话中。"""
+    try:
+        target = _safe_path(req.path)
+    except ValueError as e:
+        return {"success": False, "output": "", "error": str(e), "timed_out": False}
+
+    p = Path(target)
+    if not p.exists() or not p.is_file():
+        return {"success": False, "output": "", "error": f"文件不存在: {req.path}", "timed_out": False}
+
+    rel_path = req.path.replace("\\", "/")
+    mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    size = p.stat().st_size
+    download_url = f"/api/v1/sandbox/files/download?path={rel_path}"
+
+    return {
+        "success": True,
+        "output": f"已发送文件: {p.name} ({size} bytes)",
+        "error": "",
+        "timed_out": False,
+        "file": {
+            "filename": p.name,
+            "path": rel_path,
+            "size": size,
+            "mime_type": mime,
+            "url": download_url,
+        },
+    }
 
 
 @router.post("/files/upload", summary="上传文件到工作区")

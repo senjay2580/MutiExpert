@@ -36,6 +36,7 @@ GUIDELINES = """\
 - 需要操作平台数据时，使用可调用工具（Bot Tools）
 - 需要执行命令、读写文件、运行代码时，使用沙箱工具（sandbox_shell / sandbox_python / sandbox_read_file / sandbox_write_file）
 - 沙箱工作区路径为 /app/workspace，所有文件操作限制在此目录内
+- 需要将文件发送给用户下载时，使用 sandbox_send_file 工具（先用 sandbox_write_file 创建文件，再用 sandbox_send_file 发送）
 - 需要获取网页内容时使用 sandbox_fetch_url
 - 复杂任务可组合多个沙箱工具：先 fetch_url 获取数据 → write_file 保存 → python 处理 → read_file 返回结果
 - 用户消息以 /技能名 开头时，直接触发对应技能处理

@@ -19,6 +19,7 @@ import { knowledgeBaseService } from '@/services/knowledgeBaseService';
 import { chatService, streamEditMessage, streamMessage, streamRegenerate } from '@/services/chatService';
 import { uploadFile } from '@/services/fileService';
 import { cn } from '@/lib/utils';
+import { getFileTypeIcon, formatFileSize } from '@/lib/fileTypeIcons';
 import { useAppStore } from '@/stores/useAppStore';
 import type { FileAttachment, ModelProvider } from '@/types';
 import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
@@ -271,6 +272,8 @@ export default function AIAssistantChatPage() {
   const dedupedMessages = useMemo(() => {
     const seen = new Set<string>();
     return messages.filter((m) => {
+      // 正在流式输出的消息不去重，避免空内容被误合并
+      if (m.isStreaming) return true;
       // 对临时 ID（user-xxx / assistant-xxx），用 role+content 去重
       const key = m.id.startsWith('user-') || m.id.startsWith('assistant-')
         ? `${m.role}:${m.content}`
@@ -362,8 +365,15 @@ export default function AIAssistantChatPage() {
           };
           const hasUser = mapped.some((m) => m.id === entry.userMessage.id || (m.role === 'user' && m.content === entry.userMessage.content));
           const hasAssistant = mapped.some((m) => m.id === entry.assistantMessageId || m.id === entry.finalMessageId);
-          if (hasAssistant) {
-            // API 已包含完整消息，无需追加
+          // 如果 API 返回的最后一条是 assistant 消息，大概率就是正在流式输出的那条
+          const lastIsAssistant = mapped.length > 0 && mapped[mapped.length - 1].role === 'assistant';
+          if (hasAssistant || lastIsAssistant) {
+            // 用流式版本替换 API 返回的 assistant 消息（流式版本内容更新）
+            setMessages(mapped.map((m) =>
+              (m.role === 'assistant' && (m.id === entry.assistantMessageId || m.id === entry.finalMessageId || m === mapped[mapped.length - 1]))
+                ? { ...assistantMsg, id: m.id }
+                : m,
+            ));
           } else {
             setMessages(hasUser ? [...mapped, assistantMsg] : [...mapped, entry.userMessage, assistantMsg]);
           }
@@ -392,7 +402,7 @@ export default function AIAssistantChatPage() {
       }
     }).catch(() => { if (!cancelled) setMessages([]); })
       .finally(() => { if (!cancelled) setLoadingMessages(false); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; currentConvIdRef.current = null; };
   }, [activeConvId]);
 
   useEffect(() => {
@@ -596,6 +606,7 @@ export default function AIAssistantChatPage() {
       sources: [],
       toolCalls: [],
       webSearchResults: [],
+      fileAttachments: [],
       isStreaming: true,
       abort: null,
       modelUsed: normalizedCurrent,
@@ -604,7 +615,7 @@ export default function AIAssistantChatPage() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId || m.id === updated.finalMessageId
-            ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, thinking: updated.thinking || undefined, isThinkingStreaming: updated.isStreaming && !!updated.thinking && !updated.content, sources: updated.sources, toolCalls: updated.toolCalls, webSearchResults: updated.webSearchResults, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
+            ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, thinking: updated.thinking || undefined, isThinkingStreaming: updated.isStreaming && !!updated.thinking && !updated.content, sources: updated.sources, toolCalls: updated.toolCalls, webSearchResults: updated.webSearchResults, attachments: updated.fileAttachments.length ? updated.fileAttachments : m.attachments, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
             : m,
         ),
       );
@@ -624,6 +635,7 @@ export default function AIAssistantChatPage() {
       onToolStart: (data: { name: string; args: Record<string, unknown> }) => streamRegistry.addToolStart(convId, data),
       onToolResult: (data: { name: string; result: string; success: boolean }) => streamRegistry.updateToolResult(convId, data),
       onWebSearch: (data: { results: Array<{ title: string; url: string; content: string }> }) => streamRegistry.setWebSearchResults(convId, data.results),
+      onFileAttachment: (data: { filename: string; path: string; size: number; mime_type: string; url: string }) => streamRegistry.addFileAttachment(convId, data),
       onDone: (messageId: string, meta?: { latency_ms?: number; tokens_used?: number | null; prompt_tokens?: number | null; completion_tokens?: number | null; cost_usd?: number | null }) =>
         streamRegistry.markDone(convId, messageId, meta),
       onError: (error: string) => streamRegistry.markError(convId, error),
@@ -830,13 +842,15 @@ export default function AIAssistantChatPage() {
                             {msg.attachments.map((att, ai) => (
                               att.mime_type.startsWith('image/') ? (
                                 <img key={ai} src={att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`} alt={att.filename} className="max-h-40 max-w-[200px] rounded-lg object-cover" />
-                              ) : (
-                                <a key={ai} href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-1.5 rounded-lg bg-primary-foreground/10 px-2 py-1 text-[11px] text-primary-foreground transition-colors hover:bg-primary-foreground/20">
-                                  <Icon icon="lucide:file" width={14} height={14} />
-                                  <span className="max-w-[120px] truncate">{att.filename}</span>
-                                  <span>({(att.size / 1024).toFixed(0)}KB)</span>
+                              ) : (() => { const ft = getFileTypeIcon(att.filename, att.mime_type); return (
+                                <a key={ai} href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2 rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-[11px] text-primary-foreground transition-colors hover:bg-primary-foreground/20">
+                                  <Icon icon={ft.icon} width={16} height={16} className="shrink-0" />
+                                  <div className="min-w-0">
+                                    <div className="max-w-[140px] truncate font-medium">{att.filename}</div>
+                                    <div className="text-[10px] opacity-70">{ft.label} · {formatFileSize(att.size)}</div>
+                                  </div>
                                 </a>
-                              )
+                              ); })()
                             ))}
                           </div>
                         ) : null}
@@ -893,16 +907,16 @@ export default function AIAssistantChatPage() {
                                   {att.filename}
                                 </a>
                               </div>
-                            ) : (
-                              <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-[11px] transition-colors hover:bg-muted/50">
-                                <Icon icon="lucide:file-down" width={16} height={16} className="text-primary" />
-                                <div>
-                                  <div className="font-medium text-foreground">{att.filename}</div>
-                                  <div className="text-muted-foreground">{(att.size / 1024).toFixed(0)}KB</div>
+                            ) : (() => { const ft = getFileTypeIcon(att.filename, att.mime_type); return (
+                              <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2.5 rounded-lg border border-border/40 bg-muted/30 px-3 py-2.5 text-[12px] transition-colors hover:bg-muted/50" style={{ borderLeftColor: ft.color, borderLeftWidth: 3 }}>
+                                <Icon icon={ft.icon} width={20} height={20} className="shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium text-foreground">{att.filename}</div>
+                                  <div className="text-[10px] text-muted-foreground">{ft.label} · {formatFileSize(att.size)}</div>
                                 </div>
-                                <Icon icon="lucide:download" width={14} height={14} className="ml-2 text-muted-foreground" />
+                                <Icon icon="lucide:download" width={14} height={14} className="shrink-0 text-muted-foreground" />
                               </a>
-                            )
+                            ); })()
                           ))}
                         </div>
                       ) : null}
@@ -994,20 +1008,24 @@ export default function AIAssistantChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="输入问题，Enter 发送，Shift+Enter 换行..."
-                className="!min-h-[44px] !max-h-[200px] resize-none !border-0 !bg-transparent !px-4 !py-3 !text-sm !leading-relaxed !shadow-none !ring-0 focus-visible:!ring-0 focus-visible:!bg-transparent"
+                className="!min-h-[44px] !max-h-[200px] !rounded-none resize-none !border-0 !bg-transparent !px-4 !py-3 !text-sm !leading-relaxed !shadow-none !ring-0 focus-visible:!ring-0 focus-visible:!bg-transparent"
               />
               {/* 文件预览条 */}
               {(pendingAttachments.length > 0 || uploadingFiles) && (
                 <div className="flex flex-wrap items-center gap-2 border-t border-border/30 px-3 py-2">
-                  {pendingAttachments.map((att, i) => (
-                    <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-2 py-1 text-[11px]">
+                  {pendingAttachments.map((att, i) => {
+                    const ft = att.mime_type.startsWith('image/') ? null : getFileTypeIcon(att.filename, att.mime_type);
+                    return (
+                    <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1.5 text-[11px]">
                       {att.mime_type.startsWith('image/') ? (
                         <img src={att.url} alt={att.filename} className="h-8 w-8 rounded object-cover" />
                       ) : (
-                        <Icon icon="lucide:file" width={14} height={14} className="text-muted-foreground" />
+                        <Icon icon={ft!.icon} width={16} height={16} className="shrink-0" />
                       )}
-                      <span className="max-w-[120px] truncate">{att.filename}</span>
-                      <span className="text-muted-foreground">({(att.size / 1024).toFixed(0)}KB)</span>
+                      <div className="min-w-0">
+                        <div className="max-w-[120px] truncate">{att.filename}</div>
+                        <div className="text-[10px] text-muted-foreground">{ft?.label ?? '图片'} · {formatFileSize(att.size)}</div>
+                      </div>
                       <button
                         onClick={() => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
                         className="ml-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
@@ -1015,7 +1033,8 @@ export default function AIAssistantChatPage() {
                         <Icon icon="lucide:x" width={12} height={12} />
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                   {uploadingFiles && (
                     <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <Icon icon="lucide:loader-2" width={14} height={14} className="animate-spin" />

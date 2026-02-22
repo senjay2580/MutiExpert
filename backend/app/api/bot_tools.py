@@ -242,7 +242,7 @@ async def sync_tools(request: Request, db: AsyncSession = Depends(get_db)):
                 method=info["method"],
                 parameters=info["parameters"],
                 param_mapping=info["param_mapping"],
-                enabled=False,
+                enabled=True,
             )
             db.add(tool)
             created += 1

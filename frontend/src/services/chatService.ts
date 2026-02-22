@@ -66,6 +66,7 @@ type StreamCallbacks = {
   onToolStart?: (data: { name: string; args: Record<string, unknown> }) => void;
   onToolResult?: (data: { name: string; result: string; success: boolean }) => void;
   onWebSearch?: (data: { results: Array<{ title: string; url: string; content: string }> }) => void;
+  onFileAttachment?: (data: { filename: string; path: string; size: number; mime_type: string; url: string }) => void;
 };
 
 function streamConversationRequest(
@@ -114,6 +115,7 @@ function streamConversationRequest(
           else if (eventType === 'tool_start') callbacks.onToolStart?.(data);
           else if (eventType === 'tool_result') callbacks.onToolResult?.(data);
           else if (eventType === 'web_search') callbacks.onWebSearch?.(data);
+          else if (eventType === 'file_attachment') callbacks.onFileAttachment?.(data);
           else if (eventType === 'done') callbacks.onDone(data.message_id, {
             latency_ms: data.latency_ms,
             tokens_used: data.tokens_used ?? null,

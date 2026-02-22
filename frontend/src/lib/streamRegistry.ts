@@ -63,6 +63,7 @@ export type StreamEntry = {
   sources: MessageSource[];
   toolCalls: ToolCallEntry[];
   webSearchResults: WebSearchResult[];
+  fileAttachments: FileAttachment[];
   isStreaming: boolean;
   abort: (() => void) | null;
   finalMessageId?: string;
@@ -143,6 +144,13 @@ export function setWebSearchResults(conversationId: string, results: WebSearchRe
   const entry = streams.get(conversationId);
   if (!entry) return;
   entry.webSearchResults = results;
+  entry.onUpdate?.(entry);
+}
+
+export function addFileAttachment(conversationId: string, file: FileAttachment): void {
+  const entry = streams.get(conversationId);
+  if (!entry) return;
+  entry.fileAttachments.push(file);
   entry.onUpdate?.(entry);
 }
 
