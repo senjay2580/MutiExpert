@@ -61,19 +61,7 @@ async def _execute_deno(
     try:
         cmd = ["deno", "run", "--no-prompt"]
 
-        hosts = allow_net_hosts or ["localhost:8000"]
-        backend_url = settings.backend_url
-        if backend_url:
-            from urllib.parse import urlparse
-            parsed = urlparse(backend_url)
-            if parsed.hostname:
-                host_port = parsed.hostname
-                if parsed.port:
-                    host_port += f":{parsed.port}"
-                if host_port not in hosts:
-                    hosts.append(host_port)
-
-        cmd.append(f"--allow-net={','.join(hosts)}")
+        cmd.append("--allow-net")
         cmd.append("--allow-env")
         cmd.append(script_path)
 
