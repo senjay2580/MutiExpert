@@ -327,6 +327,29 @@ class OpenAIChatCompletionsStrategy:
         }
         return url, headers
 
+    @staticmethod
+    def _sanitize_messages(messages: list[dict]) -> list[dict]:
+        """将 tool/function_call 消息转为普通文本，兼容不支持 tool 角色的模型"""
+        result: list[dict] = []
+        for msg in messages:
+            role = msg.get("role", "")
+            if role == "tool":
+                result.append({"role": "user", "content": f"[工具执行结果]\n{msg.get('content', '')}"})
+            elif role == "assistant" and msg.get("tool_calls"):
+                text = msg.get("content") or ""
+                tc_parts = []
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function", {})
+                    tc_parts.append(f"调用工具: {fn.get('name', '')}({fn.get('arguments', '')})")
+                result.append({"role": "assistant", "content": (text + "\n" + "\n".join(tc_parts)).strip()})
+            elif msg.get("type") == "function_call_output":
+                result.append({"role": "user", "content": f"[工具执行结果]\n{msg.get('output', '')}"})
+            elif msg.get("type") == "function_call":
+                result.append({"role": "assistant", "content": f"调用工具: {msg.get('name', '')}({msg.get('arguments', '')})"})
+            else:
+                result.append(msg)
+        return result
+
     async def stream(self, messages: list[dict], system_prompt: str) -> AsyncGenerator[StreamChunk, None]:
         if not self.config.api_key:
             yield StreamChunk("text", f"Error: {self.config.provider_id} API key not configured")
@@ -343,10 +366,11 @@ class OpenAIChatCompletionsStrategy:
             return
         url, headers = result
 
+        clean = self._sanitize_messages(messages)
         api_messages: list[dict[str, Any]] = []
         if system_prompt:
             api_messages.append({"role": "system", "content": system_prompt})
-        api_messages.extend(messages)
+        api_messages.extend(clean)
 
         payload: dict[str, Any] = {
             "model": model,
@@ -400,10 +424,11 @@ class OpenAIChatCompletionsStrategy:
             return GenerateResult(text=f"Error: {self.config.provider_id} base_url not configured")
         url, headers = result
 
+        clean = self._sanitize_messages(messages)
         api_messages: list[dict[str, Any]] = []
         if system_prompt:
             api_messages.append({"role": "system", "content": system_prompt})
-        api_messages.extend(messages)
+        api_messages.extend(clean)
 
         payload: dict[str, Any] = {
             "model": self.config.model,
