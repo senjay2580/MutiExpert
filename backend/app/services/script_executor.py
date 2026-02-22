@@ -50,8 +50,6 @@ async def _execute_deno(
     extra_env: dict[str, str] | None = None,
 ) -> ScriptResult:
     """用 Deno 沙箱执行 TypeScript 脚本"""
-    settings = get_settings()
-
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".ts", delete=False, dir="/tmp"
     ) as f:

@@ -474,7 +474,7 @@ def _extract_metadata(soup) -> list[str]:
     og_desc = soup.find("meta", attrs={"property": "og:description"})
     if og_desc and og_desc.get("content"):
         d = og_desc["content"].strip()
-        if not any(d in l for l in lines):
+        if not any(d in line for line in lines):
             lines.append(f"**OG Description**: {d}")
     # canonical URL
     canonical = soup.find("link", attrs={"rel": "canonical"})
