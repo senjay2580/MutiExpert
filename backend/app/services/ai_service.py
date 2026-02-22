@@ -7,6 +7,7 @@ from typing import AsyncGenerator, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 from app.services.ai_model_config import get_provider_config, ProviderConfig
+from app.services.intent.tools import _fix_array_schemas
 
 
 # ── 流式 StreamChunk ──────────────────────────────────────────────
@@ -295,11 +296,13 @@ class OpenAIResponsesStrategy:
             resp_tools = []
             for t in tools:
                 fn = t.get("function", t)
+                params = fn.get("parameters", {"type": "object", "properties": {}})
+                _fix_array_schemas(params)
                 resp_tools.append({
                     "type": "function",
                     "name": fn["name"],
                     "description": fn.get("description", ""),
-                    "parameters": fn.get("parameters", {"type": "object", "properties": {}}),
+                    "parameters": params,
                 })
             payload["tools"] = resp_tools
 

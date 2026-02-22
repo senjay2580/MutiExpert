@@ -30,15 +30,28 @@ def to_openai_tools(tools: list[dict]) -> list[dict]:
     """转换为 OpenAI / DeepSeek / Qwen 的 tools 格式"""
     result = []
     for t in tools:
+        params = t.get("parameters") or {"type": "object", "properties": {}}
+        _fix_array_schemas(params)
         result.append({
             "type": "function",
             "function": {
                 "name": t["name"],
                 "description": t["description"],
-                "parameters": t.get("parameters") or {"type": "object", "properties": {}},
+                "parameters": params,
             },
         })
     return result
+
+
+def _fix_array_schemas(schema: dict) -> None:
+    """递归修补 array 类型缺少 items 的 schema（Responses API 要求严格）"""
+    if not isinstance(schema, dict):
+        return
+    if schema.get("type") == "array" and "items" not in schema:
+        schema["items"] = {"type": "string"}
+    for v in schema.values():
+        if isinstance(v, dict):
+            _fix_array_schemas(v)
 
 
 def to_claude_tools(tools: list[dict]) -> list[dict]:
