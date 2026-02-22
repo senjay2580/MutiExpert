@@ -136,7 +136,7 @@ async def api_python(req: PythonRequest):
 
 @router.post("/files/send", summary="发送工作区文件到对话（可下载）")
 async def api_send_file(req: FileSendRequest):
-    """验证文件存在并返回元数据 + 下载链接，供 AI 将文件发送到对话中。"""
+    """验证文件存在，推到 Supabase Storage，返回公开 URL。"""
     try:
         target = _safe_path(req.path)
     except ValueError as e:
@@ -149,7 +149,14 @@ async def api_send_file(req: FileSendRequest):
     rel_path = req.path.replace("\\", "/")
     mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
     size = p.stat().st_size
+
+    # 推到 Supabase Storage
+    from app.services.supabase_storage_service import upload_bytes, is_configured
     download_url = f"/api/v1/sandbox/files/download?path={rel_path}"
+    if is_configured() and size <= 50_000_000:
+        r = await upload_bytes(p.read_bytes(), p.name, mime, "sent")
+        if r.success:
+            download_url = r.url
 
     return {
         "success": True,
@@ -172,32 +179,39 @@ async def api_upload_file(
     path: str = Query("", description="工作区内子目录，默认根目录"),
 ):
     settings = get_settings()
-    # 读取文件内容并校验大小
     content = await file.read()
     if len(content) > settings.max_upload_size:
         raise HTTPException(status_code=413, detail=f"文件超过 {settings.max_upload_size // 1048576}MB 限制")
 
     filename = file.filename or "unnamed"
-    # 安全路径
     try:
         sub = os.path.join(path, filename) if path else filename
         target = _safe_path(sub)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 写入
+    # 写入工作区（供 AI 读取处理）
     p = Path(target)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(content)
 
     rel_path = sub.replace("\\", "/")
     mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    # 同步推到 Supabase Storage（供前端回显/下载）
+    from app.services.supabase_storage_service import upload_bytes, is_configured
+    oss_url = ""
+    if is_configured():
+        r = await upload_bytes(content, filename, mime, "uploads")
+        if r.success:
+            oss_url = r.url
+
     return {
         "filename": filename,
         "path": rel_path,
         "size": len(content),
         "mime_type": mime,
-        "url": f"/api/v1/sandbox/files/download?path={rel_path}",
+        "url": oss_url or f"/api/v1/sandbox/files/download?path={rel_path}",
     }
 
 
@@ -245,3 +259,28 @@ async def api_upload_to_image_host(file: UploadFile = File(...)):
         "size": result.size,
         "mime_type": result.mime_type,
     }
+
+
+# ── Supabase Storage ─────────────────────────────────────────
+
+@router.get("/storage/test", summary="测试 Supabase Storage 连接")
+async def api_test_storage():
+    from app.services.supabase_storage_service import test_connection
+    result = await test_connection()
+    return {"success": result.success, "url": result.url, "error": result.error}
+
+
+@router.get("/storage/list", summary="列出 Storage 文件")
+async def api_storage_list(prefix: str = "", limit: int = 100, offset: int = 0):
+    from app.services.supabase_storage_service import list_objects, StorageResult
+    result = await list_objects(prefix, limit, offset)
+    if isinstance(result, StorageResult):
+        return {"success": False, "error": result.error, "files": []}
+    return {"success": True, "error": "", "files": result}
+
+
+@router.delete("/storage/delete", summary="删除 Storage 文件")
+async def api_storage_delete(keys: list[str]):
+    from app.services.supabase_storage_service import delete_objects
+    result = await delete_objects(keys)
+    return {"success": result.success, "error": result.error}

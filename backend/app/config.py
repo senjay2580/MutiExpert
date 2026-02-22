@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # Third-party integrations
     tavily_api_key: str = ""
 
+    # Supabase Storage (文件/图片公开托管)
+    supabase_url: str = ""              # 如 https://xxxxx.supabase.co
+    supabase_service_key: str = ""      # service_role key
+    supabase_bucket: str = "public-files"
+
     # Sandbox
     workspace_dir: str = "/app/workspace"
     sandbox_shell_timeout: int = 30

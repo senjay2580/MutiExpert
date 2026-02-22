@@ -1,4 +1,4 @@
-"""图床上传服务 — sm.ms 免费图床"""
+"""图床上传服务 — sm.ms 免费图床（备用）"""
 from __future__ import annotations
 
 import logging
@@ -14,8 +14,8 @@ SMMS_UPLOAD_URL = "https://sm.ms/api/v2/upload"
 @dataclass
 class UploadResult:
     success: bool
-    url: str = ""          # 图片访问 URL
-    delete_url: str = ""   # 删除链接
+    url: str = ""
+    delete_url: str = ""
     filename: str = ""
     size: int = 0
     mime_type: str = ""
@@ -27,11 +27,7 @@ async def upload_to_smms(
     filename: str,
     mime_type: str = "image/png",
 ) -> UploadResult:
-    """上传文件到 sm.ms 图床，返回公开 URL。
-
-    sm.ms 免费版限制：单张 5MB，每分钟 20 次。
-    支持格式：jpg, png, gif, bmp, webp
-    """
+    """上传文件到 sm.ms 图床，返回公开 URL。"""
     if len(file_bytes) > 5 * 1024 * 1024:
         return UploadResult(success=False, error="文件超过 5MB 限制")
 
@@ -45,9 +41,6 @@ async def upload_to_smms(
             )
             data = resp.json()
 
-            # sm.ms 返回格式：
-            # 成功: {"success": true, "data": {"url": "...", "delete": "...", ...}}
-            # 重复: {"success": false, "code": "image_repeated", "images": "url"}
             if data.get("success"):
                 d = data["data"]
                 return UploadResult(
@@ -59,7 +52,6 @@ async def upload_to_smms(
                     mime_type=mime_type,
                 )
             elif data.get("code") == "image_repeated":
-                # 图片已存在，返回已有 URL
                 return UploadResult(
                     success=True,
                     url=data.get("images", ""),
