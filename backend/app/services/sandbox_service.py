@@ -158,7 +158,7 @@ def _read_csv(p: Path) -> str:
         reader = csv_mod.reader(f)
         for i, row in enumerate(reader):
             if i >= 500:
-                rows.append(f"... (共超过 500 行，已截断)")
+                rows.append("... (共超过 500 行，已截断)")
                 break
             rows.append(" | ".join(row))
     return "\n".join(rows) if rows else "(CSV 无内容)"

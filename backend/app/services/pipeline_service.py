@@ -454,7 +454,7 @@ async def run_stream(
             # 重复调用检测：相同工具 + 相同参数 → 跳过，返回提示
             dedup_key = f"{tc.name}|{json.dumps(tc.arguments, sort_keys=True, ensure_ascii=False)}"
             if dedup_key in _seen_tool_calls:
-                tool_result_text = f"该工具已用相同参数调用过，请直接使用之前的结果。"
+                tool_result_text = "该工具已用相同参数调用过，请直接使用之前的结果。"
                 success = True
                 logger.info("跳过重复工具调用: %s(%s)", tc.name, tc.arguments)
             else:
