@@ -425,6 +425,7 @@ async def run_stream(
 
     all_tool_calls: list[dict] = []
     all_file_attachments: list[dict] = []
+    _seen_tool_calls: set[str] = set()  # 重复调用检测: "name|args_json"
 
     # 5. 工具循环
     for round_idx in range(request.max_tool_rounds):
@@ -450,11 +451,20 @@ async def run_stream(
 
         # 有工具调用 → 逐个执行
         for tc in result.tool_calls:
-            yield PipelineEvent(type="tool_start", data={
-                "name": tc.name, "args": tc.arguments,
-            })
+            # 重复调用检测：相同工具 + 相同参数 → 跳过，返回提示
+            dedup_key = f"{tc.name}|{json.dumps(tc.arguments, sort_keys=True, ensure_ascii=False)}"
+            if dedup_key in _seen_tool_calls:
+                tool_result_text = f"该工具已用相同参数调用过，请直接使用之前的结果。"
+                success = True
+                logger.info("跳过重复工具调用: %s(%s)", tc.name, tc.arguments)
+            else:
+                _seen_tool_calls.add(dedup_key)
 
-            tool_result_text, success = await _execute_tool_call(tc, tool_index, db)
+                yield PipelineEvent(type="tool_start", data={
+                    "name": tc.name, "args": tc.arguments,
+                })
+
+                tool_result_text, success = await _execute_tool_call(tc, tool_index, db)
 
             all_tool_calls.append({
                 "name": tc.name, "args": tc.arguments,

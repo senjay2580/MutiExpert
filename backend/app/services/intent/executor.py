@@ -72,7 +72,14 @@ async def execute_action(intent: IntentResult) -> dict[str, Any]:
 def format_result(result: dict[str, Any]) -> str:
     """将 API 返回结果格式化为可读文本"""
     if not result.get("success"):
-        return f"操作失败 ({result.get('status_code', '?')}): {result.get('data', '未知错误')}"
+        status = result.get("status_code", "?")
+        data = result.get("data", "未知错误")
+        # 尝试从 data 中提取更有用的错误信息
+        if isinstance(data, dict):
+            detail = data.get("detail") or data.get("error") or data.get("message")
+            if detail:
+                return f"操作失败 (HTTP {status}): {detail}"
+        return f"操作失败 (HTTP {status}): {data}"
 
     data = result.get("data")
 
@@ -98,6 +105,16 @@ def format_result(result: dict[str, Any]) -> str:
 
     # 单对象结果
     if isinstance(data, dict):
+        # sandbox 风格响应：直接提取 output 字段，让 LLM 看到干净的结果
+        # 但如果包含 file 字段（如 sandbox_send_file），保留完整 JSON 供下游解析
+        if "output" in data and "timed_out" in data:
+            if "file" in data:
+                # send_file: 保留完整 JSON（下游 _extract_send_file_info 需要解析 file 字段）
+                return json.dumps(data, ensure_ascii=False, indent=2)
+            if data.get("success", True):
+                return data["output"] if data["output"] else "(空结果)"
+            else:
+                return f"操作失败: {data.get('error', '未知错误')}"
         if "message" in data:
             return str(data["message"])
         return json.dumps(data, ensure_ascii=False, indent=2)

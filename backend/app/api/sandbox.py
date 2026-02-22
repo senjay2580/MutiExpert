@@ -17,6 +17,7 @@ from app.services.sandbox_service import (
     write_file,
     list_files,
     delete_file,
+    find_file,
     fetch_url,
     execute_python,
     _safe_path,
@@ -95,6 +96,12 @@ async def api_write_file(req: FileWriteRequest):
 @router.delete("/files/delete", summary="删除文件")
 async def api_delete_file(path: str):
     result = await delete_file(path)
+    return _to_response(result)
+
+
+@router.get("/files/find", summary="按文件名搜索工作区文件")
+async def api_find_file(keyword: str, max_results: int = 30):
+    result = await find_file(keyword, max_results)
     return _to_response(result)
 
 

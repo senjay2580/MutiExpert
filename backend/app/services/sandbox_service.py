@@ -93,17 +93,105 @@ async def execute_shell(command: str, timeout: int = 30, cwd: str | None = None)
 
 # ── 文件操作 ──────────────────────────────────────────────────
 
+# ── 文档格式读取器 ────────────────────────────────────────────
+
+def _read_pdf(p: Path) -> str:
+    from PyPDF2 import PdfReader
+    reader = PdfReader(str(p))
+    pages = []
+    for i, page in enumerate(reader.pages, 1):
+        text = page.extract_text() or ""
+        if text.strip():
+            pages.append(f"--- 第 {i} 页 ---\n{text.strip()}")
+    return "\n\n".join(pages) if pages else "(PDF 无可提取文本)"
+
+
+def _read_docx(p: Path) -> str:
+    from docx import Document
+    doc = Document(str(p))
+    paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+    # 也提取表格内容
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            paragraphs.append(" | ".join(cells))
+    return "\n".join(paragraphs) if paragraphs else "(DOCX 无内容)"
+
+
+def _read_xlsx(p: Path) -> str:
+    from openpyxl import load_workbook
+    wb = load_workbook(str(p), read_only=True, data_only=True)
+    sheets = []
+    for ws in wb.worksheets:
+        rows = []
+        for row in ws.iter_rows(max_row=500, values_only=True):
+            cells = [str(c) if c is not None else "" for c in row]
+            if any(cells):
+                rows.append(" | ".join(cells))
+        if rows:
+            sheets.append(f"--- Sheet: {ws.title} ---\n" + "\n".join(rows))
+    wb.close()
+    return "\n\n".join(sheets) if sheets else "(XLSX 无内容)"
+
+
+def _read_pptx(p: Path) -> str:
+    from pptx import Presentation
+    prs = Presentation(str(p))
+    slides = []
+    for i, slide in enumerate(prs.slides, 1):
+        texts = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    t = para.text.strip()
+                    if t:
+                        texts.append(t)
+        if texts:
+            slides.append(f"--- 第 {i} 页幻灯片 ---\n" + "\n".join(texts))
+    return "\n\n".join(slides) if slides else "(PPTX 无内容)"
+
+
+def _read_csv(p: Path) -> str:
+    import csv as csv_mod
+    rows = []
+    with open(p, newline="", encoding="utf-8", errors="replace") as f:
+        reader = csv_mod.reader(f)
+        for i, row in enumerate(reader):
+            if i >= 500:
+                rows.append(f"... (共超过 500 行，已截断)")
+                break
+            rows.append(" | ".join(row))
+    return "\n".join(rows) if rows else "(CSV 无内容)"
+
+
+# 扩展名 → 读取函数映射
+_DOC_READERS: dict[str, callable] = {
+    ".pdf": _read_pdf,
+    ".docx": _read_docx,
+    ".doc": _read_docx,
+    ".xlsx": _read_xlsx,
+    ".xls": _read_xlsx,
+    ".pptx": _read_pptx,
+    ".csv": _read_csv,
+}
+
 async def list_files(path: str = ".") -> SandboxResult:
-    """列出工作区目录内容。"""
+    """列出工作区目录内容（仅当前层级，目录显示子项数量）。"""
     try:
         target = _safe_path(path)
         os.makedirs(target, exist_ok=True)
         entries = []
-        for entry in sorted(Path(target).iterdir()):
-            stat = entry.stat()
-            kind = "d" if entry.is_dir() else "f"
-            size = stat.st_size if entry.is_file() else 0
-            entries.append(f"[{kind}] {entry.name:40s} {size:>10,} bytes")
+        for entry in sorted(Path(target).iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if entry.is_dir():
+                # 统计子项数量，让用户知道目录里有多少东西
+                try:
+                    child_count = sum(1 for _ in entry.iterdir())
+                except PermissionError:
+                    child_count = "?"
+                entries.append(f"[d] {entry.name:40s} ({child_count} 项)")
+            else:
+                stat = entry.stat()
+                entries.append(f"[f] {entry.name:40s} {stat.st_size:>10,} bytes")
         return SandboxResult(success=True, output="\n".join(entries) if entries else "(空目录)")
     except ValueError as e:
         return SandboxResult(success=False, output="", error=str(e))
@@ -112,7 +200,7 @@ async def list_files(path: str = ".") -> SandboxResult:
 
 
 async def read_file(path: str) -> SandboxResult:
-    """读取工作区文件内容。"""
+    """读取工作区文件内容，自动识别文档格式并提取文本。"""
     try:
         target = _safe_path(path)
         p = Path(target)
@@ -120,12 +208,21 @@ async def read_file(path: str) -> SandboxResult:
             return SandboxResult(success=False, output="", error=f"文件不存在: {path}")
         if not p.is_file():
             return SandboxResult(success=False, output="", error=f"不是文件: {path}")
-        if p.stat().st_size > 5_000_000:
-            return SandboxResult(success=False, output="", error="文件超过 5MB 限制")
-        content = p.read_text(encoding="utf-8", errors="replace")
+        if p.stat().st_size > 10_000_000:
+            return SandboxResult(success=False, output="", error="文件超过 10MB 限制")
+
+        ext = p.suffix.lower()
+        reader = _DOC_READERS.get(ext)
+        if reader:
+            content = reader(p)
+        else:
+            # 默认按文本读取
+            content = p.read_text(encoding="utf-8", errors="replace")
         return SandboxResult(success=True, output=_truncate(content))
     except ValueError as e:
         return SandboxResult(success=False, output="", error=str(e))
+    except Exception as e:
+        return SandboxResult(success=False, output="", error=f"读取失败: {e}")
 
 
 async def write_file(path: str, content: str) -> SandboxResult:
@@ -152,6 +249,48 @@ async def delete_file(path: str) -> SandboxResult:
         p.unlink()
         return SandboxResult(success=True, output=f"已删除 {path}")
     except ValueError as e:
+        return SandboxResult(success=False, output="", error=str(e))
+
+
+async def find_file(keyword: str, max_results: int = 30) -> SandboxResult:
+    """在工作区中按文件名快速搜索，支持通配符和子串匹配。"""
+    try:
+        import fnmatch
+        base = Path(_get_workspace()).resolve()
+        if not base.exists():
+            return SandboxResult(success=False, output="", error="工作区不存在")
+
+        # 判断是否是 glob 模式
+        is_glob = any(c in keyword for c in "*?[]")
+        matches = []
+        for item in base.rglob("*"):
+            if not item.is_file():
+                continue
+            name = item.name
+            if is_glob:
+                if fnmatch.fnmatch(name.lower(), keyword.lower()):
+                    matches.append(item)
+            else:
+                if keyword.lower() in name.lower():
+                    matches.append(item)
+            if len(matches) >= max_results:
+                break
+
+        if not matches:
+            return SandboxResult(success=True, output=f"未找到匹配 '{keyword}' 的文件")
+
+        lines = []
+        for m in matches:
+            rel = m.relative_to(base)
+            size = m.stat().st_size
+            lines.append(f"{str(rel):50s} {size:>10,} bytes")
+        header = f"找到 {len(matches)} 个文件"
+        if len(matches) >= max_results:
+            header += f"（仅显示前 {max_results} 个）"
+        return SandboxResult(success=True, output=header + ":\n" + "\n".join(lines))
+    except ValueError as e:
+        return SandboxResult(success=False, output="", error=str(e))
+    except Exception as e:
         return SandboxResult(success=False, output="", error=str(e))
 
 

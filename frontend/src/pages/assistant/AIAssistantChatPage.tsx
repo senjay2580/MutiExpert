@@ -33,7 +33,7 @@ import type { ChatMessage, MessageSource, ToolCallEntry } from '@/lib/streamRegi
 
 type ModelConfig = { id: string; name: string; provider: string };
 
-type LocationState = { initialPrompt?: string; initialModes?: string[] };
+type LocationState = { initialPrompt?: string; initialModes?: string[]; initialAttachments?: FileAttachment[] };
 type ChatMode = 'knowledge' | 'search' | 'tools';
 
 /* ── Clipboard fallback for HTTP contexts ── */
@@ -187,7 +187,9 @@ export default function AIAssistantChatPage() {
   const [renameDraft, setRenameDraft] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>(
+    () => (location.state as LocationState | null)?.initialAttachments ?? [],
+  );
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -718,6 +720,22 @@ export default function AIAssistantChatPage() {
     }
   }, []);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length) {
+      e.preventDefault();
+      handleFilesSelected(imageFiles);
+    }
+  }, [handleFilesSelected]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!isSending) handleSend(); }
   };
@@ -843,8 +861,10 @@ export default function AIAssistantChatPage() {
                               att.mime_type.startsWith('image/') ? (
                                 <img key={ai} src={att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`} alt={att.filename} className="max-h-40 max-w-[200px] rounded-lg object-cover" />
                               ) : (() => { const ft = getFileTypeIcon(att.filename, att.mime_type); return (
-                                <a key={ai} href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2 rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-[11px] text-primary-foreground transition-colors hover:bg-primary-foreground/20">
-                                  <Icon icon={ft.icon} width={16} height={16} className="shrink-0" />
+                                <a key={ai} href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2.5 rounded-xl bg-primary-foreground/10 px-3 py-2 text-[11px] text-primary-foreground transition-colors hover:bg-primary-foreground/20">
+                                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/10">
+                                    <Icon icon={ft.icon} width={20} height={20} />
+                                  </div>
                                   <div className="min-w-0">
                                     <div className="max-w-[140px] truncate font-medium">{att.filename}</div>
                                     <div className="text-[10px] opacity-70">{ft.label} · {formatFileSize(att.size)}</div>
@@ -908,13 +928,15 @@ export default function AIAssistantChatPage() {
                                 </a>
                               </div>
                             ) : (() => { const ft = getFileTypeIcon(att.filename, att.mime_type); return (
-                              <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2.5 rounded-lg border border-border/40 bg-muted/30 px-3 py-2.5 text-[12px] transition-colors hover:bg-muted/50" style={{ borderLeftColor: ft.color, borderLeftWidth: 3 }}>
-                                <Icon icon={ft.icon} width={20} height={20} className="shrink-0" />
+                              <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="group flex items-center gap-3 rounded-xl bg-muted/40 px-3.5 py-3 text-[12px] transition-all hover:bg-muted/70 hover:shadow-sm">
+                                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: ft.color + '15' }}>
+                                  <Icon icon={ft.icon} width={24} height={24} />
+                                </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate font-medium text-foreground">{att.filename}</div>
                                   <div className="text-[10px] text-muted-foreground">{ft.label} · {formatFileSize(att.size)}</div>
                                 </div>
-                                <Icon icon="lucide:download" width={14} height={14} className="shrink-0 text-muted-foreground" />
+                                <Icon icon="lucide:download" width={14} height={14} className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                               </a>
                             ); })()
                           ))}
@@ -1007,6 +1029,7 @@ export default function AIAssistantChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder="输入问题，Enter 发送，Shift+Enter 换行..."
                 className="!min-h-[44px] !max-h-[200px] !rounded-none resize-none !border-0 !bg-transparent !px-4 !py-3 !text-sm !leading-relaxed !shadow-none !ring-0 focus-visible:!ring-0 focus-visible:!bg-transparent"
               />
@@ -1016,11 +1039,11 @@ export default function AIAssistantChatPage() {
                   {pendingAttachments.map((att, i) => {
                     const ft = att.mime_type.startsWith('image/') ? null : getFileTypeIcon(att.filename, att.mime_type);
                     return (
-                    <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1.5 text-[11px]">
+                    <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-2 rounded-lg bg-muted/40 px-2.5 py-1.5 text-[11px]">
                       {att.mime_type.startsWith('image/') ? (
                         <img src={att.url} alt={att.filename} className="h-8 w-8 rounded object-cover" />
                       ) : (
-                        <Icon icon={ft!.icon} width={16} height={16} className="shrink-0" />
+                        <Icon icon={ft!.icon} width={18} height={18} className="shrink-0" />
                       )}
                       <div className="min-w-0">
                         <div className="max-w-[120px] truncate">{att.filename}</div>

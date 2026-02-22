@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useCallback, useMemo, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify/react';
@@ -17,11 +17,13 @@ import {
 import api from '@/services/api';
 import { knowledgeBaseService } from '@/services/knowledgeBaseService';
 import { chatService } from '@/services/chatService';
+import { uploadFile } from '@/services/fileService';
 import { cn } from '@/lib/utils';
 import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import { useAppStore } from '@/stores/useAppStore';
-import type { ModelProvider } from '@/types';
+import type { FileAttachment, ModelProvider } from '@/types';
 import { ProviderIcon } from '@/components/composed/provider-icon';
+import { formatFileSize } from '@/lib/fileTypeIcons';
 
 type ModelConfig = {
   id: string;
@@ -47,6 +49,8 @@ export default function AIAssistantPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
 
   const toggleMode = (mode: ChatMode) => {
     setModes((prev) => {
@@ -121,15 +125,44 @@ export default function AIAssistantPage() {
   const handleRenameSave = () => { if (renamingId) { updateConversation.mutate({ id: renamingId, title: renameDraft.trim() || null }); } handleRenameCancel(); };
   const handleTogglePin = (id: string, pin: boolean) => updateConversation.mutate({ id, is_pinned: pin });
 
+  const handleFilesSelected = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    setUploadingFiles(true);
+    try {
+      const results = await Promise.all(files.map((f) => uploadFile(f)));
+      setPendingAttachments((prev) => [...prev, ...results]);
+    } catch { /* ignore */ } finally {
+      setUploadingFiles(false);
+    }
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length) {
+      e.preventDefault();
+      handleFilesSelected(imageFiles);
+    }
+  }, [handleFilesSelected]);
+
   const handlePrompt = (text: string) => {
     setQuestion(text);
   };
 
   const handleSend = () => {
     const text = question.trim();
-    if (!text) return;
+    if (!text && !pendingAttachments.length) return;
     setQuestion('');
-    navigate('/assistant/chat', { state: { initialPrompt: text, initialModes: [...modes] } });
+    const atts = pendingAttachments.length ? [...pendingAttachments] : undefined;
+    setPendingAttachments([]);
+    navigate('/assistant/chat', { state: { initialPrompt: text || undefined, initialModes: [...modes], initialAttachments: atts } });
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -209,10 +242,37 @@ export default function AIAssistantPage() {
                       value={question}
                       onChange={(e) => setQuestion(e.target.value)}
                       onKeyDown={handleKeyDown}
+                      onPaste={handlePaste}
                       placeholder="输入问题，例如：请综合所有知识库，给我一份 2024 年行业趋势总结..."
                       className="ai-input-textarea min-h-[84px] resize-none border-none bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
                     />
                   </div>
+                  {/* 图片预览条 */}
+                  {(pendingAttachments.length > 0 || uploadingFiles) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {pendingAttachments.map((att, i) => (
+                        <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1.5 text-[11px]">
+                          <img src={att.url} alt={att.filename} className="h-8 w-8 rounded object-cover" />
+                          <div className="min-w-0">
+                            <div className="max-w-[120px] truncate">{att.filename}</div>
+                            <div className="text-[10px] text-muted-foreground">图片 · {formatFileSize(att.size)}</div>
+                          </div>
+                          <button
+                            onClick={() => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                            className="ml-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Icon icon="lucide:x" width={12} height={12} />
+                          </button>
+                        </div>
+                      ))}
+                      {uploadingFiles && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <Icon icon="lucide:loader-2" width={14} height={14} className="animate-spin" />
+                          上传中...
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <DropdownMenu>
@@ -285,7 +345,7 @@ export default function AIAssistantPage() {
                           variant="ghost"
                           size="icon-sm"
                           className="ai-input-send rounded-xl"
-                          disabled={!question.trim()}
+                          disabled={!question.trim() && !pendingAttachments.length}
                           onClick={handleSend}
                         >
                           <Icon icon="lucide:arrow-up" width={16} height={16} />
