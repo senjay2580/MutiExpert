@@ -56,6 +56,7 @@ export default function IntegrationsPage() {
       <PageHeader title="第三方集成" description="连接外部服务，扩展平台能力" />
       <FeishuCard key={`${config.app_id}:${config.webhook_url}`} initialConfig={config} />
       <TavilyCard />
+      <SupabaseCard />
     </div>
   );
 }
@@ -304,6 +305,110 @@ function TavilyCard() {
         >
           {saved ? '已保存' : '保存'}
         </SaveButton>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface SupabaseConfig {
+  supabase_url: string;
+  supabase_service_key_masked: string;
+  supabase_service_key_set: boolean;
+  supabase_bucket: string;
+}
+
+function SupabaseCard() {
+  const queryClient = useQueryClient();
+  const [url, setUrl] = useState('');
+  const [serviceKey, setServiceKey] = useState('');
+  const [bucket, setBucket] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const { data: config } = useQuery({
+    queryKey: ['supabase-config'],
+    queryFn: () => api.get<SupabaseConfig>('/config/supabase').then((r) => r.data),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.put('/config/supabase', {
+        supabase_url: url || undefined,
+        supabase_service_key: serviceKey || undefined,
+        supabase_bucket: bucket || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supabase-config'] });
+      setSaved(true);
+      setServiceKey('');
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () => api.get<{ success: boolean; error: string }>('/sandbox/storage/test').then((r) => r.data),
+  });
+
+  const configured = config?.supabase_service_key_set;
+
+  return (
+    <Card className="gap-4 py-5">
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10">
+              <Icon icon="lucide:hard-drive" width={18} height={18} className="text-emerald-500" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-foreground">Supabase Storage</div>
+              <div className="text-xs text-muted-foreground">文件/图片公开托管，聊天附件自动上传</div>
+            </div>
+          </div>
+          {configured ? (
+            <Badge className="bg-green-500/10 text-green-600 border-transparent">已配置</Badge>
+          ) : (
+            <Badge variant="outline">未配置</Badge>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          {config?.supabase_url && (
+            <p className="text-[11px] text-muted-foreground">当前 URL: {config.supabase_url}</p>
+          )}
+          <Field label="Supabase URL" value={url} onChange={setUrl} placeholder="https://xxxxx.supabase.co" />
+          {config?.supabase_service_key_set && (
+            <p className="text-[11px] text-muted-foreground">
+              当前 Key: {config.supabase_service_key_masked}（输入新 Key 可覆盖）
+            </p>
+          )}
+          <Field label="Service Role Key" value={serviceKey} onChange={setServiceKey} placeholder="eyJhbGciOi..." type="password" />
+          <Field label="Bucket 名称" value={bucket} onChange={setBucket} placeholder={config?.supabase_bucket || 'public-files'} />
+          <p className="text-[11px] text-muted-foreground">
+            聊天中上传的文件会自动推送到 Supabase Storage，生成公开下载链接。
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <SaveButton onClick={() => saveMutation.mutate()} loading={saveMutation.isPending}>
+            {saved ? '已保存' : '保存配置'}
+          </SaveButton>
+          <SolidButton
+            color="secondary"
+            icon="lucide:wifi"
+            onClick={() => testMutation.mutate()}
+            loading={testMutation.isPending}
+            loadingText="测试中..."
+          >
+            测试连接
+          </SolidButton>
+        </div>
+
+        {testMutation.isSuccess && testMutation.data?.success && (
+          <p className="text-xs text-green-600">连接成功</p>
+        )}
+        {testMutation.isSuccess && !testMutation.data?.success && (
+          <p className="text-xs text-destructive">连接失败: {testMutation.data?.error}</p>
+        )}
+        {testMutation.isError && <p className="text-xs text-destructive">测试请求失败</p>}
       </CardContent>
     </Card>
   );

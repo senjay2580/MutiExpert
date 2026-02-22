@@ -153,7 +153,7 @@ async def api_send_file(req: FileSendRequest):
     # 推到 Supabase Storage
     from app.services.supabase_storage_service import upload_bytes, is_configured
     download_url = f"/api/v1/sandbox/files/download?path={rel_path}"
-    if is_configured() and size <= 50_000_000:
+    if await is_configured() and size <= 50_000_000:
         r = await upload_bytes(p.read_bytes(), p.name, mime, "sent")
         if r.success:
             download_url = r.url
@@ -201,7 +201,7 @@ async def api_upload_file(
     # 同步推到 Supabase Storage（供前端回显/下载）
     from app.services.supabase_storage_service import upload_bytes, is_configured
     oss_url = ""
-    if is_configured():
+    if await is_configured():
         r = await upload_bytes(content, filename, mime, "uploads")
         if r.success:
             oss_url = r.url
@@ -284,3 +284,44 @@ async def api_storage_delete(keys: list[str]):
     from app.services.supabase_storage_service import delete_objects
     result = await delete_objects(keys)
     return {"success": result.success, "error": result.error}
+
+
+@router.get("/storage/stats", summary="Storage 统计信息")
+async def api_storage_stats():
+    from app.services.supabase_storage_service import list_objects, is_configured, StorageResult
+    if not await is_configured():
+        return {"success": False, "error": "Supabase Storage 未配置", "stats": {}}
+
+    all_files: list[dict] = []
+    offset = 0
+    while True:
+        batch = await list_objects("", limit=1000, offset=offset)
+        if isinstance(batch, StorageResult):
+            return {"success": False, "error": batch.error, "stats": {}}
+        if not batch:
+            break
+        all_files.extend(batch)
+        offset += len(batch)
+        if len(batch) < 1000:
+            break
+
+    total_size = 0
+    categories: dict[str, int] = {}
+    for f in all_files:
+        meta = f.get("metadata") or {}
+        size = meta.get("size", 0) or 0
+        total_size += size
+        name = f.get("name", "")
+        # 按前缀分类
+        prefix = name.split("/")[0] if "/" in name else "root"
+        categories[prefix] = categories.get(prefix, 0) + 1
+
+    return {
+        "success": True,
+        "error": "",
+        "stats": {
+            "total_files": len(all_files),
+            "total_size": total_size,
+            "categories": categories,
+        },
+    }

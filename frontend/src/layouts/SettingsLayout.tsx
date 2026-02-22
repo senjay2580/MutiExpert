@@ -12,6 +12,7 @@ export default function SettingsLayout() {
     { path: 'basic', label: '基础参数', icon: 'streamline-color:ai-settings-spark' },
     { path: 'ai-models', label: 'AI 模型配置', icon: navIcons.aiModels },
     { path: 'integrations', label: '第三方集成', icon: navIcons.integrations },
+    { path: 'storage', label: '文件存储', icon: 'lucide:hard-drive' },
     { path: 'data', label: '数据管理', icon: navIcons.data },
   ];
 

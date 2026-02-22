@@ -168,3 +168,52 @@ async def update_tavily_config(
         db.add(SiteSetting(key="tavily_api_key", value=api_key))
     await db.commit()
     return {"message": "Tavily API Key 已保存"}
+
+
+# ── Supabase Storage 配置 ────────────────────────────────────
+
+_SUPABASE_KEYS = ("supabase_url", "supabase_service_key", "supabase_bucket")
+
+
+def _mask(val: str) -> str:
+    if len(val) > 12:
+        return val[:6] + "****" + val[-4:]
+    return "****" if val else ""
+
+
+@router.get("/config/supabase")
+async def get_supabase_config(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(SiteSetting).where(SiteSetting.key.in_(_SUPABASE_KEYS))
+    )
+    rows = {r.key: r.value for r in result.scalars()}
+    url = rows.get("supabase_url", "")
+    key = rows.get("supabase_service_key", "")
+    bucket = rows.get("supabase_bucket", "")
+    return {
+        "supabase_url": url,
+        "supabase_service_key_masked": _mask(key),
+        "supabase_service_key_set": bool(key),
+        "supabase_bucket": bucket or "public-files",
+    }
+
+
+@router.put("/config/supabase")
+async def update_supabase_config(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    for field in _SUPABASE_KEYS:
+        val = (data.get(field) or "").strip()
+        if not val:
+            continue
+        row = await db.execute(
+            select(SiteSetting).where(SiteSetting.key == field)
+        )
+        setting = row.scalar_one_or_none()
+        if setting:
+            setting.value = val
+        else:
+            db.add(SiteSetting(key=field, value=val))
+    await db.commit()
+    return {"message": "Supabase Storage 配置已保存"}
