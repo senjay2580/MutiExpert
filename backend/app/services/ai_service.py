@@ -273,7 +273,7 @@ class OpenAIResponsesStrategy:
     async def generate(
         self, messages: list[dict], system_prompt: str, tools: list[dict] | None = None,
     ) -> GenerateResult:
-        """OpenAI Responses API 的非流式 generate（支持 function calling）"""
+        """OpenAI Responses API 流式 generate（中转服务要求 stream=true）"""
         if not self.config.api_key:
             return GenerateResult(text="Error: OpenAI API key not configured")
 
@@ -287,12 +287,11 @@ class OpenAIResponsesStrategy:
         payload: dict[str, Any] = {
             "model": model,
             "input": list(messages),
-            "stream": False,
+            "stream": True,
         }
         if system_prompt:
             payload["instructions"] = system_prompt
         if tools:
-            # OpenAI Responses API 用 function 类型工具
             resp_tools = []
             for t in tools:
                 fn = t.get("function", t)
@@ -305,16 +304,7 @@ class OpenAIResponsesStrategy:
             payload["tools"] = resp_tools
 
         headers = self._build_headers()
-
-        timeout = httpx.Timeout(60.0, read=120.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code >= 400:
-                body = resp.text or ""
-                return GenerateResult(text=f"Error: OpenAI request failed ({resp.status_code}) {body}")
-
-            data = resp.json()
-            return _parse_responses_api_result(data)
+        return await _responses_api_stream_collect(url, headers, payload)
 
 
 class OpenAIChatCompletionsStrategy:
@@ -423,7 +413,90 @@ class OpenAIChatCompletionsStrategy:
         return await _openai_chat_completions_generate(url, headers, payload, self.config.provider_id)
 
 
-# ── Responses API 解析 ────────────────────────────────────────
+# ── Responses API 流式收集 ────────────────────────────────────
+
+async def _responses_api_stream_collect(
+    url: str, headers: dict[str, str], payload: dict[str, Any],
+) -> GenerateResult:
+    """流式调用 Responses API，收集所有事件拼出完整 GenerateResult"""
+    text_parts: list[str] = []
+    # function_call 累积器: call_id → {name, arguments_parts}
+    fc_accum: dict[str, dict[str, Any]] = {}
+    usage: dict[str, int] = {}
+
+    timeout = httpx.Timeout(60.0, read=120.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream("POST", url, headers=headers, json=payload) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                detail = body.decode("utf-8", "replace") if body else ""
+                return GenerateResult(text=f"Error: OpenAI request failed ({resp.status_code}) {detail}")
+
+            async for line in resp.aiter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+
+                evt_type = event.get("type", "")
+
+                # 文本 delta
+                if evt_type == "response.output_text.delta":
+                    text_parts.append(event.get("delta", ""))
+
+                # function_call 开始
+                elif evt_type == "response.function_call_arguments.delta":
+                    item_id = event.get("item_id", "")
+                    if item_id not in fc_accum:
+                        fc_accum[item_id] = {"name": "", "args_parts": []}
+                    fc_accum[item_id]["args_parts"].append(event.get("delta", ""))
+
+                # function_call item 完成 → 拿到 name 和 call_id
+                elif evt_type == "response.output_item.done":
+                    item = event.get("item", {})
+                    if item.get("type") == "function_call":
+                        item_id = item.get("id", "")
+                        if item_id not in fc_accum:
+                            fc_accum[item_id] = {"name": "", "args_parts": []}
+                        fc_accum[item_id]["name"] = item.get("name", "")
+                        fc_accum[item_id]["call_id"] = item.get("call_id", item_id)
+                        fc_accum[item_id]["arguments"] = item.get("arguments", "")
+
+                # response 完成 → 提取 usage
+                elif evt_type == "response.completed":
+                    resp_obj = event.get("response", {})
+                    usage_data = resp_obj.get("usage", {})
+                    if usage_data:
+                        usage = {
+                            "prompt_tokens": usage_data.get("input_tokens", 0),
+                            "completion_tokens": usage_data.get("output_tokens", 0),
+                        }
+
+    # 组装 tool_calls
+    tool_calls: list[ToolCallResult] = []
+    for item_id, fc in fc_accum.items():
+        name = fc.get("name", "")
+        raw_args = fc.get("arguments") or "".join(fc.get("args_parts", []))
+        try:
+            args = json.loads(raw_args) if raw_args else {}
+        except json.JSONDecodeError:
+            args = {}
+        call_id = fc.get("call_id", item_id)
+        tool_calls.append(ToolCallResult(id=call_id, name=name, arguments=args))
+
+    stop_reason = "tool_use" if tool_calls else "end_turn"
+    return GenerateResult(
+        text="".join(text_parts), tool_calls=tool_calls,
+        stop_reason=stop_reason, usage=usage,
+    )
+
+
+# ── Responses API 非流式解析 ──────────────────────────────────
 
 def _parse_responses_api_result(data: dict[str, Any]) -> GenerateResult:
     """解析 OpenAI Responses API 非流式返回"""
