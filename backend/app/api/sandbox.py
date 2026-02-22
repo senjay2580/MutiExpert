@@ -14,7 +14,7 @@ from app.services.sandbox_service import (
     fetch_url,
     execute_python,
 )
-from app.db import get_db
+from app.database import get_db
 
 router = APIRouter()
 
