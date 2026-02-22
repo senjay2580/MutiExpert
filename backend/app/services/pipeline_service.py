@@ -276,32 +276,34 @@ def _build_tool_messages(
 
 
 def _flatten_tool_messages(messages: list[dict], provider: str) -> list[dict]:
-    """对 deepseek/qwen 等不支持 tool 消息角色的 provider，将工具调用历史转为普通文本"""
+    """对 deepseek/qwen 等不支持 tool 消息角色的 provider，将工具调用历史转为普通文本。
+
+    只保留工具名称，不输出完整参数，避免 LLM 在最终回复中复述大段工具调用代码。
+    """
     if provider in ("claude", "openai"):
         return messages  # 这两个 provider 原生支持 tool 消息
 
     result: list[dict] = []
     for msg in messages:
         role = msg.get("role", "")
-        # tool 角色 → 转为 user 消息
+        # tool 角色 → 转为 user 消息（截断过长结果）
         if role == "tool":
-            content = msg.get("content", "")
+            content = (msg.get("content", "") or "")[:500]
             result.append({"role": "user", "content": f"[工具执行结果]\n{content}"})
-        # assistant 带 tool_calls → 提取文本部分
+        # assistant 带 tool_calls → 只保留工具名
         elif role == "assistant" and msg.get("tool_calls"):
             text = msg.get("content") or ""
-            tc_summary = []
-            for tc in msg["tool_calls"]:
-                fn = tc.get("function", {})
-                tc_summary.append(f"调用工具: {fn.get('name', '')}({fn.get('arguments', '')})")
-            combined = text + ("\n" if text else "") + "\n".join(tc_summary)
+            tc_names = [tc.get("function", {}).get("name", "unknown") for tc in msg["tool_calls"]]
+            summary = "已调用工具: " + ", ".join(tc_names)
+            combined = (text + "\n" + summary) if text else summary
             result.append({"role": "assistant", "content": combined})
         # function_call_output (Responses API 格式) → 转为 user
         elif msg.get("type") == "function_call_output":
-            result.append({"role": "user", "content": f"[工具执行结果]\n{msg.get('output', '')}"})
-        # function_call (Responses API 格式) → 转为 assistant
+            output = (msg.get("output", "") or "")[:500]
+            result.append({"role": "user", "content": f"[工具执行结果]\n{output}"})
+        # function_call (Responses API 格式) → 只保留工具名
         elif msg.get("type") == "function_call":
-            result.append({"role": "assistant", "content": f"调用工具: {msg.get('name', '')}({msg.get('arguments', '')})"})
+            result.append({"role": "assistant", "content": f"已调用工具: {msg.get('name', 'unknown')}"})
         else:
             result.append(msg)
     return result

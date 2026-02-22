@@ -152,21 +152,85 @@ async def delete_file(path: str) -> SandboxResult:
 
 # ── 网页抓取 ──────────────────────────────────────────────────
 
-async def fetch_url(url: str, max_size: int = 2_000_000) -> SandboxResult:
-    """抓取 URL 内容，剥离 HTML 标签返回纯文本。"""
+async def fetch_url(url: str, mode: str = "auto", max_size: int = 2_000_000) -> SandboxResult:
+    """抓取 URL 内容，智能提取正文。
+
+    mode:
+      - auto: 先用 httpx + trafilatura 提取；若内容过少则 fallback 到 Jina Reader
+      - jina: 强制使用 Jina Reader API（支持 JS 渲染页面）
+      - raw:  返回原始 HTML/文本，不做提取
+    """
     try:
-        timeout = httpx.Timeout(15.0, read=30.0)
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "MutiExpert-Sandbox/1.0"})
-            if resp.status_code >= 400:
-                return SandboxResult(success=False, output="", error=f"HTTP {resp.status_code}")
-            content_type = resp.headers.get("content-type", "")
-            raw = resp.text[:max_size]
-            if "html" in content_type:
-                raw = _strip_html(raw)
-            return SandboxResult(success=True, output=_truncate(raw))
+        if mode == "jina":
+            return await _fetch_via_jina(url)
+
+        # 先尝试直接抓取
+        raw_html, content_type = await _fetch_raw(url, max_size)
+
+        if mode == "raw":
+            return SandboxResult(success=True, output=_truncate(raw_html))
+
+        # auto 模式：HTML 用 trafilatura 提取正文
+        if "html" in content_type:
+            extracted = _extract_content(raw_html)
+            # 提取结果太短（<100字符），可能是 SPA 空壳，fallback 到 Jina
+            if len(extracted) < 100:
+                jina_result = await _fetch_via_jina(url)
+                if jina_result.success and len(jina_result.output) > len(extracted):
+                    return jina_result
+            return SandboxResult(success=True, output=_truncate(extracted))
+
+        # 非 HTML（JSON/纯文本等）直接返回
+        return SandboxResult(success=True, output=_truncate(raw_html))
     except Exception as e:
         return SandboxResult(success=False, output="", error=str(e))
+
+
+async def _fetch_raw(url: str, max_size: int) -> tuple[str, str]:
+    """用 httpx 抓取原始内容，返回 (text, content_type)。"""
+    timeout = httpx.Timeout(15.0, read=30.0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        resp = await client.get(url, headers={"User-Agent": "MutiExpert-Sandbox/1.0"})
+        if resp.status_code >= 400:
+            raise ValueError(f"HTTP {resp.status_code}")
+        content_type = resp.headers.get("content-type", "")
+        return resp.text[:max_size], content_type
+
+
+def _extract_content(html: str) -> str:
+    """用 trafilatura 提取正文，fallback 到 regex 剥离。"""
+    try:
+        import trafilatura
+        result = trafilatura.extract(
+            html,
+            include_links=True,
+            include_tables=True,
+            output_format="txt",
+            favor_recall=True,
+        )
+        if result:
+            return result.strip()
+    except Exception:
+        pass
+    # fallback: regex 剥离
+    return _strip_html(html)
+
+
+async def _fetch_via_jina(url: str) -> SandboxResult:
+    """通过 Jina Reader API 抓取页面（支持 JS 渲染），返回 Markdown。"""
+    jina_url = f"https://r.jina.ai/{url}"
+    timeout = httpx.Timeout(30.0, read=60.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(jina_url, headers={
+                "Accept": "text/markdown",
+                "User-Agent": "MutiExpert-Sandbox/1.0",
+            })
+            if resp.status_code >= 400:
+                return SandboxResult(success=False, output="", error=f"Jina Reader HTTP {resp.status_code}")
+            return SandboxResult(success=True, output=_truncate(resp.text))
+    except Exception as e:
+        return SandboxResult(success=False, output="", error=f"Jina Reader 失败: {e}")
 
 
 def _strip_html(html: str) -> str:

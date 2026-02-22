@@ -185,17 +185,34 @@ DEFAULT_TOOLS = [
     },
     {
         "name": "sandbox_fetch_url",
-        "description": "抓取网页 URL 内容，返回纯文本（自动剥离 HTML 标签），用于获取网页信息",
+        "description": "抓取网页 URL 内容并智能提取正文。mode=auto 自动提取（SPA 页面自动 fallback Jina Reader），mode=jina 强制用 Jina Reader 渲染 JS 页面返回 Markdown，mode=raw 返回原始内容",
         "action_type": "query",
         "endpoint": "/api/v1/sandbox/web/fetch",
         "method": "POST",
-        "param_mapping": {"url": "body.url"},
+        "param_mapping": {"url": "body.url", "mode": "body.mode"},
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "要抓取的网页 URL"},
+                "mode": {"type": "string", "enum": ["auto", "jina", "raw"], "description": "抓取模式：auto=智能提取（默认），jina=JS渲染，raw=原始内容"},
             },
             "required": ["url"],
+        },
+    },
+    {
+        "name": "web_search",
+        "description": "搜索互联网获取实时信息，返回相关网页标题、链接和摘要。适用于查询最新资讯、技术文档、产品信息等",
+        "action_type": "query",
+        "endpoint": "/api/v1/sandbox/web/search",
+        "method": "POST",
+        "param_mapping": {"query": "body.query", "max_results": "body.max_results"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索关键词"},
+                "max_results": {"type": "integer", "description": "最大结果数，默认5"},
+            },
+            "required": ["query"],
         },
     },
     {
@@ -218,20 +235,27 @@ DEFAULT_TOOLS = [
 
 
 async def ensure_default_tools(db: AsyncSession) -> None:
-    """确保默认工具存在，不覆盖已有的"""
+    """确保默认工具存在，已有的更新定义（描述、参数等）。"""
     for tool_def in DEFAULT_TOOLS:
         result = await db.execute(
             select(BotTool).where(BotTool.name == tool_def["name"])
         )
-        if result.scalar_one_or_none():
-            continue
-        db.add(BotTool(
-            name=tool_def["name"],
-            description=tool_def["description"],
-            action_type=tool_def["action_type"],
-            endpoint=tool_def["endpoint"],
-            method=tool_def["method"],
-            param_mapping=tool_def.get("param_mapping", {}),
-            parameters=tool_def.get("parameters", {}),
-        ))
+        existing = result.scalar_one_or_none()
+        if existing:
+            existing.description = tool_def["description"]
+            existing.action_type = tool_def["action_type"]
+            existing.endpoint = tool_def["endpoint"]
+            existing.method = tool_def["method"]
+            existing.param_mapping = tool_def.get("param_mapping", {})
+            existing.parameters = tool_def.get("parameters", {})
+        else:
+            db.add(BotTool(
+                name=tool_def["name"],
+                description=tool_def["description"],
+                action_type=tool_def["action_type"],
+                endpoint=tool_def["endpoint"],
+                method=tool_def["method"],
+                param_mapping=tool_def.get("param_mapping", {}),
+                parameters=tool_def.get("parameters", {}),
+            ))
     await db.commit()

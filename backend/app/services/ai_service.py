@@ -329,23 +329,27 @@ class OpenAIChatCompletionsStrategy:
 
     @staticmethod
     def _sanitize_messages(messages: list[dict]) -> list[dict]:
-        """将 tool/function_call 消息转为普通文本，兼容不支持 tool 角色的模型"""
+        """将 tool/function_call 消息转为普通文本，兼容不支持 tool 角色的模型。
+
+        只保留工具名称，不输出完整参数，避免 LLM 复述大段工具调用代码。
+        """
         result: list[dict] = []
         for msg in messages:
             role = msg.get("role", "")
             if role == "tool":
-                result.append({"role": "user", "content": f"[工具执行结果]\n{msg.get('content', '')}"})
+                content = (msg.get("content", "") or "")[:500]
+                result.append({"role": "user", "content": f"[工具执行结果]\n{content}"})
             elif role == "assistant" and msg.get("tool_calls"):
                 text = msg.get("content") or ""
-                tc_parts = []
-                for tc in msg["tool_calls"]:
-                    fn = tc.get("function", {})
-                    tc_parts.append(f"调用工具: {fn.get('name', '')}({fn.get('arguments', '')})")
-                result.append({"role": "assistant", "content": (text + "\n" + "\n".join(tc_parts)).strip()})
+                tc_names = [tc.get("function", {}).get("name", "unknown") for tc in msg["tool_calls"]]
+                summary = "已调用工具: " + ", ".join(tc_names)
+                combined = (text + "\n" + summary).strip() if text else summary
+                result.append({"role": "assistant", "content": combined})
             elif msg.get("type") == "function_call_output":
-                result.append({"role": "user", "content": f"[工具执行结果]\n{msg.get('output', '')}"})
+                output = (msg.get("output", "") or "")[:500]
+                result.append({"role": "user", "content": f"[工具执行结果]\n{output}"})
             elif msg.get("type") == "function_call":
-                result.append({"role": "assistant", "content": f"调用工具: {msg.get('name', '')}({msg.get('arguments', '')})"})
+                result.append({"role": "assistant", "content": f"已调用工具: {msg.get('name', 'unknown')}"})
             else:
                 result.append(msg)
         return result
