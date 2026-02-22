@@ -110,6 +110,7 @@ async def test_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     result = await execute_script(
         script.script_content,
         timeout_seconds=30,
+        script_type=script.script_type or "typescript",
         extra_env=env_result.env_vars,
     )
     script.last_test_at = datetime.utcnow()

@@ -120,6 +120,7 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
             result = await execute_script(
                 script.script_content,
                 timeout_seconds=config.get("timeout", 30),
+                script_type=script.script_type or "typescript",
                 extra_env=env_vars,
             )
             if not result.success:

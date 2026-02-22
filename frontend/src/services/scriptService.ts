@@ -18,7 +18,7 @@ export interface EnvVarInfo {
 export const scriptService = {
   list: () => api.get<UserScript[]>('/scripts').then((r) => r.data),
   get: (id: string) => api.get<UserScript>(`/scripts/${id}`).then((r) => r.data),
-  create: (data: { name: string; description?: string; script_content: string }) =>
+  create: (data: { name: string; description?: string; script_content: string; script_type?: string }) =>
     api.post<UserScript & { warnings?: string[] }>('/scripts', data).then((r) => r.data),
   update: (id: string, data: Partial<UserScript>) =>
     api.put<UserScript & { warnings?: string[] }>(`/scripts/${id}`, data).then((r) => r.data),

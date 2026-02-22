@@ -163,7 +163,11 @@ async def _execute_skill(
             script_result = await db.execute(select(UserScript).where(UserScript.id == link.script_id))
             user_script = script_result.scalar_one_or_none()
             if user_script and user_script.script_content:
-                exec_result = await execute_script(user_script.script_content, timeout_seconds=30)
+                exec_result = await execute_script(
+                    user_script.script_content,
+                    timeout_seconds=30,
+                    script_type=user_script.script_type or "typescript",
+                )
                 if exec_result.success:
                     script_outputs.append(exec_result.output)
                 else:

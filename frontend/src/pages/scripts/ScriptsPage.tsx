@@ -29,16 +29,25 @@ import type { UserScript } from '@/types';
 
 // ======================== Types ========================
 
+type ScriptType = 'typescript' | 'python';
+
 type FormData = {
   name: string;
   description: string;
   script_content: string;
+  script_type: ScriptType;
+};
+
+const SCRIPT_TEMPLATES: Record<ScriptType, string> = {
+  typescript: '// 在此编写你的 TypeScript 脚本\n// 脚本由 Deno 沙箱执行，支持 fetch 等 API\n// 使用 Deno.env.get("CLAUDE_API_KEY") 引用系统配置\n\nconsole.log("Hello, World!");\n',
+  python: '# 在此编写你的 Python 脚本\n# 使用 os.environ.get("CLAUDE_API_KEY") 引用系统配置\nimport os\n\nprint("Hello, World!")\n',
 };
 
 const EMPTY_FORM: FormData = {
   name: '',
   description: '',
-  script_content: '// 在此编写你的 TypeScript 脚本\n// 脚本由 Deno 沙箱执行，支持 fetch 等 API\n// 使用 Deno.env.get("CLAUDE_API_KEY") 引用系统配置\n\nconsole.log("Hello, World!");\n',
+  script_content: SCRIPT_TEMPLATES.typescript,
+  script_type: 'typescript',
 };
 
 // ======================== Test Result Dialog ========================
@@ -153,6 +162,7 @@ export default function ScriptsPage() {
             name: payload.data.name!,
             description: payload.data.description ?? undefined,
             script_content: payload.data.script_content!,
+            script_type: payload.data.script_type || 'typescript',
           }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scripts'] });
@@ -213,6 +223,7 @@ export default function ScriptsPage() {
       name: script.name,
       description: script.description ?? '',
       script_content: script.script_content,
+      script_type: (script.script_type as ScriptType) || 'typescript',
     });
     setShowForm(true);
   };
@@ -225,6 +236,7 @@ export default function ScriptsPage() {
         name: form.name,
         description: form.description || null,
         script_content: form.script_content,
+        script_type: form.script_type,
       },
     });
   };
@@ -259,6 +271,27 @@ export default function ScriptsPage() {
             </div>
           )}
         </div>
+      ),
+    },
+    {
+      key: 'script_type',
+      header: '类型',
+      width: '80px',
+      sortable: true,
+      accessor: (s) => s.script_type || 'typescript',
+      exportValue: (s) => (s.script_type === 'python' ? 'Python' : 'TypeScript'),
+      render: (s) => (
+        <Badge
+          variant="outline"
+          className={cn(
+            'text-[11px] font-mono',
+            s.script_type === 'python'
+              ? 'bg-sky-500/10 text-sky-600 border-sky-200 dark:border-sky-800 dark:text-sky-400'
+              : 'bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-800 dark:text-amber-400',
+          )}
+        >
+          {s.script_type === 'python' ? 'PY' : 'TS'}
+        </Badge>
       ),
     },
     {
@@ -383,6 +416,16 @@ export default function ScriptsPage() {
 
   const facetedFilters = useMemo((): FacetedFilterDef<UserScript>[] => [
     {
+      key: 'script_type',
+      label: '脚本类型',
+      icon: 'lucide:code-2',
+      options: [
+        { value: 'typescript', label: 'TypeScript', icon: 'lucide:file-code' },
+        { value: 'python', label: 'Python', icon: 'lucide:file-code-2' },
+      ],
+      accessor: (s) => s.script_type || 'typescript',
+    },
+    {
       key: 'enabled',
       label: '状态',
       icon: 'lucide:toggle-right',
@@ -502,11 +545,14 @@ export default function ScriptsPage() {
       {/* ======================== Env Var Tip ======================== */}
       <div className="rounded-lg border border-violet-200/60 bg-violet-50/40 px-4 py-2.5 dark:border-violet-800/40 dark:bg-violet-950/20">
         <p className="text-xs text-muted-foreground leading-relaxed">
-          脚本中需要 API Key 等敏感配置？使用{' '}
+          脚本中需要 API Key 等敏感配置？TypeScript 使用{' '}
           <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
             Deno.env.get("CLAUDE_API_KEY")
+          </code>，Python 使用{' '}
+          <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+            os.environ.get("CLAUDE_API_KEY")
           </code>{' '}
-          引用系统管理的配置，执行时自动从「AI 模型配置」和「飞书集成」中注入，无需硬编码密钥。
+          引用系统管理的配置，执行时自动注入，无需硬编码密钥。
         </p>
       </div>
 
@@ -562,6 +608,37 @@ export default function ScriptsPage() {
             </div>
 
             <div>
+              <label className="mb-1 block text-xs text-muted-foreground">脚本类型 *</label>
+              <div className="flex gap-2">
+                {(['typescript', 'python'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      const changed = t !== form.script_type;
+                      const isDefault = form.script_content === SCRIPT_TEMPLATES[form.script_type];
+                      setForm({
+                        ...form,
+                        script_type: t,
+                        script_content: changed && isDefault ? SCRIPT_TEMPLATES[t] : form.script_content,
+                      });
+                    }}
+                    className={cn(
+                      'flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-all',
+                      form.script_type === t
+                        ? t === 'python'
+                          ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-400'
+                          : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                        : 'border-border bg-background text-muted-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    {t === 'python' ? 'Python' : 'TypeScript (Deno)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-muted-foreground">脚本内容 *</label>
                 <button
@@ -575,7 +652,7 @@ export default function ScriptsPage() {
               {showEnvRef && envVars.length > 0 && (
                 <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50/50 p-2.5 dark:border-violet-800 dark:bg-violet-950/20">
                   <p className="text-[11px] text-muted-foreground mb-1.5">
-                    在脚本中使用 <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">Deno.env.get("变量名")</code> 引用系统配置，执行时自动注入：
+                    在脚本中使用 <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{form.script_type === 'python' ? 'os.environ.get("变量名")' : 'Deno.env.get("变量名")'}</code> 引用系统配置，执行时自动注入：
                   </p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
                     {envVars.map((v) => (
