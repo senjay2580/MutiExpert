@@ -277,7 +277,7 @@ def _format_github_issue(data: dict, owner: str, repo: str) -> SandboxResult:
         f"**State**: {data['state']}  |  **Author**: {data.get('user', {}).get('login', '?')}",
         f"**Created**: {data.get('created_at', '')}  |  **Updated**: {data.get('updated_at', '')}",
     ]
-    labels = [l["name"] for l in data.get("labels", [])]
+    labels = [lb["name"] for lb in data.get("labels", [])]
     if labels:
         lines.append(f"**Labels**: {', '.join(labels)}")
     if data.get("body"):
@@ -396,11 +396,11 @@ def _looks_like_spa_shell(text: str) -> bool:
     """检测提取结果是否像 SPA 空壳（大量 JS 框架关键词，极少正文）。"""
     if not text:
         return True
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
     if len(lines) < 5:
         return True
     # 如果大部分内容是 "Loading..." / "Sign in" 之类的占位符
-    short_lines = sum(1 for l in lines if len(l) < 20)
+    short_lines = sum(1 for ln in lines if len(ln) < 20)
     if short_lines / max(len(lines), 1) > 0.7:
         return True
     return False
@@ -469,7 +469,7 @@ def _extract_metadata(soup) -> list[str]:
     og_title = soup.find("meta", attrs={"property": "og:title"})
     if og_title and og_title.get("content"):
         t = og_title["content"].strip()
-        if not any(t in l for l in lines):
+        if not any(t in line for line in lines):
             lines.append(f"**OG Title**: {t}")
     og_desc = soup.find("meta", attrs={"property": "og:description"})
     if og_desc and og_desc.get("content"):
