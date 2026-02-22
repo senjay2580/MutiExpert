@@ -312,9 +312,7 @@ class OpenAIChatCompletionsStrategy:
         self.config = config
 
     def _build_url_and_headers(self) -> tuple[str, dict[str, str]] | None:
-        base_url = (self.config.base_url or "").rstrip("/")
-        if not base_url:
-            return None
+        base_url = (self.config.base_url or "https://api.openai.com/v1").rstrip("/")
         url = f"{base_url}/chat/completions"
         headers = {
             "content-type": "application/json",
@@ -475,7 +473,7 @@ async def stream_chat(
         config = await get_provider_config(db, "openai")
         if model_name:
             config = dc_replace(config, model=model_name)
-        strategy = OpenAIResponsesStrategy(config)
+        strategy = OpenAIChatCompletionsStrategy(config)
     elif provider in ("deepseek", "qwen"):
         config = await get_provider_config(db, provider)
         if model_name:
@@ -495,8 +493,6 @@ def _get_strategy(provider: str, config: ProviderConfig):
     """根据 provider 返回对应 Strategy 实例"""
     if provider == "claude":
         return ClaudeStrategy(config)
-    elif provider == "openai":
-        return OpenAIResponsesStrategy(config)
     else:
         return OpenAIChatCompletionsStrategy(config)
 
