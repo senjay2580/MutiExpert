@@ -273,7 +273,7 @@ class OpenAIResponsesStrategy:
     async def generate(
         self, messages: list[dict], system_prompt: str, tools: list[dict] | None = None,
     ) -> GenerateResult:
-        """OpenAI Responses API 的 generate — function calling 降级到 /chat/completions"""
+        """OpenAI Responses API 的非流式 generate（支持 function calling）"""
         if not self.config.api_key:
             return GenerateResult(text="Error: OpenAI API key not configured")
 
@@ -282,27 +282,39 @@ class OpenAIResponsesStrategy:
             return GenerateResult(text="Error: OpenAI model not configured")
 
         base_url = (self.config.base_url or "https://api.openai.com").rstrip("/")
-        url = f"{base_url}/v1/chat/completions"
-
-        api_messages: list[dict[str, Any]] = []
-        if system_prompt:
-            api_messages.append({"role": "system", "content": system_prompt})
-        api_messages.extend(messages)
+        url = f"{base_url}/v1/responses"
 
         payload: dict[str, Any] = {
             "model": model,
-            "messages": api_messages,
+            "input": list(messages),
             "stream": False,
         }
+        if system_prompt:
+            payload["instructions"] = system_prompt
         if tools:
-            payload["tools"] = tools
+            # OpenAI Responses API 用 function 类型工具
+            resp_tools = []
+            for t in tools:
+                fn = t.get("function", t)
+                resp_tools.append({
+                    "type": "function",
+                    "name": fn["name"],
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {"type": "object", "properties": {}}),
+                })
+            payload["tools"] = resp_tools
 
-        headers = {
-            "content-type": "application/json",
-            "authorization": f"Bearer {self.config.api_key}",
-        }
+        headers = self._build_headers()
 
-        return await _openai_chat_completions_generate(url, headers, payload, "openai")
+        timeout = httpx.Timeout(60.0, read=120.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code >= 400:
+                body = resp.text or ""
+                return GenerateResult(text=f"Error: OpenAI request failed ({resp.status_code}) {body}")
+
+            data = resp.json()
+            return _parse_responses_api_result(data)
 
 
 class OpenAIChatCompletionsStrategy:
@@ -409,6 +421,47 @@ class OpenAIChatCompletionsStrategy:
             payload["tools"] = tools
 
         return await _openai_chat_completions_generate(url, headers, payload, self.config.provider_id)
+
+
+# ── Responses API 解析 ────────────────────────────────────────
+
+def _parse_responses_api_result(data: dict[str, Any]) -> GenerateResult:
+    """解析 OpenAI Responses API 非流式返回"""
+    text_parts: list[str] = []
+    tool_calls: list[ToolCallResult] = []
+
+    output = data.get("output", [])
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type", "")
+        if item_type == "message":
+            for part in item.get("content", []):
+                if isinstance(part, dict) and part.get("type") == "output_text":
+                    text_parts.append(part.get("text", ""))
+        elif item_type == "function_call":
+            call_id = item.get("call_id") or item.get("id", "")
+            name = item.get("name", "")
+            raw_args = item.get("arguments", "{}")
+            try:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            except json.JSONDecodeError:
+                args = {}
+            tool_calls.append(ToolCallResult(id=call_id, name=name, arguments=args))
+
+    usage_data = data.get("usage", {})
+    usage = {}
+    if usage_data:
+        usage = {
+            "prompt_tokens": usage_data.get("input_tokens", 0),
+            "completion_tokens": usage_data.get("output_tokens", 0),
+        }
+
+    stop_reason = "tool_use" if tool_calls else "end_turn"
+    return GenerateResult(
+        text="\n".join(text_parts), tool_calls=tool_calls,
+        stop_reason=stop_reason, usage=usage,
+    )
 
 
 # ── 共享辅助函数 ──────────────────────────────────────────────

@@ -232,7 +232,7 @@ def _build_tool_call_messages_claude(
 def _build_tool_call_messages_openai(
     tc: ToolCallResult, assistant_text: str, tool_result_text: str,
 ) -> list[dict]:
-    """构建 OpenAI 格式的 tool_calls → tool 消息对"""
+    """构建 OpenAI chat/completions 格式的 tool_calls → tool 消息对"""
     return [
         {
             "role": "assistant",
@@ -246,11 +246,32 @@ def _build_tool_call_messages_openai(
     ]
 
 
+def _build_tool_call_messages_responses(
+    tc: ToolCallResult, assistant_text: str, tool_result_text: str,
+) -> list[dict]:
+    """构建 OpenAI Responses API 格式的 function_call → function_call_output"""
+    items: list[dict] = []
+    items.append({
+        "type": "function_call",
+        "call_id": tc.id,
+        "name": tc.name,
+        "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+    })
+    items.append({
+        "type": "function_call_output",
+        "call_id": tc.id,
+        "output": tool_result_text,
+    })
+    return items
+
+
 def _build_tool_messages(
     provider: str, tc: ToolCallResult, assistant_text: str, tool_result_text: str,
 ) -> list[dict]:
     if provider == "claude":
         return _build_tool_call_messages_claude(tc, assistant_text, tool_result_text)
+    if provider == "openai":
+        return _build_tool_call_messages_responses(tc, assistant_text, tool_result_text)
     return _build_tool_call_messages_openai(tc, assistant_text, tool_result_text)
 
 
