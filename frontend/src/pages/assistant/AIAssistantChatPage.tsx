@@ -258,19 +258,33 @@ export default function AIAssistantChatPage() {
     [conversations, activeConvId],
   );
 
-  const lastUserMessageId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i].role === 'user') return messages[i].id;
-    }
-    return null;
+  // 去重：防止切换对话时 optimistic update + API 数据产生重复消息
+  const dedupedMessages = useMemo(() => {
+    const seen = new Set<string>();
+    return messages.filter((m) => {
+      // 对临时 ID（user-xxx / assistant-xxx），用 role+content 去重
+      const key = m.id.startsWith('user-') || m.id.startsWith('assistant-')
+        ? `${m.role}:${m.content}`
+        : m.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [messages]);
 
-  const lastAssistantMessageId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i].role === 'assistant') return messages[i].id;
+  const lastUserMessageId = useMemo(() => {
+    for (let i = dedupedMessages.length - 1; i >= 0; i -= 1) {
+      if (dedupedMessages[i].role === 'user') return dedupedMessages[i].id;
     }
     return null;
-  }, [messages]);
+  }, [dedupedMessages]);
+
+  const lastAssistantMessageId = useMemo(() => {
+    for (let i = dedupedMessages.length - 1; i >= 0; i -= 1) {
+      if (dedupedMessages[i].role === 'assistant') return dedupedMessages[i].id;
+    }
+    return null;
+  }, [dedupedMessages]);
 
   /* ── Effects ── */
   useEffect(() => { setActiveConvId(conversationId ?? null); }, [conversationId]);
@@ -329,8 +343,13 @@ export default function AIAssistantChatPage() {
             isStreaming: true,
             model_used: entry.modelUsed,
           };
-          const hasUser = mapped.some((m) => m.id === entry.userMessage.id);
-          setMessages(hasUser ? [...mapped, assistantMsg] : [...mapped, entry.userMessage, assistantMsg]);
+          const hasUser = mapped.some((m) => m.id === entry.userMessage.id || (m.role === 'user' && m.content === entry.userMessage.content));
+          const hasAssistant = mapped.some((m) => m.id === entry.assistantMessageId || m.id === entry.finalMessageId);
+          if (hasAssistant) {
+            // API 已包含完整消息，无需追加
+          } else {
+            setMessages(hasUser ? [...mapped, assistantMsg] : [...mapped, entry.userMessage, assistantMsg]);
+          }
           setIsSending(true);
           abortRef.current = entry.abort;
           streamRegistry.subscribe(activeConvId, (updated) => {
@@ -486,9 +505,9 @@ export default function AIAssistantChatPage() {
 
   const handleRegenerate = () => {
     if (!activeConvId || isSending) return;
-    const lastUserIndex = [...messages].map((m) => m.role).lastIndexOf('user');
+    const lastUserIndex = [...dedupedMessages].map((m) => m.role).lastIndexOf('user');
     if (lastUserIndex < 0) return;
-    const lastUserMsg = messages[lastUserIndex];
+    const lastUserMsg = dedupedMessages[lastUserIndex];
     const assistantId = `assistant-${Date.now()}`;
     setMessages((prev) => {
       const trimmed = prev.slice(0, lastUserIndex + 1);
@@ -522,7 +541,7 @@ export default function AIAssistantChatPage() {
   const buildMarkdownExport = () => {
     const title = activeConversation?.title || '未命名会话';
     const lines: string[] = [`# ${title}`, '', `导出时间：${new Date().toLocaleString()}`, ''];
-    messages.forEach((msg) => {
+    dedupedMessages.forEach((msg) => {
       lines.push(`## ${msg.role === 'user' ? '用户' : '助手'}`);
       lines.push(msg.content || '');
       if (msg.sources?.length) { lines.push('', '来源：'); msg.sources.forEach((s) => lines.push(`- ${s.document_name}：${s.content_preview}`)); }
@@ -532,7 +551,7 @@ export default function AIAssistantChatPage() {
   };
 
   const handleExportMarkdown = () => {
-    if (!messages.length) return;
+    if (!dedupedMessages.length) return;
     const md = buildMarkdownExport();
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -546,7 +565,7 @@ export default function AIAssistantChatPage() {
   };
 
   const handleCopyMarkdown = async () => {
-    if (!messages.length) return;
+    if (!dedupedMessages.length) return;
     try { await copyToClipboard(buildMarkdownExport()); } catch { /* ignore */ }
   };
 
@@ -704,7 +723,7 @@ export default function AIAssistantChatPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon-sm" className="rounded-full" disabled={!messages.length}>
+                      <Button variant="ghost" size="icon-sm" className="rounded-full" disabled={!dedupedMessages.length}>
                         <Icon icon="lucide:share-2" width={15} height={15} />
                       </Button>
                     </DropdownMenuTrigger>
@@ -751,7 +770,7 @@ export default function AIAssistantChatPage() {
         >
           {loadingMessages ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">加载对话中...</div>
-          ) : messages.length === 0 ? (
+          ) : dedupedMessages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 text-center select-none">
               <img src={illustrations.aiChat} alt="开始对话" className="h-48 w-48 object-contain opacity-90" draggable={false} />
               <div className="space-y-2">
@@ -761,7 +780,7 @@ export default function AIAssistantChatPage() {
             </div>
           ) : (
             <div className="mx-auto max-w-4xl space-y-5 px-4 py-6">
-              {messages.map((msg) => (
+              {dedupedMessages.map((msg) => (
                 <div key={msg.id} className={cn('group/msg flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                   {/* AI 头像 */}
                   {msg.role === 'assistant' && (

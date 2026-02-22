@@ -15,7 +15,7 @@ from app.models.extras import BotTool
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-EXCLUDED_PREFIXES = ("/api/v1/bot-tools", "/api/v1/health", "/api/v1/config", "/api/v1/sandbox")
+EXCLUDED_PREFIXES = ("/api/v1/health", "/api/v1/config", "/api/v1/sandbox")
 MUTATION_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
