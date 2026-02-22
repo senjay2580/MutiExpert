@@ -198,18 +198,19 @@ async def _fetch_raw(url: str, max_size: int) -> tuple[str, str]:
 
 
 def _extract_content(html: str) -> str:
-    """用 trafilatura 提取正文，fallback 到 regex 剥离。"""
+    """用 BeautifulSoup 智能提取正文，fallback 到 regex 剥离。"""
     try:
-        import trafilatura
-        result = trafilatura.extract(
-            html,
-            include_links=True,
-            include_tables=True,
-            output_format="txt",
-            favor_recall=True,
-        )
-        if result:
-            return result.strip()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        # 移除无用标签
+        for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript", "iframe"]):
+            tag.decompose()
+        # 优先提取 main/article 区域
+        main = soup.find("main") or soup.find("article") or soup.find(attrs={"role": "main"})
+        target = main if main else soup.body if soup.body else soup
+        text = target.get_text(separator="\n", strip=True)
+        if text:
+            return text
     except Exception:
         pass
     # fallback: regex 剥离
