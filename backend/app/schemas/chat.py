@@ -1,5 +1,5 @@
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import datetime
 
 
@@ -38,18 +38,23 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     thinking_content: str | None = None
-    sources: list[dict]
+    sources: list[dict] = []
     attachments: list[dict] = []
     tool_calls: list[dict] = []
-    model_used: str | None
-    tokens_used: int | None
-    prompt_tokens: int | None
-    completion_tokens: int | None
-    cost_usd: float | None
-    latency_ms: int | None
+    model_used: str | None = None
+    tokens_used: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    cost_usd: float | None = None
+    latency_ms: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_validator("sources", "attachments", "tool_calls", mode="before")
+    @classmethod
+    def none_to_list(cls, v: list | None) -> list:
+        return v if v is not None else []
 
 
 class ModelSwitch(BaseModel):

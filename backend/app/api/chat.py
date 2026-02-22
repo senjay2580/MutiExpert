@@ -427,6 +427,7 @@ def _stream_pipeline_response(
         all_sources: list[dict] = []
         all_tool_calls: list[dict] = []
         all_file_attachments: list[dict] = []
+        saved = False  # 标记消息是否已持久化
 
         try:
             history = await _load_history()
@@ -478,6 +479,7 @@ def _stream_pipeline_response(
                     if not all_file_attachments:
                         all_file_attachments = event.data.get("file_attachments", [])
 
+            # Pipeline 完成后立即保存消息（不依赖后续 yield 成功）
             latency_ms = int((time.monotonic() - started) * 1000)
             completion_tokens = _estimate_tokens(full_content)
             prompt_tokens = _estimate_tokens(message)
@@ -489,7 +491,7 @@ def _stream_pipeline_response(
                 thinking_content=full_thinking or None,
                 sources=all_sources,
                 tool_calls=all_tool_calls,
-                attachments=all_file_attachments or None,
+                attachments=all_file_attachments if all_file_attachments else [],
                 model_used=provider,
                 latency_ms=latency_ms,
                 prompt_tokens=prompt_tokens,
@@ -499,6 +501,7 @@ def _stream_pipeline_response(
             db.add(assistant_msg)
             conv.updated_at = datetime.utcnow()
             await db.commit()
+            saved = True
 
             payload = {
                 "message_id": str(assistant_msg.id),
@@ -515,5 +518,37 @@ def _stream_pipeline_response(
                 asyncio.create_task(_update_conversation_memory(conv_id))
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            # 客户端断开时 yield 会抛异常，确保已收集的内容仍被保存
+            if not saved and full_content:
+                try:
+                    async with AsyncSessionLocal() as fallback_db:
+                        latency_ms = int((time.monotonic() - started) * 1000)
+                        completion_tokens = _estimate_tokens(full_content)
+                        prompt_tokens = _estimate_tokens(message)
+                        assistant_msg = Message(
+                            conversation_id=conv_id,
+                            role="assistant",
+                            content=full_content,
+                            thinking_content=full_thinking or None,
+                            sources=all_sources,
+                            tool_calls=all_tool_calls,
+                            attachments=all_file_attachments if all_file_attachments else [],
+                            model_used=provider,
+                            latency_ms=latency_ms,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            tokens_used=(prompt_tokens + completion_tokens) if (prompt_tokens or completion_tokens) else None,
+                        )
+                        fallback_db.add(assistant_msg)
+                        result = await fallback_db.execute(
+                            select(Conversation).where(Conversation.id == conv_id)
+                        )
+                        c = result.scalar_one_or_none()
+                        if c:
+                            c.updated_at = datetime.utcnow()
+                        await fallback_db.commit()
+                except Exception:
+                    pass  # 尽力保存，失败则放弃
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

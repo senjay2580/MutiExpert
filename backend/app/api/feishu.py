@@ -155,7 +155,7 @@ async def _handle_feishu_question(parsed: dict):
                 content=response_text,
                 sources=result.get("sources", []),
                 tool_calls=result.get("tool_calls", []),
-                attachments=file_attachments or None,
+                attachments=file_attachments if file_attachments else [],
                 model_used=provider,
             )
             db.add(assistant_msg)
