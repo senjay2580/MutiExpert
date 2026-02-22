@@ -50,6 +50,7 @@ const quickActions = [
 const segmentLabels: Record<string, string> = {
   dashboard: '仪表盘',
   assistant: 'AI 问答',
+  chat: '对话',
   knowledge: '知识库',
   scheduler: '定时任务',
   boards: '画板',
@@ -58,6 +59,9 @@ const segmentLabels: Record<string, string> = {
   integrations: '第三方集成',
   data: '数据管理',
   help: '帮助中心',
+  scripts: '用户脚本',
+  skills: 'Skills',
+  'bot-tools': '机器人工具',
 };
 
 /** 单段路由的默认子标签（如 /dashboard → 仪表盘 > 概览） */

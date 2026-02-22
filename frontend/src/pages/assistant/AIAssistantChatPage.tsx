@@ -17,9 +17,10 @@ import {
 import api from '@/services/api';
 import { knowledgeBaseService } from '@/services/knowledgeBaseService';
 import { chatService, streamEditMessage, streamMessage, streamRegenerate } from '@/services/chatService';
+import { uploadFile } from '@/services/fileService';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/useAppStore';
-import type { ModelProvider } from '@/types';
+import type { FileAttachment, ModelProvider } from '@/types';
 import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -31,7 +32,7 @@ import type { ChatMessage, MessageSource, ToolCallEntry } from '@/lib/streamRegi
 
 type ModelConfig = { id: string; name: string; provider: string };
 
-type LocationState = { initialPrompt?: string };
+type LocationState = { initialPrompt?: string; initialModes?: string[] };
 type ChatMode = 'knowledge' | 'search' | 'tools';
 
 /* ── Clipboard fallback for HTTP contexts ── */
@@ -175,12 +176,20 @@ export default function AIAssistantChatPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [modes, setModes] = useState<Set<ChatMode>>(new Set(['knowledge']));
+  const [modes, setModes] = useState<Set<ChatMode>>(() => {
+    const state = location.state as LocationState | null;
+    if (state?.initialModes?.length) return new Set(state.initialModes as ChatMode[]);
+    return new Set(['knowledge']);
+  });
   const [selectedKbIds, setSelectedKbIds] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // 用 useState 持有初始 prompt，StrictMode 下 state 会被正确保留（ref 不会）
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(
     () => (location.state as LocationState | null)?.initialPrompt ?? null,
@@ -327,6 +336,7 @@ export default function AIAssistantChatPage() {
             success: tc.success,
             status: 'done' as const,
           })),
+          attachments: m.attachments,
           model_used: m.model_used,
           tokens_used: m.tokens_used ?? null,
           prompt_tokens: m.prompt_tokens ?? null,
@@ -622,8 +632,10 @@ export default function AIAssistantChatPage() {
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
-    if (!text || isSending) return;
+    if ((!text && !pendingAttachments.length) || isSending || uploadingFiles || creatingConvRef.current) return;
+    const attachmentsToSend = [...pendingAttachments];
     setInput('');
+    setPendingAttachments([]);
     setSendError(null);
     userScrolledUpRef.current = false;
 
@@ -635,14 +647,14 @@ export default function AIAssistantChatPage() {
         const idx = prev.findIndex((m) => m.id === editingMessageId);
         if (idx < 0) return prev;
         const updated = [...prev.slice(0, idx + 1)];
-        updated[idx] = { ...updated[idx], content: text };
+        updated[idx] = { ...updated[idx], content: text || '(文件)' };
         updated.push({ id: aId, role: 'assistant', content: '', isStreaming: true, model_used: normalizedCurrent });
         return updated;
       });
       try {
-        const editedUserMsg: ChatMessage = { id: editingMessageId, role: 'user', content: text };
+        const editedUserMsg: ChatMessage = { id: editingMessageId, role: 'user', content: text || '(文件)' };
         const cb = registryCallbacks(aId, activeConvId, editedUserMsg);
-        const abort = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb);
+        const abort = streamEditMessage(activeConvId, editingMessageId, text || '(文件)', normalizedCurrent, cb);
         abortRef.current = abort;
         const entry = streamRegistry.getStream(activeConvId);
         if (entry) entry.abort = abort;
@@ -651,7 +663,7 @@ export default function AIAssistantChatPage() {
     }
 
     setIsSending(true);
-    const userMsg: ChatMessage = { id: `user-${Date.now()}`, role: 'user', content: text };
+    const userMsg: ChatMessage = { id: `user-${Date.now()}`, role: 'user', content: text || '(文件)', attachments: attachmentsToSend.length ? attachmentsToSend : undefined };
     const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: '', isStreaming: true, model_used: normalizedCurrent };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
@@ -669,18 +681,30 @@ export default function AIAssistantChatPage() {
         creatingConvRef.current = false;
         setActiveConvId(convId);
         navigate(`/assistant/chat/${convId}`, { replace: true });
-        // 乐观更新：立即把新会话插入缓存，侧边栏即时可见
         queryClient.setQueryData<import('@/types').Conversation[]>(['conversations'], (old) => [conv, ...(old ?? [])]);
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else { currentConvIdRef.current = convId; }
       const cb = registryCallbacks(assistantMsg.id, convId, userMsg);
       const effectiveModes = [...new Set([...modes, 'tools'])];
-      const abort = streamMessage(convId, text, normalizedCurrent, cb, effectiveModes);
+      const abort = streamMessage(convId, text || '请查看我上传的文件', normalizedCurrent, cb, effectiveModes, attachmentsToSend.length ? attachmentsToSend : undefined);
       abortRef.current = abort;
       const entry = streamRegistry.getStream(convId);
       if (entry) entry.abort = abort;
     } catch (e) { creatingConvRef.current = false; setSendError(e instanceof Error ? e.message : '发送失败'); setIsSending(false); }
-  }, [activeConvId, editingMessageId, modes, input, isSending, knowledgeBases, navigate, normalizedCurrent, queryClient, selectedKbIds]);
+  }, [activeConvId, editingMessageId, modes, input, isSending, uploadingFiles, knowledgeBases, navigate, normalizedCurrent, queryClient, selectedKbIds, pendingAttachments]);
+
+  // 处理文件选择：立即上传到图床/工作区，拿到 URL 后存入 pendingAttachments
+  const handleFilesSelected = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    setUploadingFiles(true);
+    try {
+      const results = await Promise.all(files.map((f) => uploadFile(f)));
+      setPendingAttachments((prev) => [...prev, ...results]);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : '文件上传失败');
+    } finally {
+      setUploadingFiles(false);
+    }
+  }, []);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!isSending) handleSend(); }
@@ -800,6 +824,22 @@ export default function AIAssistantChatPage() {
                     /* ── 用户消息：气泡 + 按钮在气泡外下方 ── */
                     <div className="flex max-w-[80%] flex-col items-end">
                       <div className="rounded-2xl bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground shadow-sm">
+                        {/* 用户附件 */}
+                        {msg.attachments?.length ? (
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {msg.attachments.map((att, ai) => (
+                              att.mime_type.startsWith('image/') ? (
+                                <img key={ai} src={att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`} alt={att.filename} className="max-h-40 max-w-[200px] rounded-lg object-cover" />
+                              ) : (
+                                <a key={ai} href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-1.5 rounded-lg bg-primary-foreground/10 px-2 py-1 text-[11px] text-primary-foreground transition-colors hover:bg-primary-foreground/20">
+                                  <Icon icon="lucide:file" width={14} height={14} />
+                                  <span className="max-w-[120px] truncate">{att.filename}</span>
+                                  <span>({(att.size / 1024).toFixed(0)}KB)</span>
+                                </a>
+                              )
+                            ))}
+                          </div>
+                        ) : null}
                         <p className="whitespace-pre-wrap">{msg.content}</p>
                       </div>
                       {!msg.isStreaming && (
@@ -841,6 +881,31 @@ export default function AIAssistantChatPage() {
                         )}
                       </div>
                       {msg.sources?.length ? <SourceReferences sources={msg.sources} /> : null}
+                      {/* AI 附件 */}
+                      {msg.attachments?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {msg.attachments.map((att, ai) => (
+                            att.mime_type.startsWith('image/') ? (
+                              <div key={ai} className="overflow-hidden rounded-lg border border-border/40">
+                                <img src={`/api/v1/sandbox/files/download?path=${att.path}&inline=true`} alt={att.filename} className="max-h-48 max-w-[280px] object-cover" />
+                                <a href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
+                                  <Icon icon="lucide:download" width={12} height={12} />
+                                  {att.filename}
+                                </a>
+                              </div>
+                            ) : (
+                              <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-[11px] transition-colors hover:bg-muted/50">
+                                <Icon icon="lucide:file-down" width={16} height={16} className="text-primary" />
+                                <div>
+                                  <div className="font-medium text-foreground">{att.filename}</div>
+                                  <div className="text-muted-foreground">{(att.size / 1024).toFixed(0)}KB</div>
+                                </div>
+                                <Icon icon="lucide:download" width={14} height={14} className="ml-2 text-muted-foreground" />
+                              </a>
+                            )
+                          ))}
+                        </div>
+                      ) : null}
                       {!msg.isStreaming && (
                         <div className="mt-2 flex flex-wrap items-center gap-1">
                           <TooltipProvider>
@@ -883,7 +948,36 @@ export default function AIAssistantChatPage() {
         )}
 
         {/* Input */}
-        <div className="relative z-[1] border-t border-border/40 bg-background/80 backdrop-blur-sm">
+        <div
+          className="relative z-[1] border-t border-border/40 bg-background/80 backdrop-blur-sm"
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const droppedFiles = Array.from(e.dataTransfer.files);
+            if (droppedFiles.length) handleFilesSelected(droppedFiles);
+          }}
+        >
+          {isDragging && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/50 bg-primary/5">
+              <div className="flex items-center gap-2 text-sm text-primary">
+                <Icon icon="lucide:upload" width={20} height={20} />
+                拖放文件到这里
+              </div>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const selected = Array.from(e.target.files || []);
+              if (selected.length) handleFilesSelected(selected);
+              e.target.value = '';
+            }}
+          />
           <div className="mx-auto max-w-4xl px-4 py-3">
             {editingMessageId && (
               <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
@@ -902,6 +996,34 @@ export default function AIAssistantChatPage() {
                 placeholder="输入问题，Enter 发送，Shift+Enter 换行..."
                 className="!min-h-[44px] !max-h-[200px] resize-none !border-0 !bg-transparent !px-4 !py-3 !text-sm !leading-relaxed !shadow-none !ring-0 focus-visible:!ring-0 focus-visible:!bg-transparent"
               />
+              {/* 文件预览条 */}
+              {(pendingAttachments.length > 0 || uploadingFiles) && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-border/30 px-3 py-2">
+                  {pendingAttachments.map((att, i) => (
+                    <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-2 py-1 text-[11px]">
+                      {att.mime_type.startsWith('image/') ? (
+                        <img src={att.url} alt={att.filename} className="h-8 w-8 rounded object-cover" />
+                      ) : (
+                        <Icon icon="lucide:file" width={14} height={14} className="text-muted-foreground" />
+                      )}
+                      <span className="max-w-[120px] truncate">{att.filename}</span>
+                      <span className="text-muted-foreground">({(att.size / 1024).toFixed(0)}KB)</span>
+                      <button
+                        onClick={() => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                        className="ml-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Icon icon="lucide:x" width={12} height={12} />
+                      </button>
+                    </div>
+                  ))}
+                  {uploadingFiles && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Icon icon="lucide:loader-2" width={14} height={14} className="animate-spin" />
+                      上传中...
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-1.5 border-t border-border/30 px-3 py-2">
                 {/* 左侧：模型选择器 + 模式按钮 */}
                 <DropdownMenu>
@@ -957,8 +1079,18 @@ export default function AIAssistantChatPage() {
                 {modes.has('knowledge') && (
                   <span className="text-[10px] text-muted-foreground">{effectiveKbCount} 个知识库</span>
                 )}
-                <div className="ml-auto">
-                  <Button variant="default" size="icon-sm" className="size-7 rounded-full shadow-sm" disabled={!input.trim() && !isSending} onClick={handlePrimaryAction}>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" className="size-7 rounded-full" onClick={() => fileInputRef.current?.click()}>
+                          <Icon icon="lucide:paperclip" width={14} height={14} />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">上传文件</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Button variant="default" size="icon-sm" className="size-7 rounded-full shadow-sm" disabled={!input.trim() && !pendingAttachments.length && !isSending} onClick={handlePrimaryAction}>
                     {isSending ? <Icon icon="lucide:square" width={14} height={14} /> : <Icon icon="lucide:arrow-up" width={14} height={14} />}
                   </Button>
                 </div>

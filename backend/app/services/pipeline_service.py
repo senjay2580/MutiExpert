@@ -1,15 +1,18 @@
 """统一 AI 能力管道 — 编排 Skills / BotTools / RAG / 网络搜索"""
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.services.ai_service import (
     generate as ai_generate,
     stream_chat,
@@ -36,6 +39,7 @@ class PipelineRequest:
     history: list[dict] | None = None
     max_tool_rounds: int = 5
     memory_summary: str | None = None
+    attachments: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +97,65 @@ async def _collect_tools(db: AsyncSession) -> tuple[list[dict], dict[str, dict]]
         }
 
     return openai_tools, tool_index
+
+
+# ── 附件处理 ──────────────────────────────────────────────────
+
+_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+def _build_user_message_with_attachments(
+    message: str, attachments: list[dict], provider: str,
+) -> dict:
+    """构建包含附件的用户消息。图片→base64 content block，其他文件→文本描述。"""
+    if not attachments:
+        return {"role": "user", "content": message}
+
+    settings = get_settings()
+    workspace = Path(settings.workspace_dir).resolve()
+
+    # 非图片附件的文本描述
+    file_descriptions: list[str] = []
+    image_blocks: list[dict] = []
+
+    for att in attachments:
+        mime = att.get("mime_type", "")
+        filepath = workspace / att["path"]
+
+        if mime in _IMAGE_MIMES and filepath.exists() and filepath.stat().st_size < 20_000_000:
+            # 图片：读取并编码 base64
+            data = base64.b64encode(filepath.read_bytes()).decode("utf-8")
+            if provider == "claude":
+                image_blocks.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": mime, "data": data},
+                })
+            else:
+                # OpenAI vision 格式
+                image_blocks.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{data}"},
+                })
+        else:
+            file_descriptions.append(
+                f"[已上传文件] {att['filename']} ({att.get('size', 0)} bytes, {mime})"
+                f" — 工作区路径: {att['path']}"
+            )
+
+    # 如果没有图片，只有文件描述，用纯文本
+    if not image_blocks:
+        extra = "\n".join(file_descriptions)
+        return {"role": "user", "content": f"{extra}\n\n{message}" if extra else message}
+
+    # 有图片 → multimodal content blocks
+    content_blocks: list[dict] = []
+    if file_descriptions:
+        content_blocks.append({"type": "text", "text": "\n".join(file_descriptions)})
+    for img in image_blocks:
+        content_blocks.append(img)
+    content_blocks.append({"type": "text", "text": message})
+
+    return {"role": "user", "content": content_blocks}
 
 
 async def _execute_tool_call(
@@ -332,7 +395,11 @@ async def run_stream(
 
     # 4. 构建消息历史
     messages: list[dict] = list(request.history or [])
-    messages.append({"role": "user", "content": request.message})
+    # 用户消息：如果有附件（图片），构建 multimodal content block
+    user_msg = _build_user_message_with_attachments(
+        request.message, request.attachments, request.provider,
+    )
+    messages.append(user_msg)
 
     all_tool_calls: list[dict] = []
 

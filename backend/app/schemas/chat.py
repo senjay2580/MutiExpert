@@ -29,6 +29,7 @@ class MessageCreate(BaseModel):
     content: str
     model_provider: str | None = None
     modes: list[str] | None = None  # 消息级别覆盖：["knowledge","search","tools"]
+    attachments: list[dict] | None = None  # [{filename, path, size, mime_type, url}]
 
 
 class MessageResponse(BaseModel):
@@ -38,6 +39,7 @@ class MessageResponse(BaseModel):
     content: str
     thinking_content: str | None = None
     sources: list[dict]
+    attachments: list[dict] = []
     tool_calls: list[dict] = []
     model_used: str | None
     tokens_used: int | None

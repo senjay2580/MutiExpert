@@ -1,3 +1,5 @@
+import type { FileAttachment } from '@/types';
+
 /**
  * Module-level stream registry — holds active streaming state outside React lifecycle.
  * When the chat component unmounts, streams continue running here.
@@ -40,6 +42,7 @@ export type ChatMessage = {
   thinking?: string;
   isThinkingStreaming?: boolean;
   sources?: MessageSource[];
+  attachments?: FileAttachment[];
   toolCalls?: ToolCallEntry[];
   webSearchResults?: WebSearchResult[];
   isStreaming?: boolean;

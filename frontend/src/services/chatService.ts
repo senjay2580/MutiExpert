@@ -139,11 +139,13 @@ export function streamMessage(
   modelProvider: string,
   callbacks: StreamCallbacks,
   modes?: string[],
+  attachments?: Array<{ filename: string; path: string; size: number; mime_type: string; url: string }>,
 ): () => void {
   const baseUrl = api.defaults.baseURL || '/api/v1';
   const url = `${baseUrl}/conversations/${convId}/messages`;
   const body: Record<string, unknown> = { content, model_provider: modelProvider };
   if (modes && modes.length) body.modes = modes;
+  if (attachments && attachments.length) body.attachments = attachments;
   return streamConversationRequest(url, body, callbacks);
 }
 

@@ -38,12 +38,23 @@ const quickPrompts = [
   { icon: 'streamline-color:ai-redo-spark', text: '优化当前方案的表达方式' },
 ];
 
+type ChatMode = 'knowledge' | 'search';
+
 export default function AIAssistantPage() {
   const [question, setQuestion] = useState('');
+  const [modes, setModes] = useState<Set<ChatMode>>(new Set(['knowledge']));
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+
+  const toggleMode = (mode: ChatMode) => {
+    setModes((prev) => {
+      const next = new Set(prev);
+      if (next.has(mode)) next.delete(mode); else next.add(mode);
+      return next;
+    });
+  };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const siteName = useSiteSettingsStore((s) => s.siteName);
@@ -118,7 +129,7 @@ export default function AIAssistantPage() {
     const text = question.trim();
     if (!text) return;
     setQuestion('');
-    navigate('/assistant/chat', { state: { initialPrompt: text } });
+    navigate('/assistant/chat', { state: { initialPrompt: text, initialModes: [...modes] } });
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -133,9 +144,9 @@ export default function AIAssistantPage() {
     || (loadingModels ? '加载模型中...' : '请选择模型');
 
   return (
-    <div className="flex h-[calc(100svh-var(--topbar-height))]">
+    <div className="flex h-full bg-background">
       {/* ── Main content ── */}
-      <div className="relative flex-1 overflow-y-auto pb-6 pt-6">
+      <div className="relative flex flex-1 flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-white via-amber-50/50 to-orange-50/30 dark:from-slate-950/70 dark:via-slate-900/40 dark:to-slate-950/80" />
         <div className="pointer-events-none absolute inset-0 -z-10 opacity-50 [background:radial-gradient(circle_at_15%_12%,rgba(251,191,36,0.18),transparent_58%),radial-gradient(circle_at_82%_18%,rgba(255,237,213,0.25),transparent_58%),radial-gradient(circle_at_78%_60%,rgba(252,211,77,0.12),transparent_60%),radial-gradient(circle_at_52%_85%,rgba(254,243,199,0.20),transparent_60%)] dark:opacity-40" />
 
@@ -175,10 +186,6 @@ export default function AIAssistantPage() {
 
       <div className="px-6 sm:px-8">
         <div className="space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-           
-          </div>
-
           <section className="relative mx-auto flex min-h-[320px] max-w-4xl flex-col items-center justify-center text-center">
             <div className="hero-title-loader mb-2" style={{ fontSize: '0.875rem', height: 'auto', fontWeight: 500 }}>
               {'全量知识库检索'.split('').map((ch, i) => (
@@ -241,10 +248,35 @@ export default function AIAssistantPage() {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <span className="ai-input-chip inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px]">
-                        <Icon icon="streamline-color:open-book" width={10} height={10} />
-                        {knowledgeBases.length} 个知识库
-                      </span>
+                      <div className="flex items-center gap-0.5 rounded-full bg-muted/50 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleMode('knowledge')}
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-medium transition-colors',
+                            modes.has('knowledge')
+                              ? 'bg-green-500/15 text-green-600'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          <Icon icon="lucide:book-open" width={11} height={11} />
+                          知识库
+                          {modes.has('knowledge') && <span className="text-[9px] opacity-70">{knowledgeBases.length}</span>}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleMode('search')}
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-medium transition-colors',
+                            modes.has('search')
+                              ? 'bg-blue-500/15 text-blue-600'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          <Icon icon="lucide:search" width={11} height={11} />
+                          搜索
+                        </button>
+                      </div>
                     </div>
                     <div className="ai-input-muted ml-auto flex items-center gap-2 text-xs">
                       <span>Enter 发送 · Shift+Enter 换行</span>
@@ -286,7 +318,7 @@ export default function AIAssistantPage() {
 
       {/* ── Right sidebar: conversation history ── */}
       <div className={cn(
-        'ai-sidebar-weather relative h-full shrink-0 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.15,0.83,0.66,1)]',
+        'ai-sidebar-weather relative h-full shrink-0 overflow-hidden border-l border-border/40 transition-all duration-500 ease-[cubic-bezier(0.15,0.83,0.66,1)]',
         sidebarOpen ? 'w-[300px] opacity-100' : 'w-0 opacity-0',
       )}>
         <div className={cn(

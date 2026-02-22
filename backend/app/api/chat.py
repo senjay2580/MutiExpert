@@ -141,7 +141,12 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
     if data.model_provider and data.model_provider != conv.model_provider:
         conv.model_provider = data.model_provider
 
-    user_msg = Message(conversation_id=conv_id, role="user", content=data.content)
+    attachments = data.attachments or []
+
+    user_msg = Message(
+        conversation_id=conv_id, role="user", content=data.content,
+        attachments=attachments,
+    )
     db.add(user_msg)
     conv.updated_at = datetime.utcnow()
     await db.commit()
@@ -171,6 +176,7 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
     return _stream_pipeline_response(
         db=db, conv=conv, conv_id=conv_id,
         message=message_text, modes=modes, memory_summary=memory,
+        attachments=attachments,
     )
 
 
@@ -399,6 +405,7 @@ def _stream_pipeline_response(
     message: str,
     modes: set[str],
     memory_summary: str | None = None,
+    attachments: list[dict] | None = None,
 ) -> StreamingResponse:
     """通过统一管道处理消息（支持工具调用 + 网络搜索 + RAG）"""
     provider = _resolve_provider(conv.model_provider)
@@ -438,6 +445,7 @@ def _stream_pipeline_response(
                 knowledge_base_ids=kb_ids,
                 history=history,
                 memory_summary=memory_summary,
+                attachments=attachments or [],
             )
 
             async for event in pipeline_run_stream(request, db):

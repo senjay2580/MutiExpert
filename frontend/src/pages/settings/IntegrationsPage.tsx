@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Icon } from '@iconify/react';
 import api from '@/services/api';
 import { PageHeader } from '@/components/composed/page-header';
@@ -61,6 +61,7 @@ export default function IntegrationsPage() {
 }
 
 function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
+  const queryClient = useQueryClient();
   const [appId, setAppId] = useState(initialConfig.app_id || '');
   const [appSecret, setAppSecret] = useState(initialConfig.app_secret_encrypted || '');
   const [webhookUrl, setWebhookUrl] = useState(initialConfig.webhook_url || '');
@@ -70,6 +71,7 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
   const [botEnabled, setBotEnabled] = useState(initialConfig.bot_enabled ?? false);
   const [defaultProvider, setDefaultProvider] = useState(initialConfig.default_provider || 'claude');
   const [saved, setSaved] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -84,6 +86,7 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
         default_provider: defaultProvider,
       }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feishu-config'] });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
@@ -107,7 +110,7 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
   return (
     <Card className="gap-4 py-5">
       <CardContent className="space-y-4">
-        {/* Header row */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
@@ -115,128 +118,80 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
             </div>
             <div>
               <div className="text-sm font-semibold text-foreground">飞书</div>
-              <div className="text-xs text-muted-foreground">
-                将知识洞察推送到飞书群
-              </div>
+              <div className="text-xs text-muted-foreground">在飞书中直接与 AI 对话</div>
             </div>
           </div>
           {connected ? (
-            <Badge className="bg-green-500/10 text-green-600 border-transparent">
-              已连接
-            </Badge>
+            <Badge className="bg-green-500/10 text-green-600 border-transparent">已连接</Badge>
           ) : (
             <Badge variant="outline">未连接</Badge>
           )}
         </div>
 
-        {/* Form fields */}
+        {/* Core fields */}
         <div className="space-y-3">
-          <Field
-            label="App ID"
-            value={appId}
-            onChange={setAppId}
-            placeholder="输入 App ID..."
-          />
-          <Field
-            label="App Secret"
-            value={appSecret}
-            onChange={setAppSecret}
-            placeholder="输入 App Secret..."
-            type="password"
-          />
-          <Field
-            label="Verification Token（可选）"
-            value={verificationToken}
-            onChange={setVerificationToken}
-            placeholder="用于校验飞书事件回调"
-          />
-          <Field
-            label="Encrypt Key（可选）"
-            value={encryptKey}
-            onChange={setEncryptKey}
-            placeholder="事件加密密钥（如启用加密）"
-            type="password"
-          />
-          <Field
-            label="Webhook URL"
-            value={webhookUrl}
-            onChange={setWebhookUrl}
-            placeholder="输入 Webhook URL..."
-          />
-          <Field
-            label="默认 Chat ID（可选）"
-            value={defaultChatId}
-            onChange={setDefaultChatId}
-            placeholder="用于消息推送的会话 ID"
-          />
-          <p className="text-[11px] text-muted-foreground">
-            你也可以在飞书对话中发送“绑定”，系统会自动记录该会话为默认推送目标。
-          </p>
+          <Field label="App ID" value={appId} onChange={setAppId} placeholder="输入飞书应用 App ID" />
+          <Field label="App Secret" value={appSecret} onChange={setAppSecret} placeholder="输入飞书应用 App Secret" type="password" />
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
             <div>
               <div className="text-xs font-medium text-foreground">启用飞书机器人</div>
-              <div className="text-[11px] text-muted-foreground">开启后可接收飞书消息并回复</div>
+              <div className="text-[11px] text-muted-foreground">开启后可在飞书中与 AI 对话</div>
             </div>
             <Switch checked={botEnabled} onCheckedChange={setBotEnabled} />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">机器人默认模型</label>
-            <Select value={defaultProvider} onValueChange={setDefaultProvider}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="选择模型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="claude">Claude</SelectItem>
-                <SelectItem value="deepseek">DeepSeek</SelectItem>
-                <SelectItem value="qwen">通义千问</SelectItem>
-                <SelectItem value="openai">OpenAI</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[11px] text-muted-foreground">飞书机器人意图识别使用的 AI 模型，也可在飞书对话中发送"切换到 deepseek"动态切换</p>
-          </div>
         </div>
+
+        {/* Advanced toggle */}
+        <button
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Icon icon={showAdvanced ? 'lucide:chevron-down' : 'lucide:chevron-right'} className="size-3.5" />
+          高级配置
+        </button>
+
+        {/* Advanced fields */}
+        {showAdvanced && (
+          <div className="space-y-3 border-t pt-3">
+            <Field label="Webhook URL" value={webhookUrl} onChange={setWebhookUrl} placeholder="群机器人 Webhook 地址（用于主动推送）" />
+            <Field label="Verification Token" value={verificationToken} onChange={setVerificationToken} placeholder="事件回调校验 Token" />
+            <Field label="Encrypt Key" value={encryptKey} onChange={setEncryptKey} placeholder="事件加密密钥" type="password" />
+            <Field label="默认 Chat ID" value={defaultChatId} onChange={setDefaultChatId} placeholder="消息推送的目标会话 ID" />
+            <p className="text-[11px] text-muted-foreground">也可在飞书对话中发送&quot;绑定&quot;自动记录会话 ID</p>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">机器人默认模型</label>
+              <Select value={defaultProvider} onValueChange={setDefaultProvider}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="选择模型" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="claude">Claude</SelectItem>
+                  <SelectItem value="deepseek">DeepSeek</SelectItem>
+                  <SelectItem value="qwen">通义千问</SelectItem>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">也可在飞书对话中发送"切换到 deepseek"动态切换</p>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-2">
-          <SaveButton
-            onClick={() => saveMutation.mutate()}
-            loading={saveMutation.isPending}
-          >
+          <SaveButton onClick={() => saveMutation.mutate()} loading={saveMutation.isPending}>
             {saved ? '已保存' : '保存配置'}
           </SaveButton>
-          <SolidButton
-            color="secondary"
-            icon="streamline-color:test-tube"
-            onClick={() => testMutation.mutate()}
-            loading={testMutation.isPending}
-            loadingText="测试中..."
-          >
+          <SolidButton color="secondary" icon="streamline-color:test-tube" onClick={() => testMutation.mutate()} loading={testMutation.isPending} loadingText="测试中...">
             测试连接
           </SolidButton>
-          <SolidButton
-            color="secondary"
-            icon="streamline-color:chat-bubble-text-square"
-            onClick={() => testMessageMutation.mutate()}
-            loading={testMessageMutation.isPending}
-            loadingText="发送中..."
-          >
+          <SolidButton color="secondary" icon="streamline-color:chat-bubble-text-square" onClick={() => testMessageMutation.mutate()} loading={testMessageMutation.isPending} loadingText="发送中...">
             测试消息
           </SolidButton>
         </div>
 
-        {/* Status messages */}
-        {testMutation.isSuccess && (
-          <p className="text-xs text-green-600">连接成功</p>
-        )}
-        {testMutation.isError && (
-          <p className="text-xs text-destructive">连接失败，请检查配置</p>
-        )}
-        {testMessageMutation.isSuccess && (
-          <p className="text-xs text-emerald-600">测试消息已发送</p>
-        )}
-        {testMessageMutation.isError && (
-          <p className="text-xs text-destructive">测试消息发送失败</p>
-        )}
+        {/* Status */}
+        {testMutation.isSuccess && <p className="text-xs text-green-600">连接成功</p>}
+        {testMutation.isError && <p className="text-xs text-destructive">连接失败，请检查配置</p>}
+        {testMessageMutation.isSuccess && <p className="text-xs text-emerald-600">测试消息已发送</p>}
+        {testMessageMutation.isError && <p className="text-xs text-destructive">测试消息发送失败</p>}
       </CardContent>
     </Card>
   );
@@ -255,22 +210,38 @@ function Field({
   placeholder: string;
   type?: string;
 }) {
+  const [visible, setVisible] = useState(false);
+  const isPassword = type === 'password';
+
   return (
     <div className="space-y-1">
       <label className="text-xs font-medium text-muted-foreground">
         {label}
       </label>
-      <Input
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      <div className="relative">
+        <Input
+          type={isPassword && !visible ? 'password' : 'text'}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={isPassword ? 'pr-9' : ''}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setVisible((v) => !v)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Icon icon={visible ? 'lucide:eye-off' : 'lucide:eye'} className="size-4" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 function TavilyCard() {
+  const queryClient = useQueryClient();
   const [apiKey, setApiKey] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -282,6 +253,7 @@ function TavilyCard() {
   const saveMutation = useMutation({
     mutationFn: () => api.put('/config/tavily', { api_key: apiKey }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tavily-config'] });
       setSaved(true);
       setApiKey('');
       setTimeout(() => setSaved(false), 2000);

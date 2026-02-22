@@ -58,6 +58,7 @@ export interface Message {
   content: string;
   thinking_content: string | null;
   sources: SourceReference[];
+  attachments?: FileAttachment[];
   tool_calls?: Array<{ name: string; args: Record<string, unknown>; result: string; success: boolean }>;
   model_used: string | null;
   tokens_used: number | null;
@@ -74,6 +75,14 @@ export interface SourceReference {
   document_title: string;
   snippet: string;
   score: number;
+}
+
+export interface FileAttachment {
+  filename: string;
+  path: string;
+  size: number;
+  mime_type: string;
+  url: string;
 }
 
 export interface GraphData {

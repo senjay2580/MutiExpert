@@ -1,10 +1,16 @@
 """Sandbox API — Shell / File / Web / Python / Search 沙箱执行端点"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import mimetypes
+import os
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.services.sandbox_service import (
     execute_shell,
     read_file,
@@ -13,6 +19,7 @@ from app.services.sandbox_service import (
     delete_file,
     fetch_url,
     execute_python,
+    _safe_path,
 )
 from app.database import get_db
 
@@ -114,3 +121,84 @@ async def api_web_search(req: SearchRequest, db: AsyncSession = Depends(get_db))
 async def api_python(req: PythonRequest):
     result = await execute_python(req.code, req.timeout)
     return _to_response(result)
+
+
+@router.post("/files/upload", summary="上传文件到工作区")
+async def api_upload_file(
+    file: UploadFile = File(...),
+    path: str = Query("", description="工作区内子目录，默认根目录"),
+):
+    settings = get_settings()
+    # 读取文件内容并校验大小
+    content = await file.read()
+    if len(content) > settings.max_upload_size:
+        raise HTTPException(status_code=413, detail=f"文件超过 {settings.max_upload_size // 1048576}MB 限制")
+
+    filename = file.filename or "unnamed"
+    # 安全路径
+    try:
+        sub = os.path.join(path, filename) if path else filename
+        target = _safe_path(sub)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 写入
+    p = Path(target)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(content)
+
+    rel_path = sub.replace("\\", "/")
+    mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return {
+        "filename": filename,
+        "path": rel_path,
+        "size": len(content),
+        "mime_type": mime,
+        "url": f"/api/v1/sandbox/files/download?path={rel_path}",
+    }
+
+
+@router.get("/files/download", summary="下载工作区文件")
+async def api_download_file(
+    path: str = Query(..., description="工作区内文件路径"),
+    inline: bool = Query(False, description="是否内联预览"),
+):
+    try:
+        target = _safe_path(path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    p = Path(target)
+    if not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    disposition = "inline" if inline else "attachment"
+    return FileResponse(
+        path=str(p),
+        media_type=mime,
+        filename=p.name,
+        content_disposition_type=disposition,
+    )
+
+
+@router.post("/files/image-host", summary="上传图片到 sm.ms 图床")
+async def api_upload_to_image_host(file: UploadFile = File(...)):
+    """上传图片到 sm.ms 免费图床，返回公开 URL。"""
+    content = await file.read()
+    filename = file.filename or "image.png"
+    mime = file.content_type or mimetypes.guess_type(filename)[0] or "image/png"
+
+    from app.services.image_hosting_service import upload_to_smms
+    result = await upload_to_smms(content, filename, mime)
+
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.error)
+
+    return {
+        "url": result.url,
+        "delete_url": result.delete_url,
+        "filename": result.filename,
+        "size": result.size,
+        "mime_type": result.mime_type,
+    }

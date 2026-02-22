@@ -33,6 +33,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     thinking_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     sources = mapped_column(JSONB, default=list)
+    attachments = mapped_column(JSONB, default=list)  # [{filename, path, size, mime_type, url}]
     tool_calls = mapped_column(JSONB, default=list)  # [{name, args, result, success}]
     model_used: Mapped[str | None] = mapped_column(String(50))
     tokens_used: Mapped[int | None] = mapped_column(Integer)
