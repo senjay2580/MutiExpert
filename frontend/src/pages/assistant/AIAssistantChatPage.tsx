@@ -320,6 +320,13 @@ export default function AIAssistantChatPage() {
             relevance_score: s.score,
             document_id: s.document_id,
           })),
+          toolCalls: m.tool_calls?.map((tc) => ({
+            name: tc.name,
+            args: tc.args,
+            result: tc.result,
+            success: tc.success,
+            status: 'done' as const,
+          })),
           model_used: m.model_used,
           tokens_used: m.tokens_used ?? null,
           prompt_tokens: m.prompt_tokens ?? null,
@@ -515,7 +522,7 @@ export default function AIAssistantChatPage() {
     });
     setIsSending(true);
     const cb = registryCallbacks(assistantId, activeConvId, lastUserMsg);
-    const abort = streamRegenerate(activeConvId, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError);
+    const abort = streamRegenerate(activeConvId, normalizedCurrent, cb);
     abortRef.current = abort;
     const entry = streamRegistry.getStream(activeConvId);
     if (entry) entry.abort = abort;
@@ -635,7 +642,7 @@ export default function AIAssistantChatPage() {
       try {
         const editedUserMsg: ChatMessage = { id: editingMessageId, role: 'user', content: text };
         const cb = registryCallbacks(aId, activeConvId, editedUserMsg);
-        const abort = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError);
+        const abort = streamEditMessage(activeConvId, editingMessageId, text, normalizedCurrent, cb);
         abortRef.current = abort;
         const entry = streamRegistry.getStream(activeConvId);
         if (entry) entry.abort = abort;
@@ -668,7 +675,7 @@ export default function AIAssistantChatPage() {
       } else { currentConvIdRef.current = convId; }
       const cb = registryCallbacks(assistantMsg.id, convId, userMsg);
       const effectiveModes = [...new Set([...modes, 'tools'])];
-      const abort = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError, effectiveModes);
+      const abort = streamMessage(convId, text, normalizedCurrent, cb, effectiveModes);
       abortRef.current = abort;
       const entry = streamRegistry.getStream(convId);
       if (entry) entry.abort = abort;

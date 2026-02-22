@@ -252,25 +252,27 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
       const aId = assistantMsg.id;
       abortRef.current = streamMessage(
         convId, text, normalizedModel,
-        (chunk) => setMessages((p) => p.map((m) => m.id === aId ? { ...m, content: m.content + chunk } : m)),
-        () => {},
-        (sources) => {
-          const mapped: MessageSource[] = sources.map((s) => ({
-            document_name: s.document_title, content_preview: s.snippet,
-            relevance_score: s.score, document_id: s.document_id ?? '',
-          }));
-          setMessages((p) => p.map((m) => m.id === aId ? { ...m, sources: mapped } : m));
-        },
-        (messageId, _meta) => {
-          setMessages((p) => p.map((m) => m.id === aId ? { ...m, id: messageId, isStreaming: false } : m));
-          setIsSending(false);
-          abortRef.current = null;
-          textareaRef.current?.focus();
-        },
-        (error) => {
-          setMessages((p) => p.map((m) => m.id === aId ? { ...m, content: `Error: ${error}`, isStreaming: false } : m));
-          setIsSending(false);
-          abortRef.current = null;
+        {
+          onChunk: (chunk: string) => setMessages((p) => p.map((m) => m.id === aId ? { ...m, content: m.content + chunk } : m)),
+          onThinking: () => {},
+          onSources: (sources) => {
+            const mapped: MessageSource[] = sources.map((s) => ({
+              document_name: s.document_title, content_preview: s.snippet,
+              relevance_score: s.score, document_id: s.document_id ?? '',
+            }));
+            setMessages((p) => p.map((m) => m.id === aId ? { ...m, sources: mapped } : m));
+          },
+          onDone: (messageId: string) => {
+            setMessages((p) => p.map((m) => m.id === aId ? { ...m, id: messageId, isStreaming: false } : m));
+            setIsSending(false);
+            abortRef.current = null;
+            textareaRef.current?.focus();
+          },
+          onError: (error: string) => {
+            setMessages((p) => p.map((m) => m.id === aId ? { ...m, content: `Error: ${error}`, isStreaming: false } : m));
+            setIsSending(false);
+            abortRef.current = null;
+          },
         },
         [...new Set([...modes, 'tools'])],
       );
