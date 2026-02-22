@@ -26,13 +26,13 @@ async def search_similar_chunks(
             dc.chunk_index,
             dc.content,
             d.title as document_title,
-            1 - (dc.embedding <=> :embedding::vector) as similarity
+            1 - (dc.embedding <=> cast(:embedding as vector)) as similarity
         FROM document_chunks dc
         JOIN documents d ON d.id = dc.document_id
         WHERE dc.knowledge_base_id IN ({kb_ids_str})
             AND dc.embedding IS NOT NULL
-            AND 1 - (dc.embedding <=> :embedding::vector) > :threshold
-        ORDER BY dc.embedding <=> :embedding::vector
+            AND 1 - (dc.embedding <=> cast(:embedding as vector)) > :threshold
+        ORDER BY dc.embedding <=> cast(:embedding as vector)
         LIMIT :top_k
     """)
 
