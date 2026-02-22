@@ -18,7 +18,6 @@ router = APIRouter()
 class SkillCreate(BaseModel):
     name: str
     description: str | None = None
-    skill_type: str = "prompt"
     content: str | None = None
     icon: str | None = None
     sort_order: int = 0
@@ -28,7 +27,6 @@ class SkillCreate(BaseModel):
 class SkillUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    skill_type: str | None = None
     content: str | None = None
     icon: str | None = None
     sort_order: int | None = None
@@ -94,7 +92,6 @@ async def create_skill(data: SkillCreate, db: AsyncSession = Depends(get_db)):
     skill = Skill(
         name=data.name,
         description=data.description,
-        skill_type=data.skill_type,
         content=data.content,
         icon=data.icon,
         sort_order=data.sort_order,
@@ -128,7 +125,7 @@ async def get_skill(skill_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 @router.put("/{skill_id}")
 async def update_skill(skill_id: uuid.UUID, data: SkillUpdate, db: AsyncSession = Depends(get_db)):
     skill = await _get_skill_or_404(skill_id, db)
-    for field in ("name", "description", "skill_type", "content", "icon", "sort_order", "config", "enabled"):
+    for field in ("name", "description", "content", "icon", "sort_order", "config", "enabled"):
         val = getattr(data, field, None)
         if val is not None:
             setattr(skill, field, val)
@@ -171,6 +168,26 @@ async def bulk_enable_skills(data: BulkEnableRequest, db: AsyncSession = Depends
             count += 1
     await db.commit()
     return {"updated": count}
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[uuid.UUID] = []
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_skills(data: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
+    """批量删除技能"""
+    if not data.ids:
+        return {"deleted": 0}
+    result = await db.execute(
+        select(Skill).where(Skill.id.in_(data.ids))
+    )
+    count = 0
+    for skill in result.scalars().all():
+        await db.delete(skill)
+        count += 1
+    await db.commit()
+    return {"deleted": count}
 
 
 # ── Reference CRUD ───────────────────────────────────────────
@@ -285,7 +302,6 @@ def _skill_to_dict(s: Skill) -> dict:
         "id": str(s.id),
         "name": s.name,
         "description": s.description,
-        "skill_type": s.skill_type,
         "content": s.content,
         "icon": s.icon,
         "sort_order": s.sort_order,

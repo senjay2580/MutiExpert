@@ -79,7 +79,8 @@ async def get_usage_trend(
     db: AsyncSession = Depends(get_db),
 ):
     """月度使用趋势：本地 AI 次数 vs 飞书交互次数"""
-    month_col = func.to_char(func.date_trunc("month", Conversation.created_at), "YYYY-MM")
+    trunc_col = func.date_trunc("month", Conversation.created_at)
+    month_col = func.to_char(trunc_col, "YYYY-MM")
     result = await db.execute(
         select(
             month_col.label("month"),
@@ -91,8 +92,8 @@ async def get_usage_trend(
                 "month", func.now() - text(f"interval '{months} months'"),
             )
         )
-        .group_by(func.date_trunc("month", Conversation.created_at))
-        .order_by(func.date_trunc("month", Conversation.created_at))
+        .group_by(trunc_col)
+        .order_by(trunc_col)
     )
     return [{"month": r.month, "local_ai": r.local_ai, "feishu": r.feishu} for r in result.fetchall()]
 
@@ -103,7 +104,8 @@ async def get_ai_model_trend(
     db: AsyncSession = Depends(get_db),
 ):
     """月度 AI 模型调用趋势：按模型分组"""
-    month_col = func.to_char(func.date_trunc("month", Message.created_at), "YYYY-MM")
+    trunc_col = func.date_trunc("month", Message.created_at)
+    month_col = func.to_char(trunc_col, "YYYY-MM")
     result = await db.execute(
         select(
             month_col.label("month"),
@@ -118,8 +120,8 @@ async def get_ai_model_trend(
                 "month", func.now() - text(f"interval '{months} months'"),
             ),
         )
-        .group_by(func.date_trunc("month", Message.created_at))
-        .order_by(func.date_trunc("month", Message.created_at))
+        .group_by(trunc_col)
+        .order_by(trunc_col)
     )
     return [{"month": r.month, "claude": r.claude, "openai": r.openai} for r in result.fetchall()]
 

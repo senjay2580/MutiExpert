@@ -76,9 +76,9 @@ function DialogContent({
       >
         {showWindowDots && (
           <div className="absolute top-3.5 left-4 flex items-center gap-1.5">
+            <span className="size-3 rounded-full bg-blue-300" />
             <span className="size-3 rounded-full bg-blue-500" />
-            <span className="size-3 rounded-full bg-purple-500" />
-            <span className="size-3 rounded-full bg-pink-500" />
+            <span className="size-3 rounded-full bg-blue-700" />
           </div>
         )}
         {children}

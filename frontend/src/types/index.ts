@@ -167,7 +167,6 @@ export interface Skill {
   id: string;
   name: string;
   description: string | null;
-  skill_type: 'prompt' | 'script' | 'hybrid';
   content: string | null;
   icon: string | null;
   sort_order: number;

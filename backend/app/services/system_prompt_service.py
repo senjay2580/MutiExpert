@@ -1,7 +1,7 @@
 """统一系统提示词服务 — 为所有 AI 模型提供一致的平台上下文"""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extras import (
@@ -133,17 +133,23 @@ async def _load_capabilities(
 
 async def _knowledge_summary(db: AsyncSession) -> str:
     """知识库概览。"""
+    total = await db.scalar(select(func.count()).select_from(KnowledgeBase))
+    if not total:
+        return ""
+    limit = 20
     result = await db.execute(
         select(KnowledgeBase.name, Industry.name.label("industry"))
         .outerjoin(Industry, KnowledgeBase.industry_id == Industry.id)
-        .order_by(KnowledgeBase.created_at.desc())
-        .limit(20)
+        .order_by(Industry.name, KnowledgeBase.name)
+        .limit(limit)
     )
     rows = result.all()
-    if not rows:
-        return ""
     lines = [f"- {r.name}（{r.industry or '未分类'}）" for r in rows]
-    return "### 知识库\n可检索以下知识库回答问题：\n" + "\n".join(lines)
+    header = f"### 知识库（共 {total} 个"
+    if total > limit:
+        header += f"，显示前 {limit} 个"
+    header += "）\n可检索以下知识库回答问题："
+    return header + "\n" + "\n".join(lines)
 
 
 async def _tools_summary(db: AsyncSession) -> str:
@@ -162,35 +168,51 @@ async def _tools_summary(db: AsyncSession) -> str:
         props = list((params.get("properties") or {}).keys())
         param_hint = f"（参数: {', '.join(props)}）" if props else ""
         lines.append(f"- `{r.name}`: {r.description}{param_hint}")
-    return "### 可调用工具\n" + "\n".join(lines)
+    return f"### 可调用工具（共 {len(rows)} 个）\n" + "\n".join(lines)
 
 
 async def _scripts_summary(db: AsyncSession) -> str:
     """已启用的用户脚本。"""
+    total = await db.scalar(
+        select(func.count()).select_from(UserScript).where(UserScript.enabled.is_(True))
+    )
+    if not total:
+        return ""
+    limit = 20
     result = await db.execute(
-        select(UserScript.name, UserScript.id)
+        select(UserScript.name, UserScript.description, UserScript.script_type)
         .where(UserScript.enabled.is_(True))
         .order_by(UserScript.name)
-        .limit(20)
+        .limit(limit)
     )
     rows = result.all()
-    if not rows:
-        return ""
-    lines = [f"- {r.name}" for r in rows]
-    return "### 用户脚本\n可通过定时任务执行的 TypeScript 脚本：\n" + "\n".join(lines)
+    lines = []
+    for r in rows:
+        lang = "Python" if r.script_type == "python" else "TypeScript"
+        desc = f": {r.description}" if r.description else ""
+        lines.append(f"- {r.name}（{lang}）{desc}")
+    header = f"### 用户脚本（共 {total} 个"
+    if total > limit:
+        header += f"，显示前 {limit} 个"
+    header += "）\n可通过定时任务或 AI 调度执行的脚本："
+    return header + "\n" + "\n".join(lines)
 
 
 async def _tasks_summary(db: AsyncSession) -> str:
     """活跃的定时任务。"""
+    total = await db.scalar(
+        select(func.count()).select_from(ScheduledTask).where(ScheduledTask.enabled.is_(True))
+    )
+    if not total:
+        return ""
+    limit = 20
     result = await db.execute(
         select(ScheduledTask.name, ScheduledTask.cron_expression, ScheduledTask.task_type)
         .where(ScheduledTask.enabled.is_(True))
         .order_by(ScheduledTask.name)
-        .limit(20)
+        .limit(limit)
     )
     rows = result.all()
-    if not rows:
-        return ""
     type_label = {
         "ai_query": "AI问答",
         "feishu_push": "飞书推送",
@@ -201,7 +223,11 @@ async def _tasks_summary(db: AsyncSession) -> str:
         f"- {r.name}（{type_label.get(r.task_type, r.task_type)}，cron: `{r.cron_expression}`）"
         for r in rows
     ]
-    return "### 定时任务\n当前活跃的定时任务：\n" + "\n".join(lines)
+    header = f"### 定时任务（共 {total} 个"
+    if total > limit:
+        header += f"，显示前 {limit} 个"
+    header += "）\n当前活跃的定时任务："
+    return header + "\n" + "\n".join(lines)
 
 
 async def _skills_summary(db: AsyncSession) -> str:
@@ -215,4 +241,4 @@ async def _skills_summary(db: AsyncSession) -> str:
     if not rows:
         return ""
     lines = [f"- `{r.name}`: {r.description}" for r in rows]
-    return "### 技能（Skills）\n可通过 /技能名 直接触发，或由 AI 自动选择：\n" + "\n".join(lines)
+    return f"### 技能（共 {len(rows)} 个）\n可通过 /技能名 直接触发，或由 AI 自动选择：\n" + "\n".join(lines)

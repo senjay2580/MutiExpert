@@ -51,7 +51,6 @@ class Skill(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    skill_type: Mapped[str] = mapped_column(String(20), nullable=False, default="prompt")  # prompt | script | hybrid
     content: Mapped[str | None] = mapped_column(Text)  # HTML from TiptapEditor
     icon: Mapped[str | None] = mapped_column(String(50))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)

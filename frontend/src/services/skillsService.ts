@@ -4,7 +4,7 @@ import type { Skill, SkillDetail, SkillReference, SkillScriptLink } from '../typ
 export const skillsService = {
   list: () => api.get<Skill[]>('/skills').then((r) => r.data),
   get: (id: string) => api.get<SkillDetail>(`/skills/${id}`).then((r) => r.data),
-  create: (data: { name: string; description?: string; skill_type?: string; content?: string; icon?: string }) =>
+  create: (data: { name: string; description?: string; content?: string; icon?: string }) =>
     api.post<Skill>('/skills', data).then((r) => r.data),
   update: (id: string, data: Partial<Skill>) =>
     api.put<Skill>(`/skills/${id}`, data).then((r) => r.data),
@@ -13,6 +13,8 @@ export const skillsService = {
     api.post<{ enabled: boolean }>(`/skills/${id}/toggle`).then((r) => r.data),
   bulkEnable: (ids: string[], enabled: boolean) =>
     api.post<{ updated: number }>('/skills/bulk-enable', { ids, enabled }).then((r) => r.data),
+  bulkDelete: (ids: string[]) =>
+    api.post<{ deleted: number }>('/skills/bulk-delete', { ids }).then((r) => r.data),
 
   // References
   listRefs: (skillId: string) =>

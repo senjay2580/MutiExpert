@@ -90,7 +90,6 @@ async def _collect_tools(db: AsyncSession) -> tuple[list[dict], dict[str, dict]]
         tool_index[tool_name] = {
             "source": "skill",
             "skill_id": str(skill.id),
-            "skill_type": skill.skill_type,
         }
 
     return openai_tools, tool_index
@@ -132,7 +131,6 @@ async def _execute_skill(
     from app.services.script_executor import execute_script
 
     skill_id = tool_def["skill_id"]
-    skill_type = tool_def.get("skill_type", "prompt")
     query = arguments.get("query", "")
 
     # 加载 skill
@@ -151,59 +149,38 @@ async def _execute_skill(
         if ref.content:
             ref_context += f"\n\n### 引用: {ref.name}\n{ref.content}"
 
-    if skill_type == "script" or skill_type == "hybrid":
-        # 加载关联脚本并执行
-        links_result = await db.execute(
-            select(SkillScript).where(SkillScript.skill_id == skill_id).order_by(SkillScript.sort_order)
-        )
-        script_outputs: list[str] = []
-        for link in links_result.scalars().all():
-            if not link.script_id:
-                continue
-            script_result = await db.execute(select(UserScript).where(UserScript.id == link.script_id))
-            user_script = script_result.scalar_one_or_none()
-            if user_script and user_script.script_content:
-                exec_result = await execute_script(
-                    user_script.script_content,
-                    timeout_seconds=30,
-                    script_type=user_script.script_type or "typescript",
-                )
-                if exec_result.success:
-                    script_outputs.append(exec_result.output)
-                else:
-                    script_outputs.append(f"脚本执行失败: {exec_result.error}")
+    # 加载关联脚本并执行（如果有）
+    links_result = await db.execute(
+        select(SkillScript).where(SkillScript.skill_id == skill_id).order_by(SkillScript.sort_order)
+    )
+    script_outputs: list[str] = []
+    for link in links_result.scalars().all():
+        if not link.script_id:
+            continue
+        script_result = await db.execute(select(UserScript).where(UserScript.id == link.script_id))
+        user_script = script_result.scalar_one_or_none()
+        if user_script and user_script.script_content:
+            exec_result = await execute_script(
+                user_script.script_content,
+                timeout_seconds=30,
+                script_type=user_script.script_type or "typescript",
+            )
+            if exec_result.success:
+                script_outputs.append(exec_result.output)
+            else:
+                script_outputs.append(f"脚本执行失败: {exec_result.error}")
 
-        if skill_type == "script":
-            return "\n".join(script_outputs) if script_outputs else "无脚本输出", bool(script_outputs)
+    # 构建 prompt：content + 引用 + 脚本输出（如有）
+    parts = []
+    if skill.content:
+        parts.append(f"技能内容:\n{skill.content}")
+    if ref_context:
+        parts.append(ref_context)
+    if script_outputs:
+        parts.append(f"脚本执行结果:\n{chr(10).join(script_outputs)}")
+    parts.append(f"用户问题: {query}")
 
-        # hybrid: 脚本输出 + AI 生成
-        script_data = "\n".join(script_outputs)
-        prompt = f"""基于以下技能内容和数据回答用户问题。
-
-技能内容:
-{skill.content or ''}
-{ref_context}
-
-脚本执行结果:
-{script_data}
-
-用户问题: {query}"""
-        full_response = ""
-        async for chunk in stream_chat(
-            [{"role": "user", "content": prompt}],
-            provider="claude", db=db,
-        ):
-            full_response += chunk
-        return full_response or "无法生成回答", bool(full_response)
-
-    # prompt 类型: 将 skill 内容 + 引用作为上下文注入 AI
-    prompt = f"""基于以下技能知识回答用户问题。
-
-技能内容:
-{skill.content or ''}
-{ref_context}
-
-用户问题: {query}"""
+    prompt = "\n\n".join(parts)
     full_response = ""
     async for chunk in stream_chat(
         [{"role": "user", "content": prompt}],
