@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extras import (
     BotTool,
     ScheduledTask,
+    Skill,
     UserScript,
 )
 from app.models.knowledge import KnowledgeBase, Industry
@@ -31,7 +32,14 @@ GUIDELINES = """\
 - 知识库无相关内容时，明确说明并基于自身知识补充
 - 发现跨行业关联时主动指出
 - 回答要结构化、清晰、有条理
-- 涉及修改操作（创建、删除、更新）时，先确认用户意图"""
+- 涉及修改操作（创建、删除、更新）时，先确认用户意图再调用工具
+- 需要操作平台数据时，使用可调用工具（Bot Tools）
+- 需要执行命令、读写文件、运行代码时，使用沙箱工具（sandbox_shell / sandbox_python / sandbox_read_file / sandbox_write_file）
+- 沙箱工作区路径为 /app/workspace，所有文件操作限制在此目录内
+- 需要获取网页内容时使用 sandbox_fetch_url
+- 复杂任务可组合多个沙箱工具：先 fetch_url 获取数据 → write_file 保存 → python 处理 → read_file 返回结果
+- 用户消息以 /技能名 开头时，直接触发对应技能处理
+- 根据用户意图自动选择合适的技能或工具，将复杂问题拆解为多步骤执行"""
 
 
 async def build_system_prompt(
@@ -116,7 +124,7 @@ async def _load_capabilities(
             parts.append(text)
 
     if include_skills:
-        text = _skills_summary()
+        text = await _skills_summary(db)
         if text:
             parts.append(text)
 
@@ -139,16 +147,21 @@ async def _knowledge_summary(db: AsyncSession) -> str:
 
 
 async def _tools_summary(db: AsyncSession) -> str:
-    """已启用的 Bot Tools。"""
+    """已启用的 Bot Tools（含参数签名）。"""
     result = await db.execute(
-        select(BotTool.name, BotTool.description)
+        select(BotTool.name, BotTool.description, BotTool.parameters)
         .where(BotTool.enabled.is_(True))
         .order_by(BotTool.name)
     )
     rows = result.all()
     if not rows:
         return ""
-    lines = [f"- `{r.name}`: {r.description}" for r in rows]
+    lines = []
+    for r in rows:
+        params = r.parameters or {}
+        props = list((params.get("properties") or {}).keys())
+        param_hint = f"（参数: {', '.join(props)}）" if props else ""
+        lines.append(f"- `{r.name}`: {r.description}{param_hint}")
     return "### 可调用工具\n" + "\n".join(lines)
 
 
@@ -191,18 +204,15 @@ async def _tasks_summary(db: AsyncSession) -> str:
     return "### 定时任务\n当前活跃的定时任务：\n" + "\n".join(lines)
 
 
-def _skills_summary() -> str:
-    """从 registry.yaml 加载 Skills 信息。"""
-    from app.services.skill_executor import load_registry
-
-    try:
-        registry = load_registry()
-    except Exception:
+async def _skills_summary(db: AsyncSession) -> str:
+    """从数据库加载已启用的 Skills 信息。"""
+    result = await db.execute(
+        select(Skill.name, Skill.description)
+        .where(Skill.enabled.is_(True), Skill.description.isnot(None))
+        .order_by(Skill.sort_order, Skill.name)
+    )
+    rows = result.all()
+    if not rows:
         return ""
-    if not registry:
-        return ""
-    lines = [
-        f"- {s['name']}: {s.get('description', '')}"
-        for s in registry
-    ]
-    return "### 技能（Skills）\n可在回答中灵活运用：\n" + "\n".join(lines)
+    lines = [f"- `{r.name}`: {r.description}" for r in rows]
+    return "### 技能（Skills）\n可通过 /技能名 直接触发，或由 AI 自动选择：\n" + "\n".join(lines)

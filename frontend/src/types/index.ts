@@ -58,6 +58,7 @@ export interface Message {
   content: string;
   thinking_content: string | null;
   sources: SourceReference[];
+  tool_calls?: Array<{ name: string; args: Record<string, unknown>; result: string; success: boolean }>;
   model_used: string | null;
   tokens_used: number | null;
   prompt_tokens: number | null;

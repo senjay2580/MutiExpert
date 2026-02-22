@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Icon } from '@iconify/react';
 import { dashboardService } from '@/services/dashboardService';
@@ -15,43 +15,27 @@ export default function DataManagementPage() {
     queryFn: dashboardService.getOverview,
   });
 
+  const { data: embeddingInfo, isLoading: embeddingLoading } = useQuery({
+    queryKey: ['embedding-info'],
+    queryFn: dataManagementService.getEmbeddingInfo,
+  });
+
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const importRef = useRef<HTMLInputElement>(null);
-
-  const handleExport = async () => {
-    setActionLoading('export');
+  const handleTestEmbedding = async () => {
+    setActionLoading('test');
     setMessage(null);
     try {
-      const data = await dataManagementService.export();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `mutiexpert-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setMessage({ type: 'success', text: '数据导出成功' });
+      const result = await dataManagementService.testEmbedding();
+      if (result.ok) {
+        setMessage({ type: 'success', text: `向量模型连接正常，维度: ${result.dimension}` });
+      } else {
+        setMessage({ type: 'error', text: `连接失败: ${result.detail}` });
+      }
     } catch {
-      setMessage({ type: 'error', text: '导出失败，请重试' });
+      setMessage({ type: 'error', text: '向量模型连接失败' });
     } finally {
       setActionLoading(null);
-    }
-  };
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setActionLoading('import');
-    setMessage(null);
-    try {
-      const result = await dataManagementService.import(file);
-      setMessage({ type: 'success', text: `导入完成: ${JSON.stringify(result.imported)}` });
-    } catch {
-      setMessage({ type: 'error', text: '导入失败，请检查文件格式' });
-    } finally {
-      setActionLoading(null);
-      e.target.value = '';
     }
   };
 
@@ -69,15 +53,12 @@ export default function DataManagementPage() {
   };
 
   const actions = [
-    { key: 'export', icon: 'streamline-color:download-box-1', label: '导出数据', desc: '导出所有知识库数据为 JSON', iconClassName: 'text-blue-500', onClick: handleExport },
-    { key: 'import', icon: 'streamline-color:upload-box-1', label: '导入数据', desc: '从 JSON 文件导入知识库', iconClassName: 'text-green-500', onClick: () => importRef.current?.click() },
-    { key: 'rebuild', icon: 'streamline-color:arrow-reload-horizontal-1', label: '重建索引', desc: '重新生成向量索引', iconClassName: 'text-yellow-500', onClick: handleRebuild },
+    { key: 'test', icon: 'streamline-color:ai-generate-variation-spark', label: '测试向量模型', desc: '验证 Embedding API 连通性', onClick: handleTestEmbedding },
+    { key: 'rebuild', icon: 'streamline-color:arrow-reload-horizontal-1', label: '重建向量索引', desc: '重新生成 pgvector 索引', onClick: handleRebuild },
   ];
-
   return (
     <div className="space-y-4">
-      <PageHeader title="数据管理" description="管理知识库数据的导入导出和备份恢复" />
-      <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+      <PageHeader title="数据管理" description="向量模型与知识库数据维护" />
 
       {message && (
         <div className={cn(
@@ -88,6 +69,26 @@ export default function DataManagementPage() {
         </div>
       )}
 
+      {/* Embedding Model Info */}
+      <Card className="gap-4 py-5">
+        <CardContent>
+          <div className="mb-4 flex items-center gap-3">
+            <Icon icon="streamline-color:ai-generate-variation-spark" width={18} height={18} className="text-primary" />
+            <span className="text-sm font-semibold text-foreground">向量模型</span>
+          </div>
+          {embeddingLoading ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <CardSkeleton /><CardSkeleton /><CardSkeleton />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <StatCard label="模型" value={embeddingInfo?.model ?? '-'} icon="streamline-color:module-three" />
+              <StatCard label="API 地址" value={embeddingInfo?.api_base?.replace('https://', '').replace('/v1', '') ?? '-'} icon="streamline-color:programming-browser" />
+              <StatCard label="向量分片数" value={embeddingInfo?.total_chunks ?? 0} icon="streamline-color:database" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
       {/* Database Status */}
       <Card className="gap-4 py-5">
         <CardContent>
@@ -111,7 +112,7 @@ export default function DataManagementPage() {
       </Card>
 
       {/* Actions */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {actions.map((action) => (
           <Card
             key={action.key}
@@ -122,7 +123,7 @@ export default function DataManagementPage() {
               {actionLoading === action.key ? (
                 <Icon icon="lucide:loader-2" width={24} height={24} className="animate-spin text-muted-foreground" />
               ) : (
-                <Icon icon={action.icon} width={24} height={24} className={action.iconClassName} />
+                <Icon icon={action.icon} width={24} height={24} />
               )}
               <div>
                 <div className="text-sm font-medium text-foreground">{action.label}</div>

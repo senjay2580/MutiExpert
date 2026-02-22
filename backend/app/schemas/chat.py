@@ -38,6 +38,7 @@ class MessageResponse(BaseModel):
     content: str
     thinking_content: str | None = None
     sources: list[dict]
+    tool_calls: list[dict] = []
     model_used: str | None
     tokens_used: int | None
     prompt_tokens: int | None

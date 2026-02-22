@@ -272,6 +272,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
           setIsSending(false);
           abortRef.current = null;
         },
+        [...new Set([...modes, 'tools'])],
       );
     } catch {
       setMessages((p) => p.map((m) => m.id === assistantMsg.id ? { ...m, content: 'Error: Failed to start conversation', isStreaming: false } : m));
@@ -433,7 +434,6 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
                 {([
                   { key: 'knowledge' as ChatMode, icon: 'lucide:book-open', label: '知识库' },
                   { key: 'search' as ChatMode, icon: 'lucide:search', label: '搜索' },
-                  { key: 'tools' as ChatMode, icon: 'lucide:wrench', label: '工具' },
                 ] as const).map(({ key, icon, label }) => (
                   <Button
                     key={key}

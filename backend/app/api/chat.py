@@ -21,9 +21,7 @@ from app.schemas.chat import (
     ConversationMemoryResponse,
     ConversationMemoryUpdate,
 )
-from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
-from app.services.system_prompt_service import build_system_prompt
 from app.services.pipeline_service import PipelineRequest, run_stream as pipeline_run_stream
 
 logger = logging.getLogger(__name__)
@@ -154,34 +152,25 @@ async def send_message(conv_id: UUID, data: MessageCreate, db: AsyncSession = De
 
     # 决定增强模式
     modes = set(data.modes or conv.default_modes or ["knowledge"])
-    # tools / search 管道暂未实现，降级为纯知识库模式
-    modes.discard("tools")
-    modes.discard("search")
+    modes.add("tools")  # 工具默认开启
 
-    # 纯 knowledge / 纯模型 → 走现有流式路径（向后兼容）
-    try:
-        context, sources = await _build_context(db, conv, data.content)
-    except Exception as e:
-        logger.warning("RAG context build failed, continuing without context: %s", e)
-        context, sources = "", []
-    try:
-        system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
-    except Exception as e:
-        logger.warning("System prompt build failed, using fallback: %s", e)
-        system_prompt = "你是一个智能助手。"
-    if context:
-        system_prompt += "\n\n" + build_rag_context(context, data.content)
-    if conv.memory_enabled and conv.memory_summary:
-        system_prompt += f"\n\n会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
+    # /skill 命令检测：改写消息让 AI 通过 pipeline 自动调用对应 skill
+    message_text = data.content
+    if message_text.strip().startswith('/'):
+        from app.models.extras import Skill
+        skill_name = message_text.strip().split()[0][1:]
+        remaining = message_text.strip()[len(skill_name) + 1:].strip()
+        skill_result = await db.execute(
+            select(Skill).where(Skill.name == skill_name, Skill.enabled.is_(True))
+        )
+        skill = skill_result.scalar_one_or_none()
+        if skill:
+            message_text = f"请使用技能 skill_{skill_name.replace(' ', '_').lower()} 处理以下请求：{remaining or data.content}"
 
-    history_result = await db.execute(
-        select(Message).where(Message.conversation_id == conv_id).order_by(Message.created_at.desc()).limit(10)
-    )
-    history = list(reversed(history_result.scalars().all()))
-    messages = [{"role": m.role, "content": m.content} for m in history]
-    return _stream_assistant_response(
+    memory = conv.memory_summary if conv.memory_enabled else None
+    return _stream_pipeline_response(
         db=db, conv=conv, conv_id=conv_id,
-        messages=messages, system_prompt=system_prompt, sources=sources,
+        message=message_text, modes=modes, memory_summary=memory,
     )
 
 
@@ -229,27 +218,12 @@ async def regenerate_last_answer(conv_id: UUID, data: MessageCreate | None = Non
     )
     await db.commit()
 
-    context, sources = await _build_context(db, conv, last_user.content)
-    system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
-    if context:
-        system_prompt += "\n\n" + build_rag_context(context, last_user.content)
-    if conv.memory_enabled and conv.memory_summary:
-        system_prompt += f"\n\n会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
-
-    history_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conv_id)
-        .order_by(Message.created_at.desc())
-        .limit(10)
-    )
-    messages = [{"role": m.role, "content": m.content} for m in reversed(history_result.scalars().all())]
-    return _stream_assistant_response(
-        db=db,
-        conv=conv,
-        conv_id=conv_id,
-        messages=messages,
-        system_prompt=system_prompt,
-        sources=sources,
+    modes = set(conv.default_modes or ["knowledge"])
+    modes.add("tools")
+    memory = conv.memory_summary if conv.memory_enabled else None
+    return _stream_pipeline_response(
+        db=db, conv=conv, conv_id=conv_id,
+        message=last_user.content, modes=modes, memory_summary=memory,
     )
 
 
@@ -294,27 +268,12 @@ async def edit_last_user_message(
     conv.updated_at = datetime.utcnow()
     await db.commit()
 
-    context, sources = await _build_context(db, conv, message.content)
-    system_prompt = await build_system_prompt(db, provider=_resolve_provider(conv.model_provider))
-    if context:
-        system_prompt += "\n\n" + build_rag_context(context, message.content)
-    if conv.memory_enabled and conv.memory_summary:
-        system_prompt += f"\n\n会话记忆摘要（仅作背景，不需逐字重复）:\n{conv.memory_summary}"
-
-    history_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conv_id)
-        .order_by(Message.created_at.desc())
-        .limit(10)
-    )
-    messages = [{"role": m.role, "content": m.content} for m in reversed(history_result.scalars().all())]
-    return _stream_assistant_response(
-        db=db,
-        conv=conv,
-        conv_id=conv_id,
-        messages=messages,
-        system_prompt=system_prompt,
-        sources=sources,
+    modes = set(conv.default_modes or ["knowledge"])
+    modes.add("tools")
+    memory = conv.memory_summary if conv.memory_enabled else None
+    return _stream_pipeline_response(
+        db=db, conv=conv, conv_id=conv_id,
+        message=message.content, modes=modes, memory_summary=memory,
     )
 
 
@@ -420,18 +379,6 @@ async def _update_conversation_memory(conv_id: UUID) -> None:
             await session.commit()
 
 
-async def _build_context(db: AsyncSession, conv: Conversation, question: str) -> tuple[str, list[dict]]:
-    kb_ids = []
-    for kid in (conv.knowledge_base_ids or []):
-        try:
-            kb_ids.append(UUID(kid))
-        except Exception:
-            continue
-    if not kb_ids:
-        return "", []
-    return await retrieve_context(db, question, kb_ids)
-
-
 def _resolve_provider(provider: str | None) -> str:
     resolved = provider or "claude"
     if resolved == "codex":
@@ -445,76 +392,13 @@ def _estimate_tokens(text: str) -> int:
     return max(1, math.ceil(len(text) / 4))
 
 
-def _stream_assistant_response(
-    db: AsyncSession,
-    conv: Conversation,
-    conv_id: UUID,
-    messages: list[dict],
-    system_prompt: str,
-    sources: list[dict],
-) -> StreamingResponse:
-    provider = _resolve_provider(conv.model_provider)
-    prompt_tokens = _estimate_tokens(system_prompt) + sum(_estimate_tokens(m.get("content", "")) for m in messages)
-
-    async def event_stream():
-        full_content = ""
-        full_thinking = ""
-        started = time.monotonic()
-        try:
-            async for chunk in stream_chat(messages, provider, system_prompt, db=db):
-                if chunk.type == "thinking":
-                    full_thinking += chunk.content
-                    yield f"event: thinking\ndata: {json.dumps({'content': chunk.content})}\n\n"
-                else:
-                    full_content += chunk.content
-                    yield f"event: chunk\ndata: {json.dumps({'content': chunk.content, 'type': 'text'})}\n\n"
-            if sources:
-                source_data = [
-                    {"chunk_id": s["chunk_id"], "document_title": s["document_title"],
-                     "snippet": s["content"][:200], "score": s["score"]}
-                    for s in sources
-                ]
-                yield f"event: sources\ndata: {json.dumps({'sources': source_data})}\n\n"
-            latency_ms = int((time.monotonic() - started) * 1000)
-            completion_tokens = _estimate_tokens(full_content)
-            assistant_msg = Message(
-                conversation_id=conv_id,
-                role="assistant",
-                content=full_content,
-                thinking_content=full_thinking or None,
-                sources=sources,
-                model_used=provider,
-                latency_ms=latency_ms,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                tokens_used=prompt_tokens + completion_tokens if prompt_tokens or completion_tokens else None,
-            )
-            db.add(assistant_msg)
-            conv.updated_at = datetime.utcnow()
-            await db.commit()
-            payload = {
-                "message_id": str(assistant_msg.id),
-                "latency_ms": latency_ms,
-                "tokens_used": assistant_msg.tokens_used,
-                "prompt_tokens": assistant_msg.prompt_tokens,
-                "completion_tokens": assistant_msg.completion_tokens,
-                "cost_usd": assistant_msg.cost_usd,
-            }
-            yield f"event: done\ndata: {json.dumps(payload)}\n\n"
-            if conv.memory_enabled:
-                asyncio.create_task(_update_conversation_memory(conv_id))
-        except Exception as e:
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-
 def _stream_pipeline_response(
     db: AsyncSession,
     conv: Conversation,
     conv_id: UUID,
     message: str,
     modes: set[str],
+    memory_summary: str | None = None,
 ) -> StreamingResponse:
     """通过统一管道处理消息（支持工具调用 + 网络搜索 + RAG）"""
     provider = _resolve_provider(conv.model_provider)
@@ -553,6 +437,7 @@ def _stream_pipeline_response(
                 modes=modes,
                 knowledge_base_ids=kb_ids,
                 history=history,
+                memory_summary=memory_summary,
             )
 
             async for event in pipeline_run_stream(request, db):

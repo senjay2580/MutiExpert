@@ -105,6 +105,115 @@ DEFAULT_TOOLS = [
             "required": ["provider"],
         },
     },
+    # ── Sandbox tools ──
+    {
+        "name": "sandbox_shell",
+        "description": "在沙箱工作区执行 Shell 命令（ls, grep, curl, git, cat, wc 等），用于文件操作、数据处理、系统查询",
+        "action_type": "mutation",
+        "endpoint": "/api/v1/sandbox/shell",
+        "method": "POST",
+        "param_mapping": {"command": "body.command", "timeout": "body.timeout", "cwd": "body.cwd"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "要执行的 Shell 命令"},
+                "timeout": {"type": "integer", "description": "超时秒数，默认30"},
+                "cwd": {"type": "string", "description": "工作目录（相对于 workspace）"},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "sandbox_list_files",
+        "description": "列出沙箱工作区的文件和目录",
+        "action_type": "query",
+        "endpoint": "/api/v1/sandbox/files",
+        "method": "GET",
+        "param_mapping": {"path": "query.path"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "目录路径（相对于 workspace），默认根目录"},
+            },
+        },
+    },
+    {
+        "name": "sandbox_read_file",
+        "description": "读取沙箱工作区中的文件内容",
+        "action_type": "query",
+        "endpoint": "/api/v1/sandbox/files/read",
+        "method": "GET",
+        "param_mapping": {"path": "query.path"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径（相对于 workspace）"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "sandbox_write_file",
+        "description": "在沙箱工作区创建或覆盖文件",
+        "action_type": "mutation",
+        "endpoint": "/api/v1/sandbox/files/write",
+        "method": "POST",
+        "param_mapping": {"path": "body.path", "content": "body.content"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径（相对于 workspace）"},
+                "content": {"type": "string", "description": "文件内容"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "sandbox_delete_file",
+        "description": "删除沙箱工作区中的文件",
+        "action_type": "mutation",
+        "endpoint": "/api/v1/sandbox/files/delete",
+        "method": "DELETE",
+        "param_mapping": {"path": "query.path"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径（相对于 workspace）"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "sandbox_fetch_url",
+        "description": "抓取网页 URL 内容，返回纯文本（自动剥离 HTML 标签），用于获取网页信息",
+        "action_type": "query",
+        "endpoint": "/api/v1/sandbox/web/fetch",
+        "method": "POST",
+        "param_mapping": {"url": "body.url"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "要抓取的网页 URL"},
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "sandbox_python",
+        "description": "在沙箱中执行 Python 代码片段，可用于数据处理、计算、文本分析、文件处理等",
+        "action_type": "mutation",
+        "endpoint": "/api/v1/sandbox/python",
+        "method": "POST",
+        "param_mapping": {"code": "body.code", "timeout": "body.timeout"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "要执行的 Python 代码"},
+                "timeout": {"type": "integer", "description": "超时秒数，默认30"},
+            },
+            "required": ["code"],
+        },
+    },
 ]
 
 

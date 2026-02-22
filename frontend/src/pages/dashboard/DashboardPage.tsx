@@ -10,7 +10,6 @@ import {
   CardContent,
   CardFooter,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -42,83 +41,55 @@ const statCards = [
     label: '知识库总数',
     icon: 'streamline-color:open-book',
     glow: 'card-glow-indigo',
-    badge: '+12.5%',
-    trend: 'up' as const,
-    trendText: '本月新增 6 个知识库',
-    footerText: '近 6 个月累计数据',
   },
   {
     key: 'total_documents' as const,
     label: '文档总量',
     icon: 'streamline-color:new-file',
     glow: 'card-glow-blue',
-    badge: '+8.3%',
-    trend: 'up' as const,
-    trendText: '文档录入稳步增长',
-    footerText: '本月新增 156 篇',
   },
   {
     key: 'total_conversations' as const,
     label: 'AI 对话数',
     icon: 'streamline-color:chat-bubble-text-square',
     glow: 'card-glow-emerald',
-    badge: '+23.7%',
-    trend: 'up' as const,
-    trendText: '用户活跃度提升',
-    footerText: '本月互动超出预期',
   },
   {
     key: 'total_insights' as const,
     label: '跨域洞察',
     icon: 'streamline-color:lightbulb',
     glow: 'card-glow-amber',
-    badge: '+4.5%',
-    trend: 'up' as const,
-    trendText: '覆盖范围稳步扩大',
-    footerText: '目标 85% 行业覆盖',
   },
 ];
 
-// ======================== Mock Chart Data ========================
-
-const barChartData = [
-  { month: '1月', manual: 86, api: 45 },
-  { month: '2月', manual: 125, api: 78 },
-  { month: '3月', manual: 97, api: 62 },
-  { month: '4月', manual: 143, api: 95 },
-  { month: '5月', manual: 109, api: 88 },
-  { month: '6月', manual: 156, api: 112 },
-];
-
 const barChartConfig = {
-  manual: { label: '手动上传', color: 'var(--color-chart-1)' },
-  api: { label: 'API 导入', color: 'var(--color-chart-2)' },
+  local_ai: { label: '本地 AI', color: 'var(--color-chart-1)' },
+  feishu: { label: '飞书交互', color: 'var(--color-chart-2)' },
 } as const;
 
-const areaChartData = [
-  { month: '1月', claude: 320, openai: 180 },
-  { month: '2月', claude: 480, openai: 260 },
-  { month: '3月', claude: 410, openai: 220 },
-  { month: '4月', claude: 560, openai: 340 },
-  { month: '5月', claude: 620, openai: 390 },
-  { month: '6月', claude: 780, openai: 450 },
+const CHART_COLORS = [
+  'var(--color-chart-1)',
+  'var(--color-chart-2)',
+  'var(--color-chart-3)',
+  'var(--color-chart-4)',
+  'var(--color-chart-5)',
 ];
 
-const pieChartData = [
-  { name: '医疗健康', value: 12, fill: 'var(--color-chart-1)' },
-  { name: '金融投资', value: 9, fill: 'var(--color-chart-2)' },
-  { name: '法律合规', value: 8, fill: 'var(--color-chart-3)' },
-  { name: '科技研发', value: 11, fill: 'var(--color-chart-4)' },
-  { name: '教育培训', value: 8, fill: 'var(--color-chart-5)' },
-];
+function formatMonth(ym: string) {
+  const m = parseInt(ym.split('-')[1], 10);
+  return `${m}月`;
+}
 
-const recentActivities = [
-  { title: '上传了 3 份研究报告', kb: '医疗健康', time: '2 分钟前', initials: '医' },
-  { title: '新建对话「投资策略分析」', kb: '金融投资', time: '15 分钟前', initials: '金' },
-  { title: '导入合同模板 12 份', kb: '法律合规', time: '1 小时前', initials: '法' },
-  { title: 'API 同步技术文档 8 篇', kb: '科技研发', time: '3 小时前', initials: '科' },
-  { title: '创建知识库「K12 教材解析」', kb: '教育培训', time: '5 小时前', initials: '教' },
-];
+function relativeTime(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  return `${days} 天前`;
+}
 
 // ======================== Chart Tooltip ========================
 
@@ -151,7 +122,7 @@ function ChartTooltip({
 // ======================== Main Component ========================
 
 export default function DashboardPage() {
-  const [activeChart, setActiveChart] = useState<'manual' | 'api'>('manual');
+  const [activeChart, setActiveChart] = useState<'local_ai' | 'feishu'>('local_ai');
   const siteName = useSiteSettingsStore((s) => s.siteName);
   const siteSubtitle = useSiteSettingsStore((s) => s.siteSubtitle);
   const logoUrl = useSiteSettingsStore((s) => s.logoUrl);
@@ -167,18 +138,54 @@ export default function DashboardPage() {
     queryFn: () => networkService.getGraph(),
   });
 
-  const barTotals = useMemo(
-    () => ({
-      manual: barChartData.reduce((acc, d) => acc + d.manual, 0),
-      api: barChartData.reduce((acc, d) => acc + d.api, 0),
-    }),
-    [],
+  const { data: usageTrend } = useQuery({
+    queryKey: ['dashboard', 'usage-trend'],
+    queryFn: () => dashboardService.getUsageTrend(),
+  });
+
+  const { data: aiModelTrend } = useQuery({
+    queryKey: ['dashboard', 'ai-model-trend'],
+    queryFn: () => dashboardService.getAIModelTrend(),
+  });
+
+  const { data: industryDist } = useQuery({
+    queryKey: ['dashboard', 'industry-distribution'],
+    queryFn: dashboardService.getIndustryDistribution,
+  });
+
+  const { data: timeline } = useQuery({
+    queryKey: ['dashboard', 'activity-timeline'],
+    queryFn: dashboardService.getActivityTimeline,
+  });
+
+  const barData = useMemo(
+    () => (usageTrend ?? []).map((d) => ({ ...d, month: formatMonth(d.month) })),
+    [usageTrend],
   );
 
-  const pieTotal = useMemo(
-    () => pieChartData.reduce((acc, d) => acc + d.value, 0),
-    [],
+  const barTotals = useMemo(
+    () => ({
+      local_ai: barData.reduce((acc, d) => acc + d.local_ai, 0),
+      feishu: barData.reduce((acc, d) => acc + d.feishu, 0),
+    }),
+    [barData],
   );
+
+  const areaData = useMemo(
+    () => (aiModelTrend ?? []).map((d) => ({ ...d, month: formatMonth(d.month) })),
+    [aiModelTrend],
+  );
+
+  const pieData = useMemo(
+    () =>
+      (industryDist ?? []).map((d, i) => ({
+        ...d,
+        fill: d.color || CHART_COLORS[i % CHART_COLORS.length],
+      })),
+    [industryDist],
+  );
+
+  const pieTotal = useMemo(() => pieData.reduce((acc, d) => acc + d.value, 0), [pieData]);
 
   return (
     <div className="space-y-8">
@@ -204,11 +211,7 @@ export default function DashboardPage() {
       {/* ---- KPI Stats ---- */}
       <section>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {statCards.map((stat) => {
-            const trendIcon = stat.trend === 'up'
-              ? 'streamline-color:graph-arrow-increase'
-              : 'streamline-color:graph-arrow-decrease';
-            return (
+          {statCards.map((stat) => (
               <Card key={stat.key} className={cn('gap-0 py-0', stat.glow)}>
                 <CardHeader className="px-6 pt-6 pb-2">
                   <CardDescription>{stat.label}</CardDescription>
@@ -217,51 +220,31 @@ export default function DashboardPage() {
                       <Icon icon={stat.icon} className="size-5" aria-hidden="true" />
                     </div>
                   </CardAction>
-                  <CardTitle className="flex items-baseline gap-2 text-2xl tabular-nums">
+                  <CardTitle className="text-2xl tabular-nums">
                     {loadingOverview ? (
                       <Skeleton className="h-7 w-16 rounded-md" />
                     ) : (
                       overview?.[stat.key]?.toLocaleString() ?? '--'
                     )}
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'gap-1 rounded-lg text-xs font-medium',
-                        stat.trend === 'up'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400'
-                          : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-400',
-                      )}
-                    >
-                      <Icon icon={trendIcon} className="size-3" />
-                      {stat.badge}
-                    </Badge>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="px-6 pb-0" />
-                <CardFooter className="flex-col items-start gap-1.5 px-6 pt-2 pb-6">
-                  <div className="flex items-center gap-1 text-sm font-medium leading-none">
-                    {stat.trendText}
-                    <Icon icon={trendIcon} className="size-4" />
-                  </div>
-                  <p className="text-xs leading-none text-muted-foreground">{stat.footerText}</p>
-                </CardFooter>
+                <CardContent className="px-6 pb-6" />
               </Card>
-            );
-          })}
+          ))}
         </div>
       </section>
 
       {/* ---- Row 2: Bar Chart + Recent Activity ---- */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
-        {/* Interactive Bar Chart */}
+        {/* Interactive Bar Chart — Usage Trend */}
         <Card className="gap-0 py-0 card-glow-blue">
           <CardHeader className="flex-col items-stretch space-y-0 border-b p-0 sm:flex-row">
             <div className="flex flex-1 flex-col justify-center gap-1 px-6 py-5 sm:py-6">
-              <CardTitle className="text-base">文档上传趋势</CardTitle>
-              <CardDescription>2024 年 1 月 - 6 月</CardDescription>
+              <CardTitle className="text-base">使用趋势</CardTitle>
+              <CardDescription>本地 AI 与飞书交互次数</CardDescription>
             </div>
             <div className="flex">
-              {(['manual', 'api'] as const).map((key) => (
+              {(['local_ai', 'feishu'] as const).map((key) => (
                 <button
                   key={key}
                   data-active={activeChart === key}
@@ -279,7 +262,7 @@ export default function DashboardPage() {
           <CardContent className="px-2 pt-4 sm:p-6 sm:pt-4">
             <div className="h-[250px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barChartData}>
+                <BarChart data={barData}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} stroke="var(--color-muted-foreground)" />
                   <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--color-muted)', opacity: 0.3 }} />
@@ -289,11 +272,7 @@ export default function DashboardPage() {
             </div>
           </CardContent>
           <CardFooter className="flex-col items-start gap-2 px-6 pb-6 text-sm">
-            <div className="flex gap-2 font-medium leading-none">
-              本月上传量环比增长 18.6%
-              <Icon icon="streamline-color:graph-arrow-increase" className="size-4" />
-            </div>
-            <div className="leading-none text-muted-foreground">近 6 个月文档上传总量</div>
+            <div className="leading-none text-muted-foreground">近 6 个月使用总量</div>
           </CardFooter>
         </Card>
 
@@ -301,22 +280,31 @@ export default function DashboardPage() {
         <Card className="gap-0 py-0 card-glow-emerald">
           <CardHeader className="px-6 py-5 sm:py-6">
             <CardTitle className="text-base">最近动态</CardTitle>
-            <CardDescription>今日共 12 条操作记录</CardDescription>
+            <CardDescription>最新操作记录</CardDescription>
           </CardHeader>
           <CardContent className="px-6 pb-6">
             <div className="space-y-6">
-              {recentActivities.map((item) => (
-                <div key={item.title} className="flex items-center gap-4">
-                  <Avatar className="size-9">
-                    <AvatarFallback className="text-xs">{item.initials}</AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <p className="truncate text-sm font-medium leading-none">{item.title}</p>
-                    <p className="truncate text-sm text-muted-foreground">{item.kb}</p>
+              {(timeline ?? []).slice(0, 6).map((item) => {
+                const isDoc = item.type === 'document';
+                const initials = isDoc ? '文' : '话';
+                return (
+                  <div key={item.id} className="flex items-center gap-4">
+                    <Avatar className="size-9">
+                      <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="truncate text-sm font-medium leading-none">{item.title}</p>
+                      <p className="truncate text-sm text-muted-foreground">
+                        {isDoc ? '文档' : '对话'}{item.status ? ` · ${item.status}` : ''}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.time)}</span>
                   </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">{item.time}</span>
-                </div>
-              ))}
+                );
+              })}
+              {(!timeline || timeline.length === 0) && (
+                <p className="text-sm text-muted-foreground text-center py-4">暂无动态</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -333,7 +321,7 @@ export default function DashboardPage() {
           <CardContent className="px-2 sm:p-6 sm:pt-0">
             <div className="h-[250px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={areaChartData}>
+                <AreaChart data={areaData}>
                   <defs>
                     <linearGradient id="fillClaude" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.8} />
@@ -354,11 +342,7 @@ export default function DashboardPage() {
             </div>
           </CardContent>
           <CardFooter className="flex-col items-start gap-2 px-6 pb-6 text-sm">
-            <div className="flex gap-2 font-medium leading-none">
-              本月 AI 调用量增长 23.7%
-              <Icon icon="streamline-color:graph-arrow-increase" className="size-4" />
-            </div>
-            <div className="leading-none text-muted-foreground">Claude 占比 63%，为主力模型</div>
+            <div className="leading-none text-muted-foreground">按月统计各模型 AI 调用次数</div>
           </CardFooter>
         </Card>
 
@@ -387,8 +371,8 @@ export default function DashboardPage() {
                       );
                     }}
                   />
-                  <Pie data={pieChartData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} strokeWidth={5} stroke="var(--color-card)">
-                    {pieChartData.map((entry, i) => (
+                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} strokeWidth={5} stroke="var(--color-card)">
+                    {pieData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
                     ))}
                     <Label
@@ -413,11 +397,9 @@ export default function DashboardPage() {
             </div>
           </CardContent>
           <CardFooter className="flex-col items-start gap-2 px-6 pb-6 text-sm">
-            <div className="flex items-center gap-2 font-medium leading-none">
-              本月新增 3 个行业知识库
-              <Icon icon="streamline-color:graph-arrow-increase" className="size-4" />
+            <div className="leading-none text-muted-foreground">
+              覆盖 {pieData.length} 个行业分类
             </div>
-            <div className="leading-none text-muted-foreground">覆盖 5 大行业，目标 8 个</div>
           </CardFooter>
         </Card>
       </section>

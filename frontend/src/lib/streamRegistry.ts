@@ -19,6 +19,20 @@ export type StreamDoneMeta = {
   cost_usd?: number | null;
 };
 
+export type ToolCallEntry = {
+  name: string;
+  args: Record<string, unknown>;
+  result?: string;
+  success?: boolean;
+  status: 'running' | 'done';
+};
+
+export type WebSearchResult = {
+  title: string;
+  url: string;
+  content: string;
+};
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -26,6 +40,8 @@ export type ChatMessage = {
   thinking?: string;
   isThinkingStreaming?: boolean;
   sources?: MessageSource[];
+  toolCalls?: ToolCallEntry[];
+  webSearchResults?: WebSearchResult[];
   isStreaming?: boolean;
   model_used?: string | null;
   tokens_used?: number | null;
@@ -42,6 +58,8 @@ export type StreamEntry = {
   content: string;
   thinking: string;
   sources: MessageSource[];
+  toolCalls: ToolCallEntry[];
+  webSearchResults: WebSearchResult[];
   isStreaming: boolean;
   abort: (() => void) | null;
   finalMessageId?: string;
@@ -96,6 +114,32 @@ export function setSources(conversationId: string, sources: MessageSource[]): vo
   const entry = streams.get(conversationId);
   if (!entry) return;
   entry.sources = sources;
+  entry.onUpdate?.(entry);
+}
+
+export function addToolStart(conversationId: string, data: { name: string; args: Record<string, unknown> }): void {
+  const entry = streams.get(conversationId);
+  if (!entry) return;
+  entry.toolCalls.push({ name: data.name, args: data.args, status: 'running' });
+  entry.onUpdate?.(entry);
+}
+
+export function updateToolResult(conversationId: string, data: { name: string; result: string; success: boolean }): void {
+  const entry = streams.get(conversationId);
+  if (!entry) return;
+  const tc = [...entry.toolCalls].reverse().find((t) => t.name === data.name && t.status === 'running');
+  if (tc) {
+    tc.result = data.result;
+    tc.success = data.success;
+    tc.status = 'done';
+  }
+  entry.onUpdate?.(entry);
+}
+
+export function setWebSearchResults(conversationId: string, results: WebSearchResult[]): void {
+  const entry = streams.get(conversationId);
+  if (!entry) return;
+  entry.webSearchResults = results;
   entry.onUpdate?.(entry);
 }
 

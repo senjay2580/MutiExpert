@@ -1,13 +1,19 @@
 import api from './api';
 
+export interface EmbeddingInfo {
+  model: string;
+  api_base: string;
+  total_chunks: number;
+}
+
+export interface TestEmbeddingResult {
+  ok: boolean;
+  dimension?: number;
+  detail?: string;
+}
+
 export const dataManagementService = {
-  export: () => api.get('/data/export').then((r) => r.data),
-  import: (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return api.post('/data/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then((r) => r.data);
-  },
+  getEmbeddingInfo: () => api.get<EmbeddingInfo>('/data/embedding-info').then((r) => r.data),
+  testEmbedding: () => api.post<TestEmbeddingResult>('/data/test-embedding').then((r) => r.data),
   rebuildIndexes: () => api.post('/data/rebuild-indexes').then((r) => r.data),
 };

@@ -35,6 +35,7 @@ class PipelineRequest:
     knowledge_base_ids: list[UUID] = field(default_factory=list)
     history: list[dict] | None = None
     max_tool_rounds: int = 5
+    memory_summary: str | None = None
 
 
 @dataclass
@@ -273,7 +274,11 @@ async def run_stream(
             system_prompt += "\n\n" + build_rag_context(context, request.message)
             yield PipelineEvent(type="sources", data={"sources": sources})
 
-    # 2.5 search 模式 → Tavily 网络搜索
+    # 2.5 会话记忆
+    if request.memory_summary:
+        system_prompt += f"\n\n会话记忆摘要（仅作背景，不需逐字重复）:\n{request.memory_summary}"
+
+    # 2.6 search 模式 → Tavily 网络搜索
     if "search" in request.modes:
         from app.services.web_search_service import tavily_search, build_search_context
         search_results = await tavily_search(request.message, db=db)

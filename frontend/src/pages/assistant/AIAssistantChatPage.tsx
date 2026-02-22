@@ -27,7 +27,7 @@ import 'highlight.js/styles/github-dark-dimmed.css';
 import { illustrations } from '@/lib/illustrations';
 import { ThinkingBlock } from '@/components/composed/thinking-block';
 import * as streamRegistry from '@/lib/streamRegistry';
-import type { ChatMessage, MessageSource } from '@/lib/streamRegistry';
+import type { ChatMessage, MessageSource, ToolCallEntry } from '@/lib/streamRegistry';
 
 type ModelConfig = { id: string; name: string; provider: string };
 
@@ -99,6 +99,46 @@ function SourceReferences({ sources }: { sources: MessageSource[] }) {
                 <span className="ml-auto text-[10px] text-muted-foreground">{(s.relevance_score * 100).toFixed(0)}% 相关</span>
               </div>
               <p className="mt-1 line-clamp-2 text-muted-foreground">{s.content_preview}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Tool call execution block ── */
+function ToolCallBlock({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!toolCalls?.length) return null;
+  const allDone = toolCalls.every((tc) => tc.status === 'done');
+  const successCount = toolCalls.filter((tc) => tc.success).length;
+  return (
+    <div className="mb-2.5">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Icon icon={allDone ? 'lucide:check-circle-2' : 'lucide:loader-2'} width={12} height={12} className={cn(!allDone && 'animate-spin text-blue-500', allDone && 'text-emerald-500')} />
+        <span>{allDone ? `调用了 ${toolCalls.length} 个工具（${successCount} 成功）` : `正在调用工具...（${toolCalls.length}）`}</span>
+        <Icon icon={expanded ? 'lucide:chevron-up' : 'lucide:chevron-down'} width={12} height={12} />
+      </button>
+      {expanded && (
+        <div className="mt-1.5 space-y-1.5">
+          {toolCalls.map((tc, i) => (
+            <div key={i} className="rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-[11px]">
+              <div className="flex items-center gap-1.5">
+                <Icon
+                  icon={tc.status === 'running' ? 'lucide:loader-2' : tc.success ? 'lucide:check-circle' : 'lucide:x-circle'}
+                  width={13} height={13}
+                  className={cn(tc.status === 'running' && 'animate-spin text-blue-500', tc.status === 'done' && tc.success && 'text-emerald-500', tc.status === 'done' && !tc.success && 'text-red-500')}
+                />
+                <span className="font-medium text-foreground">{tc.name}</span>
+                {tc.status === 'running' && <span className="text-muted-foreground">执行中...</span>}
+              </div>
+              {tc.status === 'done' && tc.result && (
+                <p className="mt-1 line-clamp-3 text-muted-foreground">{tc.result}</p>
+              )}
             </div>
           ))}
         </div>
@@ -518,6 +558,8 @@ export default function AIAssistantChatPage() {
       content: '',
       thinking: '',
       sources: [],
+      toolCalls: [],
+      webSearchResults: [],
       isStreaming: true,
       abort: null,
       modelUsed: normalizedCurrent,
@@ -526,7 +568,7 @@ export default function AIAssistantChatPage() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId || m.id === updated.finalMessageId
-            ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, thinking: updated.thinking || undefined, isThinkingStreaming: updated.isStreaming && !!updated.thinking && !updated.content, sources: updated.sources, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
+            ? { ...m, id: updated.finalMessageId || m.id, content: updated.content, thinking: updated.thinking || undefined, isThinkingStreaming: updated.isStreaming && !!updated.thinking && !updated.content, sources: updated.sources, toolCalls: updated.toolCalls, webSearchResults: updated.webSearchResults, isStreaming: updated.isStreaming, latency_ms: updated.meta?.latency_ms ?? null, tokens_used: updated.meta?.tokens_used ?? null, prompt_tokens: updated.meta?.prompt_tokens ?? null, completion_tokens: updated.meta?.completion_tokens ?? null, cost_usd: updated.meta?.cost_usd ?? null }
             : m,
         ),
       );
@@ -543,6 +585,9 @@ export default function AIAssistantChatPage() {
       onThinking: (chunk: string) => streamRegistry.appendThinking(convId, chunk),
       onSources: (sources: Array<{ chunk_id: string; document_id?: string; document_title: string; snippet: string; score: number }>) =>
         streamRegistry.setSources(convId, sources.map((s) => ({ document_name: s.document_title, content_preview: s.snippet, relevance_score: s.score, document_id: s.document_id ?? '' }))),
+      onToolStart: (data: { name: string; args: Record<string, unknown> }) => streamRegistry.addToolStart(convId, data),
+      onToolResult: (data: { name: string; result: string; success: boolean }) => streamRegistry.updateToolResult(convId, data),
+      onWebSearch: (data: { results: Array<{ title: string; url: string; content: string }> }) => streamRegistry.setWebSearchResults(convId, data.results),
       onDone: (messageId: string, meta?: { latency_ms?: number; tokens_used?: number | null; prompt_tokens?: number | null; completion_tokens?: number | null; cost_usd?: number | null }) =>
         streamRegistry.markDone(convId, messageId, meta),
       onError: (error: string) => streamRegistry.markError(convId, error),
@@ -603,7 +648,8 @@ export default function AIAssistantChatPage() {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else { currentConvIdRef.current = convId; }
       const cb = registryCallbacks(assistantMsg.id, convId, userMsg);
-      const abort = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError, [...modes]);
+      const effectiveModes = [...new Set([...modes, 'tools'])];
+      const abort = streamMessage(convId, text, normalizedCurrent, cb.onChunk, cb.onThinking, cb.onSources, cb.onDone, cb.onError, effectiveModes);
       abortRef.current = abort;
       const entry = streamRegistry.getStream(convId);
       if (entry) entry.abort = abort;
@@ -758,6 +804,7 @@ export default function AIAssistantChatPage() {
                         {msg.thinking && (
                           <ThinkingBlock content={msg.thinking} isStreaming={msg.isThinkingStreaming} />
                         )}
+                        {msg.toolCalls?.length ? <ToolCallBlock toolCalls={msg.toolCalls} /> : null}
                         <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={markdownComponents}>{msg.content}</ReactMarkdown>
                         {msg.isStreaming && !msg.isThinkingStreaming && (
                           <span className="ml-0.5 inline-flex items-center gap-0.5">
@@ -880,18 +927,6 @@ export default function AIAssistantChatPage() {
                     <Icon icon="lucide:search" width={12} height={12} className="mr-1" />
                     搜索
                   </Button>
-                  <Button
-                    variant={modes.has('tools') ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className={cn(
-                      'h-6 rounded-md px-2.5 text-[11px] transition-all',
-                      modes.has('tools') && 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(16,185,129,0.3)]',
-                    )}
-                    onClick={() => toggleMode('tools')}
-                  >
-                    <Icon icon="lucide:wrench" width={12} height={12} className="mr-1" />
-                    工具
-                  </Button>
                 </div>
                 {modes.has('knowledge') && (
                   <span className="text-[10px] text-muted-foreground">{effectiveKbCount} 个知识库</span>
@@ -998,6 +1033,7 @@ export default function AIAssistantChatPage() {
                       <div className="min-w-0 text-left">
                         <div className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
                           {conv.is_pinned && <Icon icon="lucide:pin" width={11} height={11} className="shrink-0 text-muted-foreground" />}
+                          {conv.channel === 'feishu' && <span title="飞书对话"><Icon icon="lucide:message-square-share" width={11} height={11} className="shrink-0 text-blue-500" /></span>}
                           <span className="truncate">{conv.title || '未命名会话'}</span>
                         </div>
                         <div className="mt-0.5 text-[11px] text-muted-foreground">

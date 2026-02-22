@@ -592,7 +592,7 @@ export default function ScriptsPage() {
                 value={form.script_content}
                 onChange={(e) => setForm({ ...form, script_content: e.target.value })}
                 rows={16}
-                className="font-mono text-xs leading-relaxed resize-y min-h-[200px]"
+                className="font-mono text-xs leading-relaxed h-[320px] min-h-0 resize-none overflow-y-auto"
                 spellCheck={false}
               />
             </div>

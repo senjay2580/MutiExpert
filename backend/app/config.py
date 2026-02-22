@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # Third-party integrations
     tavily_api_key: str = ""
 
+    # Sandbox
+    workspace_dir: str = "/app/workspace"
+    sandbox_shell_timeout: int = 30
+    sandbox_python_timeout: int = 30
+    sandbox_max_output_size: int = 50000  # 50KB
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
