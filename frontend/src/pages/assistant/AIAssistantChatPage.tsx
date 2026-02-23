@@ -153,10 +153,22 @@ function ToolCallBlock({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
   );
 }
 
+const _FILE_RE = /(?:^[\/~.]|[\/\\]|\.(?:txt|py|js|ts|tsx|jsx|json|toml|yaml|yml|md|csv|xml|html|css|scss|sql|sh|bash|zsh|env|cfg|conf|ini|log|png|jpg|jpeg|gif|svg|webp|pdf|doc|docx|xls|xlsx|ppt|pptx|zip|tar|gz|rar|mp3|mp4|wav|avi|mov|woff|ttf|eot|lock|gitignore|dockerfile|makefile)$)/i;
+
 const markdownComponents = {
   code({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
     const isBlock = className?.includes('language-') || className?.includes('hljs');
     if (isBlock) return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
+    const text = typeof children === 'string' ? children : String(children ?? '');
+    const isFile = _FILE_RE.test(text);
+    if (isFile) {
+      return (
+        <code className={cn('inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[12px] font-medium font-mono text-blue-600 dark:text-blue-400 ring-1 ring-inset ring-blue-500/20', className)} {...props}>
+          <Icon icon="lucide:file-text" width={12} height={12} className="shrink-0 opacity-60" />
+          {children}
+        </code>
+      );
+    }
     return <code className={cn('rounded-md bg-primary/[0.08] px-1.5 py-0.5 text-[12px] font-semibold font-mono text-primary/80', className)} {...props}>{children}</code>;
   },
   pre({ children }: { children?: React.ReactNode }) {
@@ -953,14 +965,14 @@ export default function AIAssistantChatPage() {
                         <div className="mt-2 flex flex-wrap gap-2">
                           {msg.attachments.map((att, ai) => (
                             att.mime_type.startsWith('image/') ? (
-                              <div key={ai} className="overflow-hidden rounded-xl border border-border/40">
+                              <div key={ai} className="overflow-hidden rounded-xl border border-border">
                                 <img
                                   src={att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`}
                                   alt={att.filename}
                                   className="max-h-48 max-w-[280px] cursor-pointer object-cover transition-opacity hover:opacity-80"
                                   onClick={() => setPreviewImage(att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`)}
                                 />
-                                <div className="flex items-center gap-1.5 bg-muted/50 px-2.5 py-1.5">
+                                <div className="flex items-center gap-1.5 border-t border-border bg-muted/50 px-2.5 py-1.5">
                                   <span className="flex-1 truncate text-[11px] text-muted-foreground">{att.filename}</span>
                                   <a href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="rounded-md p-0.5 text-muted-foreground transition-colors hover:text-foreground" onClick={(e) => e.stopPropagation()}>
                                     <Icon icon="lucide:download" width={12} height={12} />
@@ -1133,31 +1145,25 @@ export default function AIAssistantChatPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <div className="h-4 w-px bg-border/40" />
-                <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-0.5">
-                  <Button
-                    variant={modes.has('knowledge') ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className={cn(
-                      'h-6 rounded-md px-2.5 text-[11px] transition-all',
-                      modes.has('knowledge') && 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(16,185,129,0.3)]',
-                    )}
-                    onClick={() => toggleMode('knowledge')}
-                  >
-                    <Icon icon="lucide:book-open" width={12} height={12} className="mr-1" />
-                    知识库
-                  </Button>
-                  <Button
-                    variant={modes.has('search') ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className={cn(
-                      'h-6 rounded-md px-2.5 text-[11px] transition-all',
-                      modes.has('search') && 'bg-emerald-500/15 text-emerald-600 shadow-[0_0_8px_rgba(16,185,129,0.25)] dark:text-emerald-400 dark:shadow-[0_0_8px_rgba(16,185,129,0.3)]',
-                    )}
-                    onClick={() => toggleMode('search')}
-                  >
-                    <Icon icon="lucide:search" width={12} height={12} className="mr-1" />
-                    搜索
-                  </Button>
+                <div className="mode-toggle-group">
+                  <input className="mode-toggle-input" type="checkbox" id="chat-mode-knowledge" checked={modes.has('knowledge')} onChange={() => toggleMode('knowledge')} />
+                  <label className="mode-toggle-label" htmlFor="chat-mode-knowledge">
+                    <div className="mode-toggle-btn">
+                      <div className="mode-toggle-inner">
+                        <Icon icon="lucide:book-open" width={12} height={12} />
+                        知识库
+                      </div>
+                    </div>
+                  </label>
+                  <input className="mode-toggle-input" type="checkbox" id="chat-mode-search" checked={modes.has('search')} onChange={() => toggleMode('search')} />
+                  <label className="mode-toggle-label" htmlFor="chat-mode-search">
+                    <div className="mode-toggle-btn">
+                      <div className="mode-toggle-inner">
+                        <Icon icon="lucide:search" width={12} height={12} />
+                        搜索
+                      </div>
+                    </div>
+                  </label>
                 </div>
                 {modes.has('knowledge') && (
                   <span className="text-[10px] text-muted-foreground">{effectiveKbCount} 个知识库</span>
@@ -1191,14 +1197,9 @@ export default function AIAssistantChatPage() {
         <div className="flex h-full flex-col p-4">
           {/* Sidebar header */}
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Icon icon="lucide:message-square" width={16} height={16} />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-foreground">会话历史</div>
-                <div className="text-[11px] text-muted-foreground">管理最近对话</div>
-              </div>
+            <div>
+              <div className="text-sm font-semibold text-foreground">会话历史</div>
+              <div className="text-[11px] text-muted-foreground">管理最近对话</div>
             </div>
             <div className="flex items-center gap-1">
               <TooltipProvider>
