@@ -18,8 +18,13 @@ async def lifespan(app: FastAPI):
         await ensure_default_tools(db)
     scheduler = SchedulerService()
     await scheduler.start()
+    # 启动飞书 WebSocket 长连接
+    from app.services.feishu_ws import start_feishu_ws, stop_feishu_ws
+    from app.api.feishu import _handle_feishu_question
+    await start_feishu_ws(_handle_feishu_question)
     yield
     # Shutdown
+    stop_feishu_ws()
     await scheduler.stop()
 
 

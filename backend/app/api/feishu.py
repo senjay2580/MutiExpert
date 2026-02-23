@@ -1,4 +1,5 @@
 import json
+import time
 import httpx
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
@@ -14,7 +15,7 @@ from app.services.feishu_service import (
     decrypt_feishu_event,
     encrypt_secret,
 )
-from app.services.pipeline_service import PipelineRequest, run as pipeline_run
+from app.services.pipeline_service import PipelineRequest, run_stream
 
 router = APIRouter()
 
@@ -89,8 +90,31 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
     return {"code": 0, "msg": "ok"}
 
 
+def _build_stream_card(text: str, status: str = "processing", tool_name: str = "") -> dict:
+    """构建流式更新卡片 JSON"""
+    templates = {"processing": "blue", "completed": "green", "error": "red"}
+    titles = {"processing": "AI 助手", "completed": "AI 助手", "error": "AI 助手 · 出错"}
+    header_title = titles.get(status, "AI 助手")
+    if status == "processing" and tool_name:
+        header_title = f"AI 助手 · 调用 {tool_name}..."
+    content = text or "思考中..."
+    if status == "processing":
+        content += " ▌"
+    # 飞书卡片 markdown 最大约 30000 字符，截断保护
+    if len(content) > 28000:
+        content = content[:28000] + "\n\n...(内容过长已截断)"
+    return {
+        "config": {"wide_screen_mode": True, "update_multi": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": header_title},
+            "template": templates.get(status, "blue"),
+        },
+        "elements": [{"tag": "markdown", "content": content}],
+    }
+
+
 async def _handle_feishu_question(parsed: dict):
-    """后台任务：通过统一管道处理飞书消息，维护对话历史"""
+    """后台任务：流式卡片回复飞书消息，实时更新进度"""
     question = parsed["text"]
     message_id = parsed.get("message_id")
     chat_id = parsed.get("chat_id")
@@ -99,8 +123,9 @@ async def _handle_feishu_question(parsed: dict):
     if parsed.get("sender_type") in {"app", "bot"}:
         return
 
+    svc = None
+    card_msg_id = None
     try:
-        svc = None
         async with AsyncSessionLocal() as db:
             svc = await get_feishu_service(db)
 
@@ -111,15 +136,13 @@ async def _handle_feishu_question(parsed: dict):
                 if config:
                     config.default_chat_id = chat_id
                     await db.commit()
-                await svc.reply_message(message_id, "已绑定当前会话为默认推送目标。")
+                await svc.reply_message(message_id, f"已绑定当前会话为默认推送目标。\nChat ID: {chat_id}")
                 return
 
             provider = svc.default_provider or "claude"
-
-            # 1. 查找或创建飞书会话
             conv = await _get_or_create_feishu_conversation(db, chat_id)
 
-            # 2. 保存用户消息
+            # 保存用户消息
             user_msg = Message(conversation_id=conv.id, role="user", content=question)
             db.add(user_msg)
             conv.updated_at = datetime.utcnow()
@@ -127,15 +150,18 @@ async def _handle_feishu_question(parsed: dict):
                 conv.title = question[:50] + ("..." if len(question) > 50 else "")
             await db.commit()
 
-            # 3. 加载历史消息
             history = await _load_feishu_history(db, conv.id)
 
-            # 4. 收集知识库 ID
             from app.models.knowledge import KnowledgeBase
             kb_result = await db.execute(select(KnowledgeBase.id))
             kb_ids = [row[0] for row in kb_result.all()]
 
-            # 5. 通过统一管道处理
+            # 1. 发送"思考中"卡片
+            init_card = _build_stream_card("", "processing")
+            card_resp = await svc.send_interactive_card(chat_id, init_card)
+            card_msg_id = card_resp.get("message_id")
+
+            # 2. 流式处理 + 实时更新卡片
             request = PipelineRequest(
                 message=question,
                 conversation_id=conv.id,
@@ -145,39 +171,76 @@ async def _handle_feishu_question(parsed: dict):
                 knowledge_base_ids=kb_ids,
                 history=history,
             )
-            result = await pipeline_run(request, db)
-            response_text = result.get("text", "") or "抱歉，暂时无法回答这个问题。"
 
-            # 6. 保存 AI 回复
-            file_attachments = result.get("file_attachments", [])
+            accumulated_text = ""
+            last_update = time.time()
+            update_interval = 0.8  # 800ms 节流
+            all_tool_calls = []
+            all_sources = []
+            all_file_attachments = []
+            current_tool = ""
+
+            async for event in run_stream(request, db):
+                if event.type == "text_chunk":
+                    accumulated_text += event.data.get("content", "")
+                elif event.type == "thinking":
+                    pass  # thinking 不展示到卡片
+                elif event.type == "tool_start":
+                    current_tool = event.data.get("name", "")
+                elif event.type == "tool_result":
+                    current_tool = ""
+                    tc_info = {
+                        "name": event.data.get("name", ""),
+                        "result": event.data.get("result", "")[:200],
+                        "success": event.data.get("success", False),
+                    }
+                    all_tool_calls.append(tc_info)
+                elif event.type == "sources":
+                    all_sources = event.data.get("sources", [])
+                elif event.type == "file_attachment":
+                    all_file_attachments.append(event.data)
+                elif event.type == "done":
+                    if event.data.get("tool_calls"):
+                        all_tool_calls = event.data["tool_calls"]
+                    if event.data.get("file_attachments"):
+                        all_file_attachments = event.data["file_attachments"]
+
+                # 节流更新卡片
+                now = time.time()
+                if card_msg_id and (now - last_update >= update_interval) and accumulated_text:
+                    card = _build_stream_card(accumulated_text, "processing", current_tool)
+                    await svc.update_card(card_msg_id, card)
+                    last_update = now
+
+            # 3. 最终卡片
+            response_text = accumulated_text or "抱歉，暂时无法回答这个问题。"
+            if card_msg_id:
+                final_card = _build_stream_card(response_text, "completed")
+                await svc.update_card(card_msg_id, final_card)
+
+            # 4. 保存 AI 回复
             assistant_msg = Message(
                 conversation_id=conv.id,
                 role="assistant",
                 content=response_text,
-                sources=result.get("sources", []),
-                tool_calls=result.get("tool_calls", []),
-                attachments=file_attachments if file_attachments else [],
+                sources=all_sources,
+                tool_calls=all_tool_calls,
+                attachments=all_file_attachments,
                 model_used=provider,
             )
             db.add(assistant_msg)
             conv.updated_at = datetime.utcnow()
             await db.commit()
 
-            # 7. 回复飞书
-            # 截断过长回复（飞书文本消息限制约 4000 字符）
-            reply_text = response_text[:3800]
-            if len(response_text) > 3800:
-                reply_text += "\n\n...(回复过长已截断)"
-            await svc.reply_message(message_id, reply_text)
-
-            # 8. 如有文件附件，发送下载卡片
-            if file_attachments and chat_id:
+            # 5. 文件附件单独发卡片
+            if all_file_attachments and chat_id:
                 settings = get_settings()
                 base = settings.backend_url.rstrip("/")
-                for fa in file_attachments:
+                for fa in all_file_attachments:
                     size_kb = fa.get("size", 0) / 1024
                     download_url = f"{base}{fa.get('url', '')}"
-                    card = {
+                    file_card = {
+                        "config": {"wide_screen_mode": True},
                         "header": {
                             "title": {"tag": "plain_text", "content": "文件下载"},
                             "template": "blue",
@@ -199,10 +262,17 @@ async def _handle_feishu_question(parsed: dict):
                             },
                         ],
                     }
-                    await svc.send_interactive_card(chat_id, card)
+                    await svc.send_interactive_card(chat_id, file_card)
 
     except Exception as e:
-        if svc is not None:
+        # 出错时更新卡片为红色错误状态
+        if svc and card_msg_id:
+            try:
+                err_card = _build_stream_card(f"处理出错: {str(e)}", "error")
+                await svc.update_card(card_msg_id, err_card)
+            except Exception:
+                pass
+        elif svc:
             await svc.reply_message(message_id, f"处理出错: {str(e)}")
 
 
