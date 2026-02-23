@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import os
 import re
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -684,10 +686,6 @@ async def execute_python(code: str, timeout: int = 30) -> SandboxResult:
 
 
 # ── 结构化文件 API（供前端 UI 使用）──────────────────────────
-
-
-import mimetypes
-from datetime import datetime, timezone
 
 
 async def list_files_json(path: str = ".") -> dict:
