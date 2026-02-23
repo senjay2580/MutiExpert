@@ -119,7 +119,7 @@ _feishu_logger = logging.getLogger(__name__)
 
 async def _handle_feishu_question(parsed: dict):
     """后台任务：流式卡片回复飞书消息，实时更新进度"""
-    _feishu_logger.info("_handle_feishu_question 进入: text=%s, chat_id=%s", parsed.get("text", "")[:50], parsed.get("chat_id"))
+    print(f"[FEISHU] _handle_feishu_question 进入: text={parsed.get('text', '')[:50]}, chat_id={parsed.get('chat_id')}", flush=True)
     question = parsed["text"]
     message_id = parsed.get("message_id")
     chat_id = parsed.get("chat_id")

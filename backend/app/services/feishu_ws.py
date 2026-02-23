@@ -110,11 +110,11 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
     main_loop = asyncio.get_running_loop()
 
     def on_message(data: lark.im.v1.P2ImMessageReceiveV1):
-        logger.info("飞书 WS 收到事件: %s", type(data).__name__)
+        print(f"[FEISHU-WS] 收到事件: {type(data).__name__}", flush=True)
         parsed = _parse_message_event(data)
-        logger.info("飞书 WS 解析结果: text=%s, type=%s", parsed.get("text") if parsed else None, parsed.get("message_type") if parsed else None)
+        print(f"[FEISHU-WS] 解析: text={parsed.get('text') if parsed else None}, type={parsed.get('message_type') if parsed else None}", flush=True)
         if parsed and parsed.get("text") and parsed.get("message_type") == "text":
-            logger.info("飞书 WS 调度处理: chat_id=%s", parsed.get("chat_id"))
+            print(f"[FEISHU-WS] 调度处理: chat_id={parsed.get('chat_id')}", flush=True)
             main_loop.call_soon_threadsafe(asyncio.ensure_future, handle_question(parsed))
 
     handler = lark.EventDispatcherHandler.builder("", "").register_p2_im_message_receive_v1(on_message).build()
@@ -126,7 +126,7 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
         log_level=lark.LogLevel.INFO,
     )
 
-    logger.info("启动飞书 WebSocket 长连接 (app_id=%s)", app_id)
+    print(f"[FEISHU-WS] 启动飞书 WebSocket 长连接 (app_id={app_id})", flush=True)
     _ws_thread = threading.Thread(target=_run_ws_in_thread, args=(_ws_client,), daemon=True)
     _ws_thread.start()
 
