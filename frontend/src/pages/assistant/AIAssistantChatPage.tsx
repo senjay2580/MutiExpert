@@ -960,7 +960,7 @@ export default function AIAssistantChatPage() {
                                   className="max-h-48 max-w-[280px] cursor-pointer object-cover transition-opacity hover:opacity-80"
                                   onClick={() => setPreviewImage(att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`)}
                                 />
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+                                <div className="flex items-center gap-1.5 bg-muted/50 px-2.5 py-1.5">
                                   <span className="flex-1 truncate text-[11px] text-muted-foreground">{att.filename}</span>
                                   <a href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="rounded-md p-0.5 text-muted-foreground transition-colors hover:text-foreground" onClick={(e) => e.stopPropagation()}>
                                     <Icon icon="lucide:download" width={12} height={12} />
