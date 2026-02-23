@@ -114,8 +114,16 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-              <Icon icon="streamline-color:electric-cord-1" width={18} height={18} className="text-primary" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3370ff]/10">
+              <div
+                className="h-6 w-6"
+                style={{
+                  backgroundImage: 'url(https://lf-package-cn.feishucdn.com/obj/feishu-static/developer/console/frontend/images/899fa60e60151c73aaea2e25871102dc.svg)',
+                  backgroundPosition: '0 0',
+                  backgroundSize: 'auto 24px',
+                  backgroundRepeat: 'no-repeat',
+                }}
+              />
             </div>
             <div>
               <div className="text-sm font-semibold text-foreground">飞书</div>
@@ -267,7 +275,15 @@ function TavilyCard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
-              <Icon icon="lucide:search" width={18} height={18} className="text-blue-500" />
+              <div
+                className="h-6 w-6"
+                style={{
+                  backgroundImage: 'url(https://app.tavily.com/img/logo/logo.svg)',
+                  backgroundPosition: '0 center',
+                  backgroundSize: 'auto 100%',
+                  backgroundRepeat: 'no-repeat',
+                }}
+              />
             </div>
             <div>
               <div className="text-sm font-semibold text-foreground">Tavily 网络搜索</div>
@@ -356,7 +372,15 @@ function SupabaseCard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10">
-              <Icon icon="lucide:hard-drive" width={18} height={18} className="text-emerald-500" />
+              <div
+                className="h-6 w-6"
+                style={{
+                  backgroundImage: 'url(https://raw.githubusercontent.com/supabase/supabase/master/packages/common/assets/images/supabase-logo-icon.svg)',
+                  backgroundPosition: 'center',
+                  backgroundSize: 'contain',
+                  backgroundRepeat: 'no-repeat',
+                }}
+              />
             </div>
             <div>
               <div className="text-sm font-semibold text-foreground">Supabase Storage</div>
