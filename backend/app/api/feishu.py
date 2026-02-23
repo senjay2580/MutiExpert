@@ -1,4 +1,5 @@
 import json
+import httpx
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
@@ -362,10 +363,39 @@ async def test_feishu_connection(db: AsyncSession = Depends(get_db)):
 async def send_feishu_message(data: FeishuMessageRequest, db: AsyncSession = Depends(get_db)):
     svc = await get_feishu_service(db)
     chat_id = data.chat_id or svc.default_chat_id
-    if data.use_webhook or not chat_id:
-        result = await svc.send_webhook_message("来自 MutiExpert 的消息", data.text)
-    else:
+
+    # 优先用 chat_id 走 Open API
+    if chat_id and not data.use_webhook:
         result = await svc.send_text_message(chat_id, data.text)
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail="Failed to send message")
+        return result
+
+    # 有 webhook 走 webhook
+    if svc.webhook_url:
+        result = await svc.send_webhook_message("来自 MutiExpert 的消息", data.text)
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail="Failed to send message")
+        return result
+
+    # 都没有：用 Open API 自动获取机器人所在的第一个群
+    token = await svc._get_tenant_token()
+    if not token:
+        raise HTTPException(status_code=400, detail="无法获取 token，请检查 App ID 和 App Secret")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://open.feishu.cn/open-apis/im/v1/chats",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"page_size": 1},
+        )
+        chats_data = resp.json()
+        items = chats_data.get("data", {}).get("items", [])
+        if not items:
+            raise HTTPException(status_code=400, detail="机器人未加入任何群聊，请先将机器人添加到一个飞书群")
+        auto_chat_id = items[0].get("chat_id", "")
+
+    result = await svc.send_text_message(auto_chat_id, data.text)
     if not result["success"]:
         raise HTTPException(status_code=400, detail="Failed to send message")
     return result
