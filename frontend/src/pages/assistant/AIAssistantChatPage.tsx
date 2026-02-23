@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -205,6 +206,7 @@ export default function AIAssistantChatPage() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  const [previewImage, setPreviewImage] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>(
@@ -884,7 +886,7 @@ export default function AIAssistantChatPage() {
                           <div className="mb-2 flex flex-wrap gap-2">
                             {msg.attachments.map((att, ai) => (
                               att.mime_type.startsWith('image/') ? (
-                                <img key={ai} src={att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`} alt={att.filename} className="max-h-40 max-w-[200px] rounded-lg object-cover" />
+                                <img key={ai} src={att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`} alt={att.filename} className="max-h-40 max-w-[200px] cursor-pointer rounded-xl object-cover transition-opacity hover:opacity-80" onClick={() => setPreviewImage(att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`)} />
                               ) : (() => { const ft = getFileTypeIcon(att.filename, att.mime_type); return (
                                 <a key={ai} href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-2.5 rounded-xl bg-primary-foreground/10 px-3 py-2 text-[11px] text-primary-foreground transition-colors hover:bg-primary-foreground/20">
                                   <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/10">
@@ -951,12 +953,19 @@ export default function AIAssistantChatPage() {
                         <div className="mt-2 flex flex-wrap gap-2">
                           {msg.attachments.map((att, ai) => (
                             att.mime_type.startsWith('image/') ? (
-                              <div key={ai} className="overflow-hidden rounded-lg border border-border/40">
-                                <img src={`/api/v1/sandbox/files/download?path=${att.path}&inline=true`} alt={att.filename} className="max-h-48 max-w-[280px] object-cover" />
-                                <a href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="flex items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
-                                  <Icon icon="lucide:download" width={12} height={12} />
-                                  {att.filename}
-                                </a>
+                              <div key={ai} className="overflow-hidden rounded-xl border border-border/40">
+                                <img
+                                  src={att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`}
+                                  alt={att.filename}
+                                  className="max-h-48 max-w-[280px] cursor-pointer object-cover transition-opacity hover:opacity-80"
+                                  onClick={() => setPreviewImage(att.url || `/api/v1/sandbox/files/download?path=${att.path}&inline=true`)}
+                                />
+                                <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+                                  <span className="flex-1 truncate text-[11px] text-muted-foreground">{att.filename}</span>
+                                  <a href={att.url || `/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="rounded-md p-0.5 text-muted-foreground transition-colors hover:text-foreground" onClick={(e) => e.stopPropagation()}>
+                                    <Icon icon="lucide:download" width={12} height={12} />
+                                  </a>
+                                </div>
                               </div>
                             ) : (() => { const ft = getFileTypeIcon(att.filename, att.mime_type); return (
                               <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="group flex items-center gap-3 rounded-xl bg-muted/40 px-3.5 py-3 text-[12px] transition-all hover:bg-muted/70 hover:shadow-sm">
@@ -1320,6 +1329,22 @@ export default function AIAssistantChatPage() {
         onConfirm={() => deleteTarget && deleteConversation.mutate(deleteTarget.id)}
         loading={deleteConversation.isPending}
       />
+
+      {/* Image preview lightbox */}
+      {previewImage && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setPreviewImage('')}>
+          <div className="relative max-w-[85vw] max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <img src={previewImage} alt="preview" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl" />
+            <button
+              onClick={() => setPreviewImage('')}
+              className="absolute -top-3 -right-3 flex h-7 w-7 items-center justify-center rounded-full bg-background shadow border"
+            >
+              <Icon icon="lucide:x" className="size-4" />
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
