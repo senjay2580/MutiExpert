@@ -362,7 +362,8 @@ async def _handle_feishu_question(parsed: dict):
                 base = settings.backend_url.rstrip("/")
                 for fa in all_file_attachments:
                     size_kb = fa.get("size", 0) / 1024
-                    download_url = f"{base}{fa.get('url', '')}"
+                    raw_url = fa.get("url", "")
+                    download_url = raw_url if raw_url.startswith("http") else f"{base}{raw_url}"
                     file_card = {
                         "config": {"wide_screen_mode": True},
                         "header": {
