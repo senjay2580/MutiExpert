@@ -300,19 +300,16 @@ async def get_feishu_config(db: AsyncSession = Depends(get_db)):
     if not config:
         return {
             "app_id": "",
-            "app_secret_encrypted": "",
+            "app_secret_set": False,
             "webhook_url": "",
-            "verification_token": "",
-            "encrypt_key": "",
             "default_chat_id": "",
             "bot_enabled": False,
+            "default_provider": "claude",
         }
     return {
         "app_id": config.app_id or "",
-        "app_secret_encrypted": "",
+        "app_secret_set": bool(config.app_secret_encrypted),
         "webhook_url": config.webhook_url or "",
-        "verification_token": "",
-        "encrypt_key": "",
         "default_chat_id": config.default_chat_id or "",
         "bot_enabled": config.bot_enabled,
         "default_provider": config.default_provider or "claude",
@@ -359,26 +356,41 @@ async def test_feishu_connection(db: AsyncSession = Depends(get_db)):
     return result
 
 
-def _detect_id_type(receive_id: str) -> str:
-    """根据 ID 前缀自动判断 receive_id_type"""
-    if receive_id.startswith("oc_"):
-        return "chat_id"
-    if receive_id.startswith("ou_"):
-        return "open_id"
-    if receive_id.startswith("on_"):
-        return "union_id"
-    return "chat_id"
+@router.get("/chats", summary="列出机器人所在的会话")
+async def list_feishu_chats(db: AsyncSession = Depends(get_db)):
+    svc = await get_feishu_service(db)
+    token = await svc._get_tenant_token()
+    if not token:
+        raise HTTPException(status_code=400, detail="无法获取 token，请检查 App ID 和 App Secret")
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://open.feishu.cn/open-apis/im/v1/chats",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"page_size": 20},
+        )
+        data = resp.json()
+        items = data.get("data", {}).get("items", [])
+        return {
+            "chats": [
+                {
+                    "chat_id": item.get("chat_id", ""),
+                    "name": item.get("name", "未命名会话"),
+                    "chat_mode": item.get("chat_mode", ""),
+                    "owner_id": item.get("owner_id", ""),
+                }
+                for item in items
+            ]
+        }
 
 
 @router.post("/send-message")
 async def send_feishu_message(data: FeishuMessageRequest, db: AsyncSession = Depends(get_db)):
     svc = await get_feishu_service(db)
-    receive_id = data.chat_id or svc.default_chat_id
+    chat_id = data.chat_id or svc.default_chat_id
 
-    # 优先用 receive_id 走 Open API（自动识别 chat_id / open_id）
-    if receive_id and not data.use_webhook:
-        id_type = _detect_id_type(receive_id)
-        result = await svc.send_text_message(receive_id, data.text, id_type)
+    # 有 chat_id 走 Open API
+    if chat_id and not data.use_webhook:
+        result = await svc.send_text_message(chat_id, data.text)
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result.get("error", "Failed to send message"))
         return result
@@ -406,7 +418,7 @@ async def send_feishu_message(data: FeishuMessageRequest, db: AsyncSession = Dep
         if not items:
             raise HTTPException(
                 status_code=400,
-                detail="未找到可用会话。请填写 Default Chat ID（群聊 oc_ 开头）或 Open ID（私聊 ou_ 开头），或配置 Webhook URL",
+                detail="未找到可用会话。请先给机器人发一条消息（如「绑定」），或手动填写 Chat ID",
             )
         auto_chat_id = items[0].get("chat_id", "")
 

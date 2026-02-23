@@ -18,10 +18,8 @@ import {
 
 interface FeishuConfig {
   app_id: string;
-  app_secret_encrypted: string;
+  app_secret_set: boolean;
   webhook_url: string;
-  verification_token: string;
-  encrypt_key: string;
   default_chat_id: string;
   bot_enabled: boolean;
   default_provider: string;
@@ -39,10 +37,8 @@ export default function IntegrationsPage() {
         <PageHeader title="第三方集成" description="连接外部服务，扩展平台能力" />
         <FeishuCard initialConfig={{
           app_id: '',
-          app_secret_encrypted: '',
+          app_secret_set: false,
           webhook_url: '',
-          verification_token: '',
-          encrypt_key: '',
           default_chat_id: '',
           bot_enabled: false,
           default_provider: 'claude',
@@ -64,7 +60,7 @@ export default function IntegrationsPage() {
 function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
   const queryClient = useQueryClient();
   const [appId, setAppId] = useState(initialConfig.app_id || '');
-  const [appSecret, setAppSecret] = useState(initialConfig.app_secret_encrypted || '');
+  const [appSecret, setAppSecret] = useState('');
   const [webhookUrl, setWebhookUrl] = useState(initialConfig.webhook_url || '');
   const [defaultChatId, setDefaultChatId] = useState(initialConfig.default_chat_id || '');
   const [botEnabled, setBotEnabled] = useState(initialConfig.bot_enabled ?? false);
@@ -99,6 +95,10 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
       }),
   });
 
+  const chatsMutation = useMutation({
+    mutationFn: () => api.get<{ chats: { chat_id: string; name: string; chat_mode: string }[] }>('/feishu/chats').then((r) => r.data),
+  });
+
   const connected = Boolean(appId);
 
   return (
@@ -131,12 +131,43 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
 
         <div className="space-y-3">
           <Field label="App ID" value={appId} onChange={setAppId} placeholder="输入飞书应用 App ID" />
-          <Field label="App Secret" value={appSecret} onChange={setAppSecret} placeholder="输入飞书应用 App Secret" type="password" />
+          <Field label="App Secret" value={appSecret} onChange={setAppSecret} placeholder={initialConfig.app_secret_set ? '已配置（输入新值可覆盖）' : '输入飞书应用 App Secret'} type="password" />
 
           <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 space-y-3">
-            <div className="text-xs font-medium text-muted-foreground">方式一：Open API 模式（填写接收方 ID）</div>
-            <Field label="接收方 ID" value={defaultChatId} onChange={setDefaultChatId} placeholder="群聊 oc_xxx / 私聊 ou_xxx（你的 Open ID）" />
-            <p className="text-[11px] text-muted-foreground">群聊：把 Bot 拉进群，在群中发送「绑定」自动获取。私聊：在飞书开放平台应用后台查看你的 Open ID。</p>
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-medium text-muted-foreground">方式一：Open API 模式</div>
+              <button
+                type="button"
+                onClick={() => chatsMutation.mutate()}
+                className="text-[11px] text-primary hover:underline"
+                disabled={chatsMutation.isPending}
+              >
+                {chatsMutation.isPending ? '查询中...' : '获取会话列表'}
+              </button>
+            </div>
+            <Field label="Chat ID" value={defaultChatId} onChange={setDefaultChatId} placeholder="oc_xxxxxxxx（私聊或群聊均可，给机器人发「绑定」自动获取）" />
+            {chatsMutation.isSuccess && chatsMutation.data?.chats?.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[11px] text-muted-foreground">点击选择：</div>
+                {chatsMutation.data.chats.map((c) => (
+                  <button
+                    key={c.chat_id}
+                    type="button"
+                    onClick={() => setDefaultChatId(c.chat_id)}
+                    className={`w-full text-left text-xs px-2 py-1.5 rounded-md border transition-colors ${defaultChatId === c.chat_id ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-muted/50'}`}
+                  >
+                    <span className="font-medium">{c.name || '未命名'}</span>
+                    <span className="text-muted-foreground ml-2">({c.chat_mode === 'p2p' ? '私聊' : '群聊'} {c.chat_id})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {chatsMutation.isSuccess && chatsMutation.data?.chats?.length === 0 && (
+              <p className="text-[11px] text-muted-foreground">未找到会话，请先在飞书中给机器人发一条消息</p>
+            )}
+            {chatsMutation.isError && (
+              <p className="text-[11px] text-destructive">获取失败：{(chatsMutation.error as any)?.response?.data?.detail || '请检查配置'}</p>
+            )}
           </div>
 
           <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 space-y-3">

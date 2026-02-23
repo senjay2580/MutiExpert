@@ -75,8 +75,8 @@ class FeishuService:
             resp = await client.post(self.webhook_url, json=card)
             return {"success": resp.status_code == 200, "data": resp.json()}
 
-    async def send_text_message(self, receive_id: str, text: str, receive_id_type: str = "chat_id") -> dict:
-        """通过 Open API 发送文本消息到指定会话或用户"""
+    async def send_text_message(self, chat_id: str, text: str) -> dict:
+        """通过 Open API 发送文本消息到指定会话（私聊/群聊均可）"""
         token = await self._get_tenant_token()
         if not token:
             return {"success": False, "error": "Tenant token not available"}
@@ -84,9 +84,9 @@ class FeishuService:
             resp = await client.post(
                 "https://open.feishu.cn/open-apis/im/v1/messages",
                 headers={"Authorization": f"Bearer {token}"},
-                params={"receive_id_type": receive_id_type},
+                params={"receive_id_type": "chat_id"},
                 json={
-                    "receive_id": receive_id,
+                    "receive_id": chat_id,
                     "msg_type": "text",
                     "content": json.dumps({"text": text}),
                 },
