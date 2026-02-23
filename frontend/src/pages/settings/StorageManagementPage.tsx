@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Icon } from '@iconify/react';
 import { PageHeader } from '@/components/composed/page-header';
 import { Card, CardContent } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { DataTable } from '@/components/composed/data-table';
 import type { DataTableColumn, DataTableAction, BulkAction } from '@/components/composed/data-table';
 import {
@@ -39,6 +41,7 @@ export default function StorageManagementPage() {
   const queryClient = useQueryClient();
   const [prefix, setPrefix] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<string[] | null>(null);
 
   const { data: statsData } = useQuery({
     queryKey: ['storage-stats'],
@@ -52,10 +55,13 @@ export default function StorageManagementPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (keys: string[]) => deleteStorageFiles(keys),
-    onSuccess: () => {
+    onSuccess: (_data, keys) => {
+      toast.success(`已删除 ${keys.length} 个文件`);
+      setDeleteTarget(null);
       queryClient.invalidateQueries({ queryKey: ['storage-files'] });
       queryClient.invalidateQueries({ queryKey: ['storage-stats'] });
     },
+    onError: () => toast.error('删除失败，请重试'),
   });
 
   const files = filesData?.files ?? [];
@@ -121,7 +127,7 @@ export default function StorageManagementPage() {
       label: '删除',
       icon: 'lucide:trash-2',
       variant: 'destructive',
-      onClick: (f) => deleteMutation.mutate([getFileKey(f)]),
+      onClick: (f) => setDeleteTarget([getFileKey(f)]),
     },
   ], [publicUrlPrefix, prefix, deleteMutation, setPreviewUrl]);
 
@@ -130,7 +136,7 @@ export default function StorageManagementPage() {
       label: '批量删除',
       icon: 'lucide:trash-2',
       variant: 'destructive',
-      onClick: (keys) => deleteMutation.mutate(keys),
+      onClick: (keys) => setDeleteTarget(keys),
     },
   ], [deleteMutation]);
 
@@ -249,6 +255,17 @@ export default function StorageManagementPage() {
           </div>
         </div>
       )}
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title={`删除 ${deleteTarget?.length ?? 0} 个文件？`}
+        description="此操作不可撤销，文件将被永久删除。"
+        confirmLabel="确认删除"
+        variant="destructive"
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+        loading={deleteMutation.isPending}
+      />
 
     </div>
   );

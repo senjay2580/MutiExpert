@@ -23,6 +23,7 @@ import { FloatingEditor } from '@/components/composed/floating-editor';
 import { skillsService } from '@/services/skillsService';
 import { scriptService } from '@/services/scriptService';
 import type { Skill } from '@/types';
+import { toast } from 'sonner';
 
 type FormData = {
   name: string;
@@ -130,12 +131,14 @@ export default function SkillsPage() {
   const saveMutation = useMutation({
     mutationFn: (p: { id?: string; data: Partial<Skill> }) =>
       p.id ? skillsService.update(p.id, p.data) : skillsService.create(p.data as Parameters<typeof skillsService.create>[0]),
-    onSuccess: () => {
+    onSuccess: (_data, p) => {
       queryClient.invalidateQueries({ queryKey: ['skills'] });
       setShowForm(false);
       setEditingSkill(null);
       setForm(EMPTY_FORM);
+      toast.success(p.id ? '技能已更新' : '技能创建成功');
     },
+    onError: () => toast.error('保存失败，请重试'),
   });
 
   const deleteMutation = useMutation({
@@ -144,22 +147,33 @@ export default function SkillsPage() {
       queryClient.invalidateQueries({ queryKey: ['skills'] });
       setDeleteTarget(null);
       if (deleteTarget && detailId === deleteTarget.id) setDetailId(null);
+      toast.success('技能已删除');
     },
+    onError: () => toast.error('删除失败，请重试'),
   });
 
   const toggleMutation = useMutation({
     mutationFn: skillsService.toggle,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['skills'] }),
+    onError: () => toast.error('操作失败'),
   });
 
   const bulkEnableMutation = useMutation({
     mutationFn: (p: { ids: string[]; enabled: boolean }) => skillsService.bulkEnable(p.ids, p.enabled),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['skills'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+      toast.success('批量操作成功');
+    },
+    onError: () => toast.error('批量操作失败'),
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => skillsService.bulkDelete(ids),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['skills'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+      toast.success('批量删除成功');
+    },
+    onError: () => toast.error('批量删除失败'),
   });
 
   const addRefMutation = useMutation({
@@ -167,12 +181,18 @@ export default function SkillsPage() {
       skillsService.createRef(detailId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['skills', detailId] });
+      toast.success('引用添加成功');
     },
+    onError: () => toast.error('引用添加失败'),
   });
 
   const deleteRefMutation = useMutation({
     mutationFn: (refId: string) => skillsService.deleteRef(detailId!, refId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['skills', detailId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skills', detailId] });
+      toast.success('引用已删除');
+    },
+    onError: () => toast.error('删除引用失败'),
   });
 
   const linkScriptMutation = useMutation({
@@ -180,12 +200,18 @@ export default function SkillsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['skills', detailId] });
       setShowScriptPicker(false);
+      toast.success('脚本关联成功');
     },
+    onError: () => toast.error('关联失败'),
   });
 
   const unlinkScriptMutation = useMutation({
     mutationFn: (linkId: string) => skillsService.unlinkScript(detailId!, linkId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['skills', detailId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skills', detailId] });
+      toast.success('已取消关联');
+    },
+    onError: () => toast.error('取消关联失败'),
   });
 
   // ── Handlers ──────────────────────────────────────────────

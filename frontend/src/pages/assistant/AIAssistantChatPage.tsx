@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Icon } from '@iconify/react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -234,11 +235,13 @@ export default function AIAssistantChatPage() {
   const deleteConversation = useMutation({
     mutationFn: chatService.deleteConversation,
     onSuccess: () => {
+      toast.success('对话已删除');
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       if (activeConvId && activeConvId === deleteConversation.variables) {
         handleNewConversation();
       }
     },
+    onError: () => toast.error('删除失败'),
   });
 
   const updateConversation = useMutation({
@@ -247,6 +250,7 @@ export default function AIAssistantChatPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
+    onError: () => toast.error('更新失败'),
   });
 
   const conversations = useMemo(() => {

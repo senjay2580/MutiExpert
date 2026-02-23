@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Icon } from '@iconify/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -133,7 +134,7 @@ export default function BasicSettingsPage() {
 
       {/* ---- Reset ---- */}
       <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={resetAll} className="text-xs">
+        <Button variant="outline" size="sm" onClick={() => { resetAll(); toast.success('已恢复默认值'); }} className="text-xs">
           <Icon icon="lucide:rotate-ccw" width={14} height={14} />
           恢复默认值
         </Button>

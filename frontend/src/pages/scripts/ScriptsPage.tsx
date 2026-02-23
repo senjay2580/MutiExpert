@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -164,12 +165,14 @@ export default function ScriptsPage() {
             script_content: payload.data.script_content!,
             script_type: payload.data.script_type || 'typescript',
           }),
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       queryClient.invalidateQueries({ queryKey: ['scripts'] });
       setShowForm(false);
       setEditingScript(null);
       setForm(EMPTY_FORM);
+      toast.success(payload.id ? '脚本已更新' : '脚本创建成功');
     },
+    onError: () => toast.error('保存失败，请重试'),
   });
 
   const deleteMutation = useMutation({
@@ -177,27 +180,38 @@ export default function ScriptsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scripts'] });
       setDeleteTarget(null);
+      toast.success('脚本已删除');
     },
+    onError: () => toast.error('删除失败，请重试'),
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       scriptService.update(id, { enabled }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scripts'] }),
+    onError: () => toast.error('操作失败'),
   });
 
   const bulkToggleMutation = useMutation({
     mutationFn: async ({ ids, enabled }: { ids: string[]; enabled: boolean }) => {
       for (const id of ids) await scriptService.update(id, { enabled });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scripts'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scripts'] });
+      toast.success('批量操作成功');
+    },
+    onError: () => toast.error('批量操作失败'),
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       for (const id of ids) await scriptService.delete(id);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scripts'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scripts'] });
+      toast.success('批量删除成功');
+    },
+    onError: () => toast.error('批量删除失败'),
   });
 
   const handleTest = async (script: UserScript) => {

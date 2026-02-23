@@ -18,6 +18,7 @@ import {
 } from '@/components/composed/data-table';
 import { botToolService } from '@/services/botToolService';
 import type { BotTool } from '@/types';
+import { toast } from 'sonner';
 
 function ParamBadges({ parameters }: { parameters: Record<string, unknown> | null }) {
   const props = (parameters as { properties?: Record<string, { type?: string }> })?.properties;
@@ -49,16 +50,22 @@ export default function BotToolsPage() {
   const toggleMutation = useMutation({
     mutationFn: botToolService.toggle,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bot-tools'] }),
+    onError: () => toast.error('操作失败'),
   });
 
   const bulkEnableMutation = useMutation({
     mutationFn: (p: { ids: string[]; enabled: boolean }) => botToolService.bulkEnable(p.ids, p.enabled),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bot-tools'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bot-tools'] });
+      toast.success('批量操作成功');
+    },
+    onError: () => toast.error('批量操作失败'),
   });
 
   const syncMutation = useMutation({
     mutationFn: botToolService.sync,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bot-tools'] }),
+    onError: () => toast.error('同步失败，请重试'),
   });
 
   const totalTools = tools.length;

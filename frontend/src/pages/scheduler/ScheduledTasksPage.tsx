@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -234,6 +235,7 @@ export default function ScheduledTasksPage() {
   const toggleMutation = useMutation({
     mutationFn: scheduledTaskService.toggle,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+    onError: () => toast.error('操作失败'),
   });
 
   const deleteMutation = useMutation({
@@ -241,14 +243,20 @@ export default function ScheduledTasksPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] });
       setDeleteTarget(null);
+      toast.success('任务已删除');
     },
+    onError: () => toast.error('删除失败'),
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       for (const id of ids) await scheduledTaskService.delete(id);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] });
+      toast.success('批量删除成功');
+    },
+    onError: () => toast.error('批量删除失败'),
   });
 
   const bulkToggleMutation = useMutation({
@@ -258,12 +266,20 @@ export default function ScheduledTasksPage() {
         if (task && task.enabled !== enabled) await scheduledTaskService.toggle(id);
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] });
+      toast.success('批量操作成功');
+    },
+    onError: () => toast.error('批量操作失败'),
   });
 
   const runMutation = useMutation({
     mutationFn: scheduledTaskService.run,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] });
+      toast.success('任务已触发执行');
+    },
+    onError: () => toast.error('执行失败'),
   });
 
   const saveMutation = useMutation({
@@ -271,12 +287,14 @@ export default function ScheduledTasksPage() {
       payload.id
         ? scheduledTaskService.update(payload.id, payload.data)
         : scheduledTaskService.create(payload.data as { name: string; cron_expression: string; task_type: string; task_config?: Record<string, unknown>; description?: string }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-tasks'] });
       setShowCreate(false);
       setEditingTask(null);
       setForm(EMPTY_FORM);
+      toast.success(variables.id ? '任务已更新' : '任务创建成功');
     },
+    onError: () => toast.error('保存失败，请重试'),
   });
 
   const handleToggle = (id: string) => {

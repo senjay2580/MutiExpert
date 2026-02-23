@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SaveButton, SolidButton } from '@/components/composed/solid-button';
+import { toast } from 'sonner';
 import {
   Select,
   SelectContent,
@@ -81,11 +82,15 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
       queryClient.invalidateQueries({ queryKey: ['feishu-config'] });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      toast.success('配置已保存');
     },
+    onError: () => toast.error('保存失败，请重试'),
   });
 
   const testMutation = useMutation({
     mutationFn: () => api.post('/feishu/test-connection'),
+    onSuccess: () => toast.success('连接测试成功'),
+    onError: () => toast.error('连接测试失败'),
   });
 
   const testMessageMutation = useMutation({
@@ -93,10 +98,13 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
       api.post('/feishu/send-message', {
         text: 'MutiExpert 测试消息：飞书集成已连接。',
       }),
+    onSuccess: () => toast.success('测试消息已发送'),
+    onError: () => toast.error('发送失败'),
   });
 
   const chatsMutation = useMutation({
     mutationFn: () => api.get<{ chats: { chat_id: string; name: string; chat_mode: string }[] }>('/feishu/chats').then((r) => r.data),
+    onError: () => toast.error('获取群组失败'),
   });
 
   const connected = Boolean(appId);
@@ -276,7 +284,9 @@ function TavilyCard() {
       setSaved(true);
       setApiKey('');
       setTimeout(() => setSaved(false), 2000);
+      toast.success('配置已保存');
     },
+    onError: () => toast.error('保存失败，请重试'),
   });
 
   return (
@@ -367,11 +377,15 @@ function SupabaseCard() {
       setSaved(true);
       setServiceKey('');
       setTimeout(() => setSaved(false), 2000);
+      toast.success('配置已保存');
     },
+    onError: () => toast.error('保存失败，请重试'),
   });
 
   const testMutation = useMutation({
     mutationFn: () => api.get<{ success: boolean; error: string }>('/sandbox/storage/test').then((r) => r.data),
+    onSuccess: () => toast.success('连接测试成功'),
+    onError: () => toast.error('连接测试失败'),
   });
 
   const configured = config?.supabase_service_key_set;

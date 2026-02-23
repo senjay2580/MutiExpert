@@ -22,6 +22,7 @@ import { AnimatedList, AnimatedItem } from '@/components/composed/animated';
 import { boardService, type BoardListItem } from '@/services/boardService';
 import { illustrationPresets } from '@/lib/illustrations';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export default function BoardListPage() {
   const navigate = useNavigate();
@@ -43,8 +44,10 @@ export default function BoardListPage() {
     onSuccess: (board) => {
       queryClient.invalidateQueries({ queryKey: ['boards'] });
       closeDialog();
+      toast.success('画板创建成功');
       navigate(`/boards/${board.id}`);
     },
+    onError: () => toast.error('创建失败，请重试'),
   });
 
   const updateMutation = useMutation({
@@ -53,7 +56,9 @@ export default function BoardListPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['boards'] });
       closeDialog();
+      toast.success('画板已更新');
     },
+    onError: () => toast.error('更新失败，请重试'),
   });
 
   const deleteMutation = useMutation({
@@ -61,7 +66,9 @@ export default function BoardListPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['boards'] });
       setDeleteTarget(null);
+      toast.success('画板已删除');
     },
+    onError: () => toast.error('删除失败，请重试'),
   });
 
   const closeDialog = () => {
