@@ -1,7 +1,9 @@
 """飞书 WebSocket 长连接 — 接收消息事件并转发到处理逻辑"""
 import asyncio
+import fcntl
 import json
 import logging
+import os
 import threading
 from typing import Callable, Awaitable
 
@@ -17,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _ws_client: lark.ws.Client | None = None
 _ws_thread: threading.Thread | None = None
+_lock_file = None  # 文件锁句柄，防止多 worker 重复连接
 
 
 def _parse_message_event(data: lark.im.v1.P2ImMessageReceiveV1) -> dict | None:
@@ -51,8 +54,12 @@ def _parse_message_event(data: lark.im.v1.P2ImMessageReceiveV1) -> dict | None:
 
 def _run_ws_in_thread(client: lark.ws.Client):
     """在独立线程中运行 WebSocket 客户端（需要自己的事件循环）"""
+    import lark_oapi.ws.client as ws_module
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    # SDK 在模块级缓存了 loop = asyncio.get_event_loop()，
+    # 指向 uvicorn 主循环，必须替换为当前线程的新循环
+    ws_module.loop = loop
     try:
         client.start()
     except Exception as e:
@@ -63,7 +70,21 @@ def _run_ws_in_thread(client: lark.ws.Client):
 
 async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
     """启动飞书 WebSocket 长连接，需要数据库中已配置 app_id + app_secret"""
-    global _ws_client, _ws_thread
+    global _ws_client, _ws_thread, _lock_file
+
+    # 多 worker 环境下，用文件锁确保只有一个 worker 启动 WS
+    lock_path = "/tmp/feishu_ws.lock"
+    try:
+        _lock_file = open(lock_path, "w")
+        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file.write(str(os.getpid()))
+        _lock_file.flush()
+    except (OSError, IOError):
+        logger.info("另一个 worker 已持有飞书 WS 锁，跳过 (pid=%d)", os.getpid())
+        if _lock_file:
+            _lock_file.close()
+            _lock_file = None
+        return
 
     settings = get_settings()
     app_id = settings.feishu_app_id
@@ -109,8 +130,15 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
 
 def stop_feishu_ws():
     """停止长连接"""
-    global _ws_client, _ws_thread
+    global _ws_client, _ws_thread, _lock_file
     if _ws_client:
         logger.info("停止飞书 WebSocket 长连接")
         _ws_client = None
         _ws_thread = None
+    if _lock_file:
+        try:
+            fcntl.flock(_lock_file, fcntl.LOCK_UN)
+            _lock_file.close()
+        except Exception:
+            pass
+        _lock_file = None
