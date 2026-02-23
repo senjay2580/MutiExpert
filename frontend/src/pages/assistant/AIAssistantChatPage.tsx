@@ -348,6 +348,7 @@ export default function AIAssistantChatPage() {
           completion_tokens: m.completion_tokens ?? null,
           cost_usd: m.cost_usd ?? null,
           latency_ms: m.latency_ms ?? null,
+          created_at: m.created_at,
         }));
       currentConvIdRef.current = activeConvId;
       setMessages(mapped);
@@ -677,8 +678,8 @@ export default function AIAssistantChatPage() {
     }
 
     setIsSending(true);
-    const userMsg: ChatMessage = { id: `user-${Date.now()}`, role: 'user', content: text || '(文件)', attachments: attachmentsToSend.length ? attachmentsToSend : undefined };
-    const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: '', isStreaming: true, model_used: normalizedCurrent };
+    const userMsg: ChatMessage = { id: `user-${Date.now()}`, role: 'user', content: text || '(文件)', attachments: attachmentsToSend.length ? attachmentsToSend : undefined, created_at: new Date().toISOString() };
+    const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: '', isStreaming: true, model_used: normalizedCurrent, created_at: new Date().toISOString() };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
     try {
@@ -876,7 +877,12 @@ export default function AIAssistantChatPage() {
                         ) : null}
                         <p className="whitespace-pre-wrap">{msg.content}</p>
                       </div>
-                      {!msg.isStreaming && (
+                      {/* 时间 + 操作按钮 */}
+                      <div className="mt-1 flex items-center gap-2">
+                        {msg.created_at && (
+                          <span className="text-[10px] text-muted-foreground/60">{formatMessageTime(msg.created_at)}</span>
+                        )}
+                        {!msg.isStreaming && (
                         <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100">
                           <TooltipProvider>
                             <Tooltip><TooltipTrigger asChild>
@@ -896,6 +902,7 @@ export default function AIAssistantChatPage() {
                           )}
                         </div>
                       )}
+                      </div>
                     </div>
                   ) : (
                     /* ── AI 消息：无气泡，直接展示内容 ── */
@@ -965,6 +972,7 @@ export default function AIAssistantChatPage() {
                             <span>·</span>
                             <span>{formatLatency(msg.latency_ms)}</span>
                             {msg.tokens_used ? <><span>·</span><span>{msg.tokens_used} tokens</span></> : null}
+                            {msg.created_at ? <><span>·</span><span>{formatMessageTime(msg.created_at)}</span></> : null}
                           </span>
                         </div>
                       )}
@@ -1287,4 +1295,17 @@ function formatRelativeTime(dateStr: string): string {
 function formatLatency(ms: number | null | undefined): string {
   if (!ms) return '--';
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function formatMessageTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  const time = `${hh}:${mm}`;
+  // 同一天只显示时间
+  if (d.toDateString() === now.toDateString()) return time;
+  // 今年内显示月/日 时间
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${time}`;
 }

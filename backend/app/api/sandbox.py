@@ -278,11 +278,13 @@ async def api_test_storage():
 
 @router.get("/storage/list", summary="列出 Storage 文件")
 async def api_storage_list(prefix: str = "", limit: int = 100, offset: int = 0):
-    from app.services.supabase_storage_service import list_objects, StorageResult
+    from app.services.supabase_storage_service import list_objects, StorageResult, _get_config
     result = await list_objects(prefix, limit, offset)
     if isinstance(result, StorageResult):
-        return {"success": False, "error": result.error, "files": []}
-    return {"success": True, "error": "", "files": result}
+        return {"success": False, "error": result.error, "files": [], "public_url_prefix": ""}
+    cfg = await _get_config()
+    url_prefix = f"{cfg.url}/storage/v1/object/public/{cfg.bucket}" if cfg.url else ""
+    return {"success": True, "error": "", "files": result, "public_url_prefix": url_prefix}
 
 
 @router.delete("/storage/delete", summary="删除 Storage 文件")

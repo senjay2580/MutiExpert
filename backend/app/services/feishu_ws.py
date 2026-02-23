@@ -1,10 +1,12 @@
 """飞书 WebSocket 长连接 — 接收消息事件并转发到处理逻辑"""
 import asyncio
+import collections
 import fcntl
 import json
 import logging
 import os
 import threading
+import time
 from typing import Callable, Awaitable
 
 import lark_oapi as lark
@@ -109,11 +111,28 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
     # 捕获主线程的事件循环，用于从 ws 线程回调中调度异步任务
     main_loop = asyncio.get_running_loop()
 
+    # 消息去重：飞书 WS 重连/重投可能重复推送同一条消息
+    _seen_msg_ids: collections.OrderedDict[str, float] = collections.OrderedDict()
+    _seen_lock = threading.Lock()
+    DEDUP_TTL = 300  # 5 分钟内同一 message_id 不重复处理
+    DEDUP_MAX = 500
+
     def on_message(data: lark.im.v1.P2ImMessageReceiveV1):
         print(f"[FEISHU-WS] 收到事件: {type(data).__name__}", flush=True)
         parsed = _parse_message_event(data)
         print(f"[FEISHU-WS] 解析: text={parsed.get('text') if parsed else None}, type={parsed.get('message_type') if parsed else None}", flush=True)
         if parsed and parsed.get("text") and parsed.get("message_type") == "text":
+            msg_id = parsed.get("message_id", "")
+            # 去重检查
+            with _seen_lock:
+                now = time.time()
+                if msg_id in _seen_msg_ids:
+                    print(f"[FEISHU-WS] 跳过重复消息: message_id={msg_id}", flush=True)
+                    return
+                _seen_msg_ids[msg_id] = now
+                # 清理过期条目
+                while len(_seen_msg_ids) > DEDUP_MAX:
+                    _seen_msg_ids.popitem(last=False)
             print(f"[FEISHU-WS] 调度处理: chat_id={parsed.get('chat_id')}", flush=True)
             main_loop.call_soon_threadsafe(asyncio.ensure_future, handle_question(parsed))
 

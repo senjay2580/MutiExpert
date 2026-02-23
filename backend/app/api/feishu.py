@@ -2,6 +2,8 @@ import json
 import logging
 import re
 import time
+import collections
+import threading
 import httpx
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
@@ -20,6 +22,25 @@ from app.services.feishu_service import (
 from app.services.pipeline_service import PipelineRequest, run_stream
 
 router = APIRouter()
+
+# 消息去重：防止 webhook/WS 重复投递
+_seen_msg_ids: collections.OrderedDict[str, float] = collections.OrderedDict()
+_seen_lock = threading.Lock()
+_DEDUP_TTL = 300
+_DEDUP_MAX = 500
+
+
+def _is_duplicate(message_id: str) -> bool:
+    """检查 message_id 是否已处理过，同时记录新 id"""
+    if not message_id:
+        return False
+    with _seen_lock:
+        if message_id in _seen_msg_ids:
+            return True
+        _seen_msg_ids[message_id] = time.time()
+        while len(_seen_msg_ids) > _DEDUP_MAX:
+            _seen_msg_ids.popitem(last=False)
+    return False
 
 
 class FeishuConfigUpdate(BaseModel):
@@ -88,6 +109,8 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
         if not token or verification_token != token:
             raise HTTPException(status_code=401, detail="Invalid verification token")
     if parsed["type"] == "message" and parsed.get("text") and parsed.get("message_type") == "text":
+        if _is_duplicate(parsed.get("message_id", "")):
+            return {"code": 0, "msg": "duplicate"}
         background_tasks.add_task(_handle_feishu_question, parsed)
     return {"code": 0, "msg": "ok"}
 
@@ -141,7 +164,13 @@ def _adapt_markdown_for_feishu(text: str) -> str:
     return "\n".join(result)
 
 
-def _build_stream_card(text: str, status: str = "processing", tool_name: str = "") -> dict:
+def _build_stream_card(
+    text: str,
+    status: str = "processing",
+    tool_name: str = "",
+    tool_calls: list[dict] | None = None,
+    sources: list[dict] | None = None,
+) -> dict:
     """构建流式更新卡片 JSON"""
     templates = {"processing": "blue", "completed": "green", "error": "red"}
     titles = {"processing": "AI 助手", "completed": "AI 助手", "error": "AI 助手 · 出错"}
@@ -155,13 +184,35 @@ def _build_stream_card(text: str, status: str = "processing", tool_name: str = "
     # 飞书卡片 markdown 最大约 30000 字符，截断保护
     if len(content) > 28000:
         content = content[:28000] + "\n\n...(内容过长已截断)"
+
+    elements: list[dict] = [{"tag": "markdown", "content": content}]
+
+    # 完成时追加 tool calls 摘要
+    if status == "completed" and tool_calls:
+        tool_lines = []
+        for tc in tool_calls:
+            icon = "✅" if tc.get("success") else "❌"
+            name = tc.get("name", "unknown")
+            result_preview = tc.get("result", "")[:100]
+            tool_lines.append(f"{icon} **{name}**：{result_preview}")
+        if tool_lines:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "**工具调用**\n" + "\n".join(tool_lines)})
+
+    # 完成时追加知识库来源
+    if status == "completed" and sources:
+        src_lines = [f"· {s.get('document_title', s.get('title', ''))}" for s in sources[:5]]
+        if src_lines:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "**参考来源**\n" + "\n".join(src_lines)})
+
     return {
         "config": {"wide_screen_mode": True, "update_multi": True},
         "header": {
             "title": {"tag": "plain_text", "content": header_title},
             "template": templates.get(status, "blue"),
         },
-        "elements": [{"tag": "markdown", "content": content}],
+        "elements": elements,
     }
 
 
@@ -285,7 +336,11 @@ async def _handle_feishu_question(parsed: dict):
             # 3. 最终卡片
             response_text = accumulated_text or "抱歉，暂时无法回答这个问题。"
             if card_msg_id:
-                final_card = _build_stream_card(response_text, "completed")
+                final_card = _build_stream_card(
+                    response_text, "completed",
+                    tool_calls=all_tool_calls or None,
+                    sources=all_sources or None,
+                )
                 await svc.update_card(card_msg_id, final_card)
 
             # 4. 保存 AI 回复

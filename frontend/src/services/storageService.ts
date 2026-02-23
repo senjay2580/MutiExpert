@@ -17,7 +17,7 @@ export interface StorageStats {
 }
 
 export async function listStorageFiles(prefix = '', limit = 100, offset = 0) {
-  const { data } = await api.get<{ success: boolean; error: string; files: StorageFile[] }>(
+  const { data } = await api.get<{ success: boolean; error: string; files: StorageFile[]; public_url_prefix: string }>(
     '/sandbox/storage/list',
     { params: { prefix, limit, offset } },
   );

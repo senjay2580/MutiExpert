@@ -49,6 +49,7 @@ export default function StorageManagementPage() {
   });
 
   const files = filesData?.files ?? [];
+  const publicUrlPrefix = filesData?.public_url_prefix ?? '';
   const stats = statsData?.stats && statsData.stats.total_files !== undefined ? statsData.stats : undefined;
 
   // 从文件列表提取子目录（id 为 null 的是文件夹）
@@ -220,7 +221,7 @@ export default function StorageManagementPage() {
                         <div className="flex items-center gap-1">
                           {isImage(f.name) && (
                             <button
-                              onClick={() => setPreviewUrl(key)}
+                              onClick={() => setPreviewUrl(`${publicUrlPrefix}/${key}`)}
                               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                               title="预览"
                             >
@@ -248,7 +249,7 @@ export default function StorageManagementPage() {
       {/* Image preview overlay */}
       {previewUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
           onClick={() => setPreviewUrl('')}
         >
           <div className="relative max-w-[80vw] max-h-[80vh]" onClick={(e) => e.stopPropagation()}>

@@ -52,6 +52,7 @@ export type ChatMessage = {
   completion_tokens?: number | null;
   cost_usd?: number | null;
   latency_ms?: number | null;
+  created_at?: string;
 };
 
 export type StreamEntry = {

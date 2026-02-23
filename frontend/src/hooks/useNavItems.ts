@@ -25,6 +25,7 @@ export function useNavItems() {
     { path: '/settings/basic',        icon: 'streamline-color:ai-settings-spark',      label: '基础参数' },
     { path: '/settings/ai-models',    icon: navIcons.aiModels,       label: 'AI 模型配置' },
     { path: '/settings/integrations', icon: navIcons.integrations,   label: '第三方集成' },
+    { path: '/settings/storage',      icon: 'streamline-color:folder-file', label: '文件存储' },
     { path: '/settings/data',         icon: navIcons.data,           label: '数据管理' },
   ];
 
