@@ -65,24 +65,15 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
   const queryClient = useQueryClient();
   const [appId, setAppId] = useState(initialConfig.app_id || '');
   const [appSecret, setAppSecret] = useState(initialConfig.app_secret_encrypted || '');
-  const [webhookUrl, setWebhookUrl] = useState(initialConfig.webhook_url || '');
-  const [verificationToken, setVerificationToken] = useState(initialConfig.verification_token || '');
-  const [encryptKey, setEncryptKey] = useState(initialConfig.encrypt_key || '');
-  const [defaultChatId, setDefaultChatId] = useState(initialConfig.default_chat_id || '');
   const [botEnabled, setBotEnabled] = useState(initialConfig.bot_enabled ?? false);
   const [defaultProvider, setDefaultProvider] = useState(initialConfig.default_provider || 'claude');
   const [saved, setSaved] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const saveMutation = useMutation({
     mutationFn: () =>
       api.put('/feishu/config', {
         app_id: appId,
         app_secret: appSecret,
-        webhook_url: webhookUrl,
-        verification_token: verificationToken,
-        encrypt_key: encryptKey,
-        default_chat_id: defaultChatId,
         bot_enabled: botEnabled,
         default_provider: defaultProvider,
       }),
@@ -101,17 +92,14 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
     mutationFn: () =>
       api.post('/feishu/send-message', {
         text: 'MutiExpert 测试消息：飞书集成已连接。',
-        use_webhook: !defaultChatId,
-        chat_id: defaultChatId || undefined,
       }),
   });
 
-  const connected = Boolean(webhookUrl || defaultChatId || appId);
+  const connected = Boolean(appId);
 
   return (
     <Card className="gap-4 py-5">
       <CardContent className="space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3370ff]/10">
@@ -137,7 +125,6 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
           )}
         </div>
 
-        {/* Core fields */}
         <div className="space-y-3">
           <Field label="App ID" value={appId} onChange={setAppId} placeholder="输入飞书应用 App ID" />
           <Field label="App Secret" value={appSecret} onChange={setAppSecret} placeholder="输入飞书应用 App Secret" type="password" />
@@ -148,55 +135,32 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
             </div>
             <Switch checked={botEnabled} onCheckedChange={setBotEnabled} />
           </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">机器人默认模型</label>
+            <Select value={defaultProvider} onValueChange={setDefaultProvider}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="选择模型" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="claude">Claude</SelectItem>
+                <SelectItem value="deepseek">DeepSeek</SelectItem>
+                <SelectItem value="qwen">通义千问</SelectItem>
+                <SelectItem value="openai">OpenAI</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        {/* Advanced toggle */}
-        <button
-          onClick={() => setShowAdvanced((v) => !v)}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <Icon icon={showAdvanced ? 'lucide:chevron-down' : 'lucide:chevron-right'} className="size-3.5" />
-          高级配置
-        </button>
-
-        {/* Advanced fields */}
-        {showAdvanced && (
-          <div className="space-y-3 border-t pt-3">
-            <Field label="Webhook URL" value={webhookUrl} onChange={setWebhookUrl} placeholder="群机器人 Webhook 地址（用于主动推送）" />
-            <Field label="Verification Token" value={verificationToken} onChange={setVerificationToken} placeholder="事件回调校验 Token" />
-            <Field label="Encrypt Key" value={encryptKey} onChange={setEncryptKey} placeholder="事件加密密钥" type="password" />
-            <Field label="默认 Chat ID" value={defaultChatId} onChange={setDefaultChatId} placeholder="消息推送的目标会话 ID" />
-            <p className="text-[11px] text-muted-foreground">也可在飞书对话中发送&quot;绑定&quot;自动记录会话 ID</p>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">机器人默认模型</label>
-              <Select value={defaultProvider} onValueChange={setDefaultProvider}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="选择模型" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="claude">Claude</SelectItem>
-                  <SelectItem value="deepseek">DeepSeek</SelectItem>
-                  <SelectItem value="qwen">通义千问</SelectItem>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">也可在飞书对话中发送"切换到 deepseek"动态切换</p>
-            </div>
-          </div>
-        )}
-
-        {/* Actions */}
         <div className="flex gap-2">
           <SaveButton onClick={() => saveMutation.mutate()} loading={saveMutation.isPending}>
             {saved ? '已保存' : '保存配置'}
           </SaveButton>
-          <SolidButton color="secondary" icon="streamline-color:test-tube" onClick={() => testMutation.mutate()} loading={testMutation.isPending} loadingText="测试中...">
+          <SolidButton color="secondary" icon="lucide:wifi" onClick={() => testMutation.mutate()} loading={testMutation.isPending} loadingText="测试中...">
             测试连接
           </SolidButton>
-          <SolidButton color="secondary" icon="streamline-color:chat-bubble-text-square" onClick={() => testMessageMutation.mutate()} loading={testMessageMutation.isPending} loadingText="发送中...">
+          <SolidButton color="secondary" icon="lucide:message-circle" onClick={() => testMessageMutation.mutate()} loading={testMessageMutation.isPending} loadingText="发送中...">
             测试消息
           </SolidButton>
         </div>
 
-        {/* Status */}
         {testMutation.isSuccess && <p className="text-xs text-green-600">连接成功</p>}
         {testMutation.isError && <p className="text-xs text-destructive">连接失败，请检查配置</p>}
         {testMessageMutation.isSuccess && <p className="text-xs text-emerald-600">测试消息已发送</p>}
