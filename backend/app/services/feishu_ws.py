@@ -114,7 +114,6 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
     # 消息去重：飞书 WS 重连/重投可能重复推送同一条消息
     _seen_msg_ids: collections.OrderedDict[str, float] = collections.OrderedDict()
     _seen_lock = threading.Lock()
-    DEDUP_TTL = 300  # 5 分钟内同一 message_id 不重复处理
     DEDUP_MAX = 500
 
     def on_message(data: lark.im.v1.P2ImMessageReceiveV1):

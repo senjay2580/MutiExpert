@@ -26,7 +26,6 @@ router = APIRouter()
 # 消息去重：防止 webhook/WS 重复投递
 _seen_msg_ids: collections.OrderedDict[str, float] = collections.OrderedDict()
 _seen_lock = threading.Lock()
-_DEDUP_TTL = 300
 _DEDUP_MAX = 500
 
 
