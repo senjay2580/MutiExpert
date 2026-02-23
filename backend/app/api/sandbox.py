@@ -6,8 +6,6 @@ import mimetypes
 import os
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -26,6 +24,8 @@ from app.services.sandbox_service import (
     _safe_path,
 )
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
