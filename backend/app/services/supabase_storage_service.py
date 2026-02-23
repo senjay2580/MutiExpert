@@ -75,8 +75,8 @@ async def is_configured() -> bool:
 
 def _make_key(filename: str, prefix: str = "chat") -> str:
     short_id = uuid.uuid4().hex[:8]
-    safe_name = Path(filename).name
-    return f"{prefix}/{short_id}_{safe_name}"
+    ext = Path(filename).suffix  # e.g. ".pptx"
+    return f"{prefix}/{short_id}{ext}"
 
 
 def _public_url(cfg: _SupabaseConfig, key: str) -> str:
