@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import threading
 from typing import Callable, Awaitable
 
 import lark_oapi as lark
@@ -15,6 +16,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 _ws_client: lark.ws.Client | None = None
+_ws_thread: threading.Thread | None = None
 
 
 def _parse_message_event(data: lark.im.v1.P2ImMessageReceiveV1) -> dict | None:
@@ -47,9 +49,21 @@ def _parse_message_event(data: lark.im.v1.P2ImMessageReceiveV1) -> dict | None:
     }
 
 
+def _run_ws_in_thread(client: lark.ws.Client):
+    """在独立线程中运行 WebSocket 客户端（需要自己的事件循环）"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        client.start()
+    except Exception as e:
+        logger.error("飞书 WebSocket 线程异常退出: %s", e)
+    finally:
+        loop.close()
+
+
 async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
     """启动飞书 WebSocket 长连接，需要数据库中已配置 app_id + app_secret"""
-    global _ws_client
+    global _ws_client, _ws_thread
 
     settings = get_settings()
     app_id = settings.feishu_app_id
@@ -71,13 +85,13 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
         logger.info("飞书 App ID/Secret 未配置，跳过长连接启动")
         return
 
-    # 同步回调 → 在事件循环中调度异步处理
-    _loop = asyncio.get_event_loop()
+    # 捕获主线程的事件循环，用于从 ws 线程回调中调度异步任务
+    main_loop = asyncio.get_running_loop()
 
     def on_message(data: lark.im.v1.P2ImMessageReceiveV1):
         parsed = _parse_message_event(data)
         if parsed and parsed.get("text") and parsed.get("message_type") == "text":
-            _loop.call_soon_threadsafe(asyncio.ensure_future, handle_question(parsed))
+            main_loop.call_soon_threadsafe(asyncio.ensure_future, handle_question(parsed))
 
     handler = lark.EventDispatcherHandler.builder("", "").register_p2_im_message_receive_v1(on_message).build()
 
@@ -89,14 +103,14 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
     )
 
     logger.info("启动飞书 WebSocket 长连接 (app_id=%s)", app_id)
-    # ws_client.start() 是阻塞的，放到线程里
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _ws_client.start)
+    _ws_thread = threading.Thread(target=_run_ws_in_thread, args=(_ws_client,), daemon=True)
+    _ws_thread.start()
 
 
 def stop_feishu_ws():
     """停止长连接"""
-    global _ws_client
+    global _ws_client, _ws_thread
     if _ws_client:
         logger.info("停止飞书 WebSocket 长连接")
         _ws_client = None
+        _ws_thread = None
