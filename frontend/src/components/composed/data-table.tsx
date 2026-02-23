@@ -466,6 +466,16 @@ export function DataTable<T>({
 
   const clearSelection = useCallback(() => setSelectedKeys(new Set()), []);
 
+  // 当 data 变化时，清理掉已不存在的 selectedKeys
+  useEffect(() => {
+    setSelectedKeys((prev) => {
+      if (prev.size === 0) return prev;
+      const validKeys = new Set(data.map((r) => rowKey(r)));
+      const next = new Set([...prev].filter((k) => validKeys.has(k)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [data, rowKey]);
+
   const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value); setCurrentPage(1);
   }, []);
