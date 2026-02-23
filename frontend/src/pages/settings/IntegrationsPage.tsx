@@ -65,6 +65,8 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
   const queryClient = useQueryClient();
   const [appId, setAppId] = useState(initialConfig.app_id || '');
   const [appSecret, setAppSecret] = useState(initialConfig.app_secret_encrypted || '');
+  const [webhookUrl, setWebhookUrl] = useState(initialConfig.webhook_url || '');
+  const [defaultChatId, setDefaultChatId] = useState(initialConfig.default_chat_id || '');
   const [botEnabled, setBotEnabled] = useState(initialConfig.bot_enabled ?? false);
   const [defaultProvider, setDefaultProvider] = useState(initialConfig.default_provider || 'claude');
   const [saved, setSaved] = useState(false);
@@ -74,6 +76,8 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
       api.put('/feishu/config', {
         app_id: appId,
         app_secret: appSecret,
+        webhook_url: webhookUrl,
+        default_chat_id: defaultChatId,
         bot_enabled: botEnabled,
         default_provider: defaultProvider,
       }),
@@ -128,6 +132,17 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
         <div className="space-y-3">
           <Field label="App ID" value={appId} onChange={setAppId} placeholder="输入飞书应用 App ID" />
           <Field label="App Secret" value={appSecret} onChange={setAppSecret} placeholder="输入飞书应用 App Secret" type="password" />
+
+          <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 space-y-3">
+            <div className="text-xs font-medium text-muted-foreground">方式一：Open API 模式（填写接收方 ID）</div>
+            <Field label="接收方 ID" value={defaultChatId} onChange={setDefaultChatId} placeholder="群聊 oc_xxx / 私聊 ou_xxx（你的 Open ID）" />
+            <p className="text-[11px] text-muted-foreground">群聊：把 Bot 拉进群，在群中发送「绑定」自动获取。私聊：在飞书开放平台应用后台查看你的 Open ID。</p>
+          </div>
+
+          <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 space-y-3">
+            <div className="text-xs font-medium text-muted-foreground">方式二：Webhook 模式（无需加群）</div>
+            <Field label="Webhook URL" value={webhookUrl} onChange={setWebhookUrl} placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx" />
+          </div>
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
             <div>
               <div className="text-xs font-medium text-foreground">启用飞书机器人</div>
@@ -162,9 +177,9 @@ function FeishuCard({ initialConfig }: { initialConfig: FeishuConfig }) {
         </div>
 
         {testMutation.isSuccess && <p className="text-xs text-green-600">连接成功</p>}
-        {testMutation.isError && <p className="text-xs text-destructive">连接失败，请检查配置</p>}
+        {testMutation.isError && <p className="text-xs text-destructive">连接失败：{(testMutation.error as any)?.response?.data?.detail || '请检查配置'}</p>}
         {testMessageMutation.isSuccess && <p className="text-xs text-emerald-600">测试消息已发送</p>}
-        {testMessageMutation.isError && <p className="text-xs text-destructive">测试消息发送失败</p>}
+        {testMessageMutation.isError && <p className="text-xs text-destructive">测试消息发送失败：{(testMessageMutation.error as any)?.response?.data?.detail || '未知错误'}</p>}
       </CardContent>
     </Card>
   );

@@ -359,26 +359,38 @@ async def test_feishu_connection(db: AsyncSession = Depends(get_db)):
     return result
 
 
+def _detect_id_type(receive_id: str) -> str:
+    """根据 ID 前缀自动判断 receive_id_type"""
+    if receive_id.startswith("oc_"):
+        return "chat_id"
+    if receive_id.startswith("ou_"):
+        return "open_id"
+    if receive_id.startswith("on_"):
+        return "union_id"
+    return "chat_id"
+
+
 @router.post("/send-message")
 async def send_feishu_message(data: FeishuMessageRequest, db: AsyncSession = Depends(get_db)):
     svc = await get_feishu_service(db)
-    chat_id = data.chat_id or svc.default_chat_id
+    receive_id = data.chat_id or svc.default_chat_id
 
-    # 优先用 chat_id 走 Open API
-    if chat_id and not data.use_webhook:
-        result = await svc.send_text_message(chat_id, data.text)
+    # 优先用 receive_id 走 Open API（自动识别 chat_id / open_id）
+    if receive_id and not data.use_webhook:
+        id_type = _detect_id_type(receive_id)
+        result = await svc.send_text_message(receive_id, data.text, id_type)
         if not result["success"]:
-            raise HTTPException(status_code=400, detail="Failed to send message")
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to send message"))
         return result
 
     # 有 webhook 走 webhook
     if svc.webhook_url:
         result = await svc.send_webhook_message("来自 MutiExpert 的消息", data.text)
         if not result["success"]:
-            raise HTTPException(status_code=400, detail="Failed to send message")
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to send message"))
         return result
 
-    # 都没有：用 Open API 自动获取机器人所在的第一个群
+    # 都没有：用 Open API 自动获取机器人所在的第一个群或私聊
     token = await svc._get_tenant_token()
     if not token:
         raise HTTPException(status_code=400, detail="无法获取 token，请检查 App ID 和 App Secret")
@@ -387,17 +399,20 @@ async def send_feishu_message(data: FeishuMessageRequest, db: AsyncSession = Dep
         resp = await client.get(
             "https://open.feishu.cn/open-apis/im/v1/chats",
             headers={"Authorization": f"Bearer {token}"},
-            params={"page_size": 1},
+            params={"page_size": 5},
         )
         chats_data = resp.json()
         items = chats_data.get("data", {}).get("items", [])
         if not items:
-            raise HTTPException(status_code=400, detail="机器人未加入任何群聊，请先将机器人添加到一个飞书群")
+            raise HTTPException(
+                status_code=400,
+                detail="未找到可用会话。请填写 Default Chat ID（群聊 oc_ 开头）或 Open ID（私聊 ou_ 开头），或配置 Webhook URL",
+            )
         auto_chat_id = items[0].get("chat_id", "")
 
     result = await svc.send_text_message(auto_chat_id, data.text)
     if not result["success"]:
-        raise HTTPException(status_code=400, detail="Failed to send message")
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to send message"))
     return result
 
 

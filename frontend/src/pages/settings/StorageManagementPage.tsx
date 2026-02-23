@@ -49,7 +49,7 @@ export default function StorageManagementPage() {
   });
 
   const files = filesData?.files ?? [];
-  const stats = statsData?.stats;
+  const stats = statsData?.stats && statsData.stats.total_files !== undefined ? statsData.stats : undefined;
 
   // 从文件列表提取子目录（id 为 null 的是文件夹）
   const folders = files.filter((f) => f.id === null);
