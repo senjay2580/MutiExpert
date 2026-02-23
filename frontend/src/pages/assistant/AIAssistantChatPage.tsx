@@ -25,6 +25,7 @@ import type { FileAttachment, ModelProvider } from '@/types';
 import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
 import 'highlight.js/styles/github-dark-dimmed.css';
 import { illustrations } from '@/lib/illustrations';
 import { ThinkingBlock } from '@/components/composed/thinking-block';
@@ -157,6 +158,9 @@ const markdownComponents = {
   },
   pre({ children }: { children?: React.ReactNode }) {
     return <>{children}</>;
+  },
+  a({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+    return <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline decoration-blue-500/30 hover:decoration-blue-500 transition-colors" {...props}>{children}</a>;
   },
 };
 
@@ -912,7 +916,7 @@ export default function AIAssistantChatPage() {
                           <ThinkingBlock content={msg.thinking} isStreaming={msg.isThinkingStreaming} />
                         )}
                         {msg.toolCalls?.length ? <ToolCallBlock toolCalls={msg.toolCalls} /> : null}
-                        <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={markdownComponents}>{msg.content}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={markdownComponents}>{msg.content}</ReactMarkdown>
                         {msg.isStreaming && !msg.isThinkingStreaming && (
                           <span className="ml-0.5 inline-flex items-center gap-0.5">
                             <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary/60 [animation-delay:0ms]" />
@@ -1241,7 +1245,7 @@ export default function AIAssistantChatPage() {
                       <div className="min-w-0 text-left">
                         <div className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
                           {conv.is_pinned && <Icon icon="lucide:pin" width={11} height={11} className="shrink-0 text-muted-foreground" />}
-                          {conv.channel === 'feishu' && <span title="飞书对话"><Icon icon="lucide:message-square-share" width={11} height={11} className="shrink-0 text-blue-500" /></span>}
+                          {conv.channel === 'feishu' && <span title="飞书对话"><Icon icon="simple-icons:lark" width={11} height={11} className="shrink-0 text-blue-500" /></span>}
                           <span className="truncate">{conv.title || '未命名会话'}</span>
                         </div>
                         <div className="mt-0.5 text-[11px] text-muted-foreground">
