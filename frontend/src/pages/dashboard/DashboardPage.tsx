@@ -11,11 +11,11 @@ import {
   CardFooter,
 } from '@/components/ui/card';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KnowledgeGraphView } from '@/components/dashboard/KnowledgeGraphView';
 import { cn } from '@/lib/utils';
 import { dashboardService } from '@/services/dashboardService';
+import { ProviderIcon } from '@/components/composed/provider-icon';
 import { networkService } from '@/services/networkService';
 import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import {
@@ -63,8 +63,8 @@ const statCards = [
 ];
 
 const barChartConfig = {
-  local_ai: { label: '本地 AI', color: 'var(--color-chart-1)' },
-  feishu: { label: '飞书交互', color: 'var(--color-chart-2)' },
+  local_ai: { label: '本地 AI', color: 'var(--color-chart-1)', icon: 'lucide:monitor' },
+  feishu: { label: '飞书交互', color: 'var(--color-chart-2)', icon: 'simple-icons:lark' },
 } as const;
 
 const CHART_COLORS = [
@@ -251,7 +251,10 @@ export default function DashboardPage() {
                   className="relative z-30 flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 text-left even:border-l data-[active=true]:bg-muted/50 sm:border-l sm:border-t-0 sm:px-8 sm:py-6"
                   onClick={() => setActiveChart(key)}
                 >
-                  <span className="text-xs text-muted-foreground">{barChartConfig[key].label}</span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Icon icon={barChartConfig[key].icon} width={14} height={14} />
+                    {barChartConfig[key].label}
+                  </span>
                   <span className="text-lg font-bold leading-none sm:text-3xl">
                     {barTotals[key].toLocaleString()}
                   </span>
@@ -286,16 +289,21 @@ export default function DashboardPage() {
             <div className="space-y-6">
               {(timeline ?? []).slice(0, 6).map((item) => {
                 const isDoc = item.type === 'document';
-                const initials = isDoc ? '文' : '话';
+                const isFeishu = !isDoc && item.channel === 'feishu';
+                const iconInfo = isDoc
+                  ? { icon: 'lucide:file-text', bg: 'bg-blue-500/10 text-blue-500' }
+                  : isFeishu
+                    ? { icon: 'simple-icons:lark', bg: 'bg-violet-500/10 text-violet-500' }
+                    : { icon: 'lucide:monitor', bg: 'bg-emerald-500/10 text-emerald-500' };
                 return (
                   <div key={item.id} className="flex items-center gap-4">
-                    <Avatar className="size-9">
-                      <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-                    </Avatar>
+                    <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-full', iconInfo.bg)}>
+                      <Icon icon={iconInfo.icon} width={18} height={18} />
+                    </div>
                     <div className="min-w-0 flex-1 space-y-1">
                       <p className="truncate text-sm font-medium leading-none">{item.title}</p>
                       <p className="truncate text-sm text-muted-foreground">
-                        {isDoc ? '文档' : '对话'}{item.status ? ` · ${item.status}` : ''}
+                        {isDoc ? '文档' : isFeishu ? '飞书对话' : '本地对话'}{item.status ? ` · ${item.status}` : ''}
                       </p>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.time)}</span>
@@ -315,8 +323,20 @@ export default function DashboardPage() {
         {/* Area Chart — AI Call Trends */}
         <Card className="gap-0 py-0 card-glow-violet">
           <CardHeader className="px-6 py-5 sm:py-6">
-            <CardTitle className="text-base">AI 调用趋势</CardTitle>
-            <CardDescription>近 6 个月各模型调用量</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">AI 调用趋势</CardTitle>
+                <CardDescription>近 6 个月各模型调用量</CardDescription>
+              </div>
+              <div className="flex items-center gap-3">
+                {([['claude', 'Claude'], ['openai', 'OpenAI'], ['deepseek', 'DeepSeek']] as const).map(([key, label]) => (
+                  <div key={key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <ProviderIcon provider={key} size={16} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="px-2 sm:p-6 sm:pt-0">
             <div className="h-[250px] w-full">
@@ -331,11 +351,16 @@ export default function DashboardPage() {
                       <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.8} />
                       <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0.1} />
                     </linearGradient>
+                    <linearGradient id="fillDeepseek" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-chart-3)" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="var(--color-chart-3)" stopOpacity={0.1} />
+                    </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} stroke="var(--color-muted-foreground)" />
                   <Tooltip content={<ChartTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                   <Area dataKey="openai" name="OpenAI" type="natural" fill="url(#fillOpenai)" stroke="var(--color-chart-2)" stackId="a" />
+                  <Area dataKey="deepseek" name="DeepSeek" type="natural" fill="url(#fillDeepseek)" stroke="var(--color-chart-3)" stackId="a" />
                   <Area dataKey="claude" name="Claude" type="natural" fill="url(#fillClaude)" stroke="var(--color-chart-1)" stackId="a" />
                 </AreaChart>
               </ResponsiveContainer>

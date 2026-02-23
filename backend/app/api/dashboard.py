@@ -34,10 +34,13 @@ async def get_ai_usage(db: AsyncSession = Depends(get_db)):
             Message.model_used.in_(["openai", "codex"]),
         )
     )).scalar() or 0
+    deepseek_count = (await db.execute(
+        select(func.count(Message.id)).where(Message.role == "assistant", Message.model_used == "deepseek")
+    )).scalar() or 0
     total_tokens = (await db.execute(
         select(func.coalesce(func.sum(Message.tokens_used), 0)).where(Message.role == "assistant")
     )).scalar() or 0
-    return {"claude_calls": claude_count, "openai_calls": codex_count, "total_tokens": total_tokens}
+    return {"claude_calls": claude_count, "openai_calls": codex_count, "deepseek_calls": deepseek_count, "total_tokens": total_tokens}
 
 
 @router.get("/activity-timeline")
@@ -50,7 +53,7 @@ async def get_activity_timeline(db: AsyncSession = Depends(get_db)):
 
     # Recent conversations
     convs = (await db.execute(
-        select(Conversation.id, Conversation.title, Conversation.created_at)
+        select(Conversation.id, Conversation.title, Conversation.created_at, Conversation.channel)
         .order_by(Conversation.created_at.desc()).limit(10)
     )).fetchall()
 
@@ -58,7 +61,7 @@ async def get_activity_timeline(db: AsyncSession = Depends(get_db)):
     for d in docs:
         timeline.append({"type": "document", "id": str(d.id), "title": d.title, "time": d.created_at.isoformat(), "status": d.status})
     for c in convs:
-        timeline.append({"type": "conversation", "id": str(c.id), "title": c.title or "未命名对话", "time": c.created_at.isoformat()})
+        timeline.append({"type": "conversation", "id": str(c.id), "title": c.title or "未命名对话", "time": c.created_at.isoformat(), "channel": c.channel or "web"})
 
     timeline.sort(key=lambda x: x["time"], reverse=True)
     return timeline[:15]
@@ -113,6 +116,7 @@ async def get_ai_model_trend(
             func.count(
                 case((Message.model_used.in_(["openai", "codex"]), Message.id))
             ).label("openai"),
+            func.count(case((Message.model_used == "deepseek", Message.id))).label("deepseek"),
         )
         .where(
             Message.role == "assistant",
@@ -123,7 +127,7 @@ async def get_ai_model_trend(
         .group_by(trunc_col)
         .order_by(trunc_col)
     )
-    return [{"month": r.month, "claude": r.claude, "openai": r.openai} for r in result.fetchall()]
+    return [{"month": r.month, "claude": r.claude, "openai": r.openai, "deepseek": r.deepseek} for r in result.fetchall()]
 
 
 @router.get("/industry-distribution")

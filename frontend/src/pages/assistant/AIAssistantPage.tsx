@@ -338,34 +338,25 @@ export default function AIAssistantPage() {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <div className="flex items-center gap-0.5 rounded-full bg-muted/50 p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleMode('knowledge')}
-                          className={cn(
-                            'inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-medium transition-colors',
-                            modes.has('knowledge')
-                              ? 'bg-green-500/15 text-green-600'
-                              : 'text-muted-foreground hover:text-foreground',
-                          )}
-                        >
-                          <Icon icon="lucide:book-open" width={11} height={11} />
-                          知识库
-                          {modes.has('knowledge') && <span className="text-[9px] opacity-70">{knowledgeBases.length}</span>}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleMode('search')}
-                          className={cn(
-                            'inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-medium transition-colors',
-                            modes.has('search')
-                              ? 'bg-blue-500/15 text-blue-600'
-                              : 'text-muted-foreground hover:text-foreground',
-                          )}
-                        >
-                          <Icon icon="lucide:search" width={11} height={11} />
-                          搜索
-                        </button>
+                      <div className="mode-toggle-group">
+                        <input className="mode-toggle-input" type="checkbox" id="mode-knowledge" checked={modes.has('knowledge')} onChange={() => toggleMode('knowledge')} />
+                        <label className="mode-toggle-label" htmlFor="mode-knowledge">
+                          <div className="mode-toggle-btn">
+                            <div className="mode-toggle-inner">
+                              <Icon icon="lucide:book-open" width={12} height={12} />
+                              知识库{modes.has('knowledge') && <span className="text-[9px] opacity-70">{knowledgeBases.length}</span>}
+                            </div>
+                          </div>
+                        </label>
+                        <input className="mode-toggle-input" type="checkbox" id="mode-search" checked={modes.has('search')} onChange={() => toggleMode('search')} />
+                        <label className="mode-toggle-label" htmlFor="mode-search">
+                          <div className="mode-toggle-btn">
+                            <div className="mode-toggle-inner">
+                              <Icon icon="lucide:search" width={12} height={12} />
+                              搜索
+                            </div>
+                          </div>
+                        </label>
                       </div>
                     </div>
                     <div className="ai-input-muted ml-auto flex items-center gap-2 text-xs">
@@ -437,17 +428,9 @@ export default function AIAssistantPage() {
           sidebarOpen ? 'translate-x-0' : 'translate-x-full',
         )}>
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <div className={cn(
-                'flex size-8 items-center justify-center rounded-lg',
-                filteredConversations.length > 0 ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground',
-              )}>
-                <Icon icon="lucide:message-square" width={16} height={16} />
-              </div>
-              <div>
-                <div className="sidebar-title text-sm font-semibold">会话历史</div>
-                <div className="sidebar-subtitle text-[11px]">管理最近对话</div>
-              </div>
+            <div>
+              <div className="sidebar-title text-sm font-semibold">会话历史</div>
+              <div className="sidebar-subtitle text-[11px]">管理最近对话</div>
             </div>
             <div className="flex items-center gap-1">
               <TooltipProvider>
