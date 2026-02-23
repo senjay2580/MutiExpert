@@ -1,12 +1,13 @@
 import json
 import logging
+import re
 import time
 import httpx
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app.config import get_settings
 from app.database import get_db, AsyncSessionLocal
 from app.models.extras import Conversation, Message, FeishuConfig, FeishuPendingAction
@@ -91,6 +92,55 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
     return {"code": 0, "msg": "ok"}
 
 
+
+
+def _adapt_markdown_for_feishu(text: str) -> str:
+    """将标准 Markdown 转换为飞书卡片支持的 Markdown 子集。
+
+    飞书卡片不支持: # 标题、> 引用、--- 分割线、表格
+    飞书卡片支持: **加粗**、*斜体*、~~删除线~~、`行内代码`、代码块、列表、链接
+    """
+    lines = text.split("\n")
+    result = []
+    in_code_block = False
+
+    for line in lines:
+        # 代码块内不做转换
+        if line.strip().startswith("```"):
+            in_code_block = not in_code_block
+            result.append(line)
+            continue
+        if in_code_block:
+            result.append(line)
+            continue
+
+        # ## 标题 → **标题**（加粗模拟）
+        heading_match = re.match(r'^(#{1,6})\s+(.+)$', line)
+        if heading_match:
+            heading_text = heading_match.group(2).strip()
+            result.append(f"**{heading_text}**")
+            continue
+
+        # > 引用 → 斜体模拟
+        quote_match = re.match(r'^>\s*(.*)$', line)
+        if quote_match:
+            quote_text = quote_match.group(1).strip()
+            if quote_text:
+                result.append(f"*{quote_text}*")
+            else:
+                result.append("")
+            continue
+
+        # --- 分割线 → 空行
+        if re.match(r'^-{3,}$', line.strip()) or re.match(r'^\*{3,}$', line.strip()):
+            result.append("")
+            continue
+
+        result.append(line)
+
+    return "\n".join(result)
+
+
 def _build_stream_card(text: str, status: str = "processing", tool_name: str = "") -> dict:
     """构建流式更新卡片 JSON"""
     templates = {"processing": "blue", "completed": "green", "error": "red"}
@@ -99,6 +149,7 @@ def _build_stream_card(text: str, status: str = "processing", tool_name: str = "
     if status == "processing" and tool_name:
         header_title = f"AI 助手 · 调用 {tool_name}..."
     content = text or "思考中..."
+    content = _adapt_markdown_for_feishu(content)
     if status == "processing":
         content += " ▌"
     # 飞书卡片 markdown 最大约 30000 字符，截断保护
@@ -142,6 +193,17 @@ async def _handle_feishu_question(parsed: dict):
                     config.default_chat_id = chat_id
                     await db.commit()
                 await svc.reply_message(message_id, f"已绑定当前会话为默认推送目标。\nChat ID: {chat_id}")
+                return
+
+            # 特殊指令：清空上下文
+            if question.strip().lower() in {"/clear", "清空", "清空上下文", "重置对话"}:
+                conv = await _get_or_create_feishu_conversation(db, chat_id)
+                await db.execute(delete(Message).where(Message.conversation_id == conv.id))
+                conv.memory_summary = None
+                conv.title = None
+                conv.updated_at = datetime.utcnow()
+                await db.commit()
+                await svc.reply_message(message_id, "已清空当前对话的历史记录，可以开始新的对话了。")
                 return
 
             provider = svc.default_provider or "claude"
