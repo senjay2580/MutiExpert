@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import httpx
 from datetime import datetime, timedelta
@@ -113,8 +114,7 @@ def _build_stream_card(text: str, status: str = "processing", tool_name: str = "
     }
 
 
-import logging as _logging
-_feishu_logger = _logging.getLogger(__name__)
+_feishu_logger = logging.getLogger(__name__)
 
 
 async def _handle_feishu_question(parsed: dict):
