@@ -1,10 +1,10 @@
 """飞书 WebSocket 长连接 — 接收消息事件并转发到处理逻辑"""
 import asyncio
 import collections
-import fcntl
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from typing import Callable, Awaitable
@@ -75,10 +75,15 @@ async def start_feishu_ws(handle_question: Callable[[dict], Awaitable[None]]):
     global _ws_client, _ws_thread, _lock_file
 
     # 多 worker 环境下，用文件锁确保只有一个 worker 启动 WS
-    lock_path = "/tmp/feishu_ws.lock"
+    lock_path = "/tmp/feishu_ws.lock" if sys.platform != "win32" else os.path.join(os.environ.get("TEMP", "."), "feishu_ws.lock")
     try:
         _lock_file = open(lock_path, "w")
-        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(_lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _lock_file.write(str(os.getpid()))
         _lock_file.flush()
     except (OSError, IOError):
@@ -158,7 +163,12 @@ def stop_feishu_ws():
         _ws_thread = None
     if _lock_file:
         try:
-            fcntl.flock(_lock_file, fcntl.LOCK_UN)
+            if sys.platform == "win32":
+                import msvcrt
+                msvcrt.locking(_lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(_lock_file, fcntl.LOCK_UN)
             _lock_file.close()
         except Exception:
             pass

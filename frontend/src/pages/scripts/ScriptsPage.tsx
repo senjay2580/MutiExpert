@@ -138,6 +138,7 @@ export default function ScriptsPage() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<UserScript | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResultOpen, setTestResultOpen] = useState(false);
   const [testResult, setTestResult] = useState<{
     scriptName: string;
     result: ScriptTestResult;
@@ -219,6 +220,7 @@ export default function ScriptsPage() {
     try {
       const result = await scriptService.test(script.id);
       setTestResult({ scriptName: script.name, result });
+      setTestResultOpen(true);
     } finally {
       setTestingId(null);
       queryClient.invalidateQueries({ queryKey: ['scripts'] });
@@ -723,8 +725,8 @@ export default function ScriptsPage() {
 
       {/* ======================== Test Result ======================== */}
       <TestResultDialog
-        open={!!testResult}
-        onOpenChange={(open) => { if (!open) setTestResult(null); }}
+        open={testResultOpen}
+        onOpenChange={setTestResultOpen}
         scriptName={testResult?.scriptName ?? ''}
         result={testResult?.result ?? null}
       />

@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ReactFlow,
   Background,
@@ -373,15 +374,19 @@ function BoardEditorInner() {
   const board = fetchedBoard ?? MOCK_BOARDS[boardId!] ?? DEFAULT_MOCK_BOARD;
 
   const saveMutation = useMutation({
-    mutationFn: (data: Parameters<typeof boardService.update>[1]) =>
-      boardService.update(boardId!, data),
-    onSuccess: () => {
+    mutationFn: (variables: { data: Parameters<typeof boardService.update>[1]; notify?: boolean }) =>
+      boardService.update(boardId!, variables.data),
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['board', boardId] });
       queryClient.invalidateQueries({ queryKey: ['boards'] });
       store.setDirty(false);
       store.setSaving(false);
+      if (variables.notify) toast.success('画板已保存');
     },
-    onError: () => store.setSaving(false),
+    onError: () => {
+      store.setSaving(false);
+      toast.error('保存失败，请重试');
+    },
   });
 
   // Inject onDataChange into node data
@@ -680,7 +685,7 @@ function BoardEditorInner() {
   }, [nodes, edges, store, setNodes, setEdges, injectCallbacks]);
 
   /* ---- Save ---- */
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback((notify = false) => {
     if (!boardId) return;
     store.setSaving(true);
     const cleanNodes = nodes.map((n) => {
@@ -698,7 +703,7 @@ function BoardEditorInner() {
       label: typeof e.label === 'string' ? e.label : undefined,
     }));
     const viewport = reactFlowInstance.getViewport();
-    saveMutation.mutate({ nodes: cleanNodes, edges: cleanEdges, viewport });
+    saveMutation.mutate({ data: { nodes: cleanNodes, edges: cleanEdges, viewport }, notify });
   }, [boardId, nodes, edges, reactFlowInstance, saveMutation, store]);
 
   // Keyboard shortcuts
@@ -714,7 +719,7 @@ function BoardEditorInner() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        handleSave();
+        handleSave(true);
       }
     };
     window.addEventListener('keydown', handler);
@@ -845,7 +850,7 @@ function BoardEditorInner() {
       <BoardTopBar
         name={board.name}
         onBack={() => navigate('/boards')}
-        onSave={handleSave}
+        onSave={() => handleSave(true)}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onExport={handleExport}

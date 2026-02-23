@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState, type KeyboardEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '@iconify/react';
 import { Button } from '@/components/ui/button';
@@ -21,9 +22,10 @@ import { uploadFile } from '@/services/fileService';
 import { cn } from '@/lib/utils';
 import { useSiteSettingsStore } from '@/stores/useSiteSettingsStore';
 import { useAppStore } from '@/stores/useAppStore';
-import type { FileAttachment, ModelProvider } from '@/types';
+import type { Conversation, FileAttachment, ModelProvider } from '@/types';
 import { ProviderIcon } from '@/components/composed/provider-icon';
-import { formatFileSize } from '@/lib/fileTypeIcons';
+import { ConfirmDialog } from '@/components/composed/confirm-dialog';
+import { formatFileSize, getFileTypeIcon } from '@/lib/fileTypeIcons';
 
 type ModelConfig = {
   id: string;
@@ -49,8 +51,10 @@ export default function AIAssistantPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleMode = (mode: ChatMode) => {
     setModes((prev) => {
@@ -91,13 +95,28 @@ export default function AIAssistantPage() {
 
   const deleteConversation = useMutation({
     mutationFn: chatService.deleteConversation,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast.success('对话已删除');
+    },
+    onError: () => toast.error('删除失败，请重试'),
   });
 
   const updateConversation = useMutation({
     mutationFn: ({ id, ...payload }: { id: string; title?: string | null; is_pinned?: boolean }) =>
       chatService.updateConversation(id, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (variables.title !== undefined) {
+        toast.success('对话标题已更新');
+      } else if (variables.is_pinned !== undefined) {
+        toast.success(variables.is_pinned ? '已置顶对话' : '已取消置顶');
+      } else {
+        toast.success('更新成功');
+      }
+    },
+    onError: () => toast.error('更新失败，请重试'),
   });
 
   const conversations = useMemo(() => {
@@ -131,7 +150,9 @@ export default function AIAssistantPage() {
     try {
       const results = await Promise.all(files.map((f) => uploadFile(f)));
       setPendingAttachments((prev) => [...prev, ...results]);
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '文件上传失败');
+    } finally {
       setUploadingFiles(false);
     }
   }, []);
@@ -247,26 +268,35 @@ export default function AIAssistantPage() {
                       className="ai-input-textarea min-h-[84px] resize-none border-none bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
                     />
                   </div>
-                  {/* 图片预览条 */}
+                  {/* 文件预览条 */}
                   {(pendingAttachments.length > 0 || uploadingFiles) && (
                     <div className="flex flex-wrap items-center gap-2">
-                      {pendingAttachments.map((att, i) => (
-                        <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1.5 text-[11px]">
-                          <img src={att.url} alt={att.filename} className="h-8 w-8 rounded object-cover" />
+                      {pendingAttachments.map((att, i) => {
+                        const isImage = att.mime_type.startsWith('image/');
+                        const ft = isImage ? null : getFileTypeIcon(att.filename, att.mime_type);
+                        return (
+                        <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px]" style={{ border: '1px solid var(--ai-border-base)', background: 'color-mix(in srgb, var(--ai-input-fg) 6%, transparent)' }}>
+                          {isImage ? (
+                            <img src={att.url?.includes('inline=true') || att.url?.startsWith('http') ? att.url : `${att.url}${att.url?.includes('?') ? '&' : '?'}inline=true`} alt={att.filename} className="h-8 w-8 rounded object-cover" />
+                          ) : (
+                            <Icon icon={ft!.icon} width={18} height={18} className="shrink-0" />
+                          )}
                           <div className="min-w-0">
                             <div className="max-w-[120px] truncate">{att.filename}</div>
-                            <div className="text-[10px] text-muted-foreground">图片 · {formatFileSize(att.size)}</div>
+                            <div className="text-[10px]" style={{ color: 'var(--ai-input-muted)' }}>{ft?.label ?? '图片'} · {formatFileSize(att.size)}</div>
                           </div>
                           <button
                             onClick={() => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
-                            className="ml-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            className="ml-0.5 rounded p-0.5 transition-colors hover:opacity-80"
+                            style={{ color: 'var(--ai-input-muted)' }}
                           >
                             <Icon icon="lucide:x" width={12} height={12} />
                           </button>
                         </div>
-                      ))}
+                        );
+                      })}
                       {uploadingFiles && (
-                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--ai-input-muted)' }}>
                           <Icon icon="lucide:loader-2" width={14} height={14} className="animate-spin" />
                           上传中...
                         </div>
@@ -340,7 +370,29 @@ export default function AIAssistantPage() {
                     </div>
                     <div className="ai-input-muted ml-auto flex items-center gap-2 text-xs">
                       <span>Enter 发送 · Shift+Enter 换行</span>
-                      <div className="filterBorder">
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const selected = Array.from(e.target.files || []);
+                        if (selected.length) handleFilesSelected(selected);
+                        e.target.value = '';
+                      }}
+                    />
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" className="ai-input-icon flex size-7 items-center justify-center rounded-full transition-colors hover:brightness-125" onClick={() => fileInputRef.current?.click()}>
+                            <Icon icon="lucide:paperclip" width={15} height={15} style={{ color: 'var(--ai-input-fg)' }} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">上传文件</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <div className="filterBorder">
                         <Button
                           variant="ghost"
                           size="icon-sm"
@@ -351,7 +403,6 @@ export default function AIAssistantPage() {
                           <Icon icon="lucide:arrow-up" width={16} height={16} />
                         </Button>
                       </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -441,11 +492,12 @@ export default function AIAssistantPage() {
               filteredConversations.map((conv) => (
                 <div
                   key={conv.id}
-                  className="group flex items-start gap-2 rounded-lg border border-transparent px-3 py-2 transition-colors hover:bg-muted/50"
+                  className="group flex cursor-pointer items-start gap-2 rounded-lg border border-transparent px-3 py-2 transition-colors hover:bg-muted/50"
+                  onClick={() => { if (renamingId !== conv.id) navigate(`/assistant/chat/${conv.id}`); }}
                 >
                   <div className="min-w-0 flex-1">
                     {renamingId === conv.id ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
                         <Input
                           value={renameDraft}
                           onChange={(e) => setRenameDraft(e.target.value)}
@@ -459,18 +511,32 @@ export default function AIAssistantPage() {
                         </div>
                       </div>
                     ) : (
-                      <button className="min-w-0 text-left" onClick={() => navigate(`/assistant/chat/${conv.id}`)}>
+                      <div className="min-w-0 text-left">
                         <div className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
                           {conv.is_pinned && <Icon icon="lucide:pin" width={11} height={11} className="shrink-0 text-muted-foreground" />}
+                          {conv.channel === 'feishu' && (
+                            <div
+                              className="shrink-0 size-5"
+                              title="飞书对话"
+                              style={{
+                                backgroundImage: 'url(https://lf-package-cn.feishucdn.com/obj/feishu-static/developer/console/frontend/images/899fa60e60151c73aaea2e25871102dc.svg)',
+                                backgroundPosition: '0 0',
+                                backgroundSize: 'auto 20px',
+                                backgroundRepeat: 'no-repeat',
+                              }}
+                            />
+                          )}
                           <span className="truncate">{conv.title || '未命名会话'}</span>
+                          <Icon icon="lucide:arrow-up-right" width={11} height={11} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: '#3b82f6' }} />
                         </div>
                         <div className="mt-0.5 text-[11px] text-muted-foreground">
                           {formatRelativeTime(conv.updated_at)}
                         </div>
-                      </button>
+                      </div>
                     )}
                   </div>
                   {renamingId !== conv.id && (
+                    <div onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon-xs" className="opacity-0 group-hover:opacity-100">
@@ -481,9 +547,10 @@ export default function AIAssistantPage() {
                         <DropdownMenuItem onClick={() => handleStartRename(conv.id, conv.title)}>重命名</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleTogglePin(conv.id, !conv.is_pinned)}>{conv.is_pinned ? '取消置顶' : '置顶'}</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => deleteConversation.mutate(conv.id)} className="text-destructive">删除</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDeleteTarget(conv)} className="text-destructive">删除</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   )}
                 </div>
               ))
@@ -491,6 +558,18 @@ export default function AIAssistantPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="删除对话？"
+        description={deleteTarget ? `将永久删除「${deleteTarget.title || '未命名对话'}」。` : undefined}
+        confirmLabel="删除"
+        cancelLabel="取消"
+        variant="destructive"
+        onConfirm={() => deleteTarget && deleteConversation.mutate(deleteTarget.id)}
+        loading={deleteConversation.isPending}
+      />
     </div>
   );
 }

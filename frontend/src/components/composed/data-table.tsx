@@ -1,6 +1,7 @@
 import {
   useState, useMemo, useCallback, useEffect, useRef,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '@iconify/react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
@@ -500,6 +501,27 @@ export function DataTable<T>({
   const showBulkBar = selectable && selectedKeys.size > 0 && bulkActions && bulkActions.length > 0;
   const showSkeleton = !!isLoading && data.length === 0;
 
+  // ── Right-click context menu state ──
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; row: T } | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
+
+  const handleRowContextMenu = useCallback((e: React.MouseEvent, row: T) => {
+    if (!actions) return;
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, row });
+  }, [actions]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent && e.key === 'Escape') { setCtxMenu(null); return; }
+      if (e instanceof MouseEvent && ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+  }, [ctxMenu]);
+
   const activeChips = useMemo(() => {
     const chips: Array<{
       key: string;
@@ -595,14 +617,19 @@ export function DataTable<T>({
 
   return (
     <div className={cn('flex flex-col', className)}>
-      <Card className={cn('flex-1 gap-0 py-0 overflow-hidden', cardClassName)}>
+      <Card className={cn('flex-1 gap-0 py-0 overflow-x-auto', cardClassName)}>
         {/* ==================== Bulk Action Bar ==================== */}
         {showBulkBar && (
           <div className="flex items-center gap-3 border-b bg-primary/5 px-6 py-2.5">
+            <Checkbox
+              checked={allFilteredSelected ? true : allPageSelected ? 'indeterminate' : false}
+              onCheckedChange={toggleSelectAll}
+              aria-label="全选"
+            />
             <span className="text-xs font-medium text-primary">已选 {selectedKeys.size} 项</span>
-            {!allFilteredSelected && allFilteredKeys.length > selectedKeys.size && (
+            {!allFilteredSelected && (
               <Button variant="link" size="sm" className="h-7 text-xs px-1 text-primary" onClick={selectAllFiltered}>
-                选择全部 {allFilteredKeys.length} 项
+                全选全部 {allFilteredKeys.length} 项
               </Button>
             )}
             <div className="flex items-center gap-1.5">
@@ -912,6 +939,7 @@ export function DataTable<T>({
                         key={key}
                         className={cn('group', isSelected && 'bg-primary/5', onRowClick && 'cursor-pointer')}
                         onClick={onRowClick ? () => onRowClick(row) : undefined}
+                        onContextMenu={(e) => handleRowContextMenu(e, row)}
                       >
                         {selectable && (
                           <TableCell
@@ -1067,6 +1095,35 @@ export function DataTable<T>({
           </>
         )}
       </Card>
+
+      {/* ==================== Right-click Context Menu (portal) ==================== */}
+      {ctxMenu && actions && createPortal(
+        <div
+          ref={ctxRef}
+          className="fixed z-50 min-w-[160px] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          {(() => {
+            const rowActions = typeof actions === 'function' ? actions(ctxMenu.row) : actions;
+            const visible = rowActions?.filter((a) => !a.hidden?.(ctxMenu.row));
+            return visible?.map((action, ai) => (
+              <button
+                key={ai}
+                type="button"
+                className={cn(
+                  'relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground',
+                  action.variant === 'destructive' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',
+                )}
+                onClick={() => { action.onClick(ctxMenu.row); setCtxMenu(null); }}
+              >
+                {action.icon && <Icon icon={action.icon} width={14} height={14} />}
+                {action.label}
+              </button>
+            ));
+          })()}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

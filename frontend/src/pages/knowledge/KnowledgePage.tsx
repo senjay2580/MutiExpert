@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Icon } from '@iconify/react';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,8 @@ import { SearchBar } from '@/components/composed/search-bar';
 import { EmptyState } from '@/components/composed/empty-state';
 import { CreateButton, SolidButton } from '@/components/composed/solid-button';
 import { AnimatedList, AnimatedItem } from '@/components/composed/animated';
+import { DataTable } from '@/components/composed/data-table';
+import type { DataTableColumn, DataTableAction, BulkAction } from '@/components/composed/data-table';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { ItemContextMenu, type ItemAction } from '@/components/composed/item-context-menu';
 import { ColorWheel } from '@/components/composed/color-wheel';
@@ -54,6 +57,10 @@ export default function KnowledgePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [page, setPage] = useState(1);
+
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<string[] | null>(null);
 
   // KB dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -109,6 +116,21 @@ export default function KnowledgePage() {
       queryClient.invalidateQueries({ queryKey: ['knowledge-bases'] });
       setDeleteTarget(null);
       toast.success('知识库已删除');
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorMessage(error));
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map((id) => knowledgeBaseService.delete(id)));
+    },
+    onSuccess: (_data, ids) => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge-bases'] });
+      setBulkDeleteTarget(null);
+      setSelectedIds(new Set());
+      toast.success(`已删除 ${ids.length} 个知识库`);
     },
     onError: (error: unknown) => {
       toast.error(getErrorMessage(error));
@@ -186,6 +208,35 @@ export default function KnowledgePage() {
 
   const totalDocs = knowledgeBases.reduce((sum, kb) => sum + kb.document_count, 0);
 
+  /* ---- Selection helpers ---- */
+  const paginatedIds = useMemo(() => paginated.map((kb) => kb.id), [paginated]);
+  const allSelected = paginatedIds.length > 0 && paginatedIds.every((id) => selectedIds.has(id));
+  const someSelected = paginatedIds.some((id) => selectedIds.has(id));
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of paginatedIds) next.delete(id);
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of paginatedIds) next.add(id);
+        return next;
+      });
+    }
+  }, [allSelected, paginatedIds]);
+
   /* ---- Handlers ---- */
   const handleCreateKB = () => {
     if (!newKBName.trim()) return;
@@ -234,10 +285,12 @@ export default function KnowledgePage() {
   const handleSearchChange = (v: string) => {
     setSearchQuery(v);
     setPage(1);
+    setSelectedIds(new Set());
   };
   const handleIndustryChange = (id: string | null) => {
     setSelectedIndustry(id);
     setPage(1);
+    setSelectedIds(new Set());
   };
 
   /* ---- Context menu actions for KB ---- */
@@ -255,6 +308,90 @@ export default function KnowledgePage() {
   ];
 
   const indSaving = createIndMutation.isPending || updateIndMutation.isPending;
+
+  /* ---- DataTable config for list view ---- */
+  const dtColumns = useMemo((): DataTableColumn<KnowledgeBase>[] => [
+    {
+      key: 'name',
+      header: '名称',
+      sortable: true,
+      accessor: (kb) => kb.name,
+      render: (kb) => {
+        const ind = industryMap.get(kb.industry_id);
+        const color = ind?.color ?? 'var(--color-primary)';
+        return (
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+              style={{ background: `linear-gradient(135deg, ${color}20, ${color}08)`, color }}
+            >
+              <Icon icon="streamline-color:open-book" width={14} height={14} />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-medium text-foreground leading-tight">{kb.name}</div>
+              {kb.description && (
+                <div className="mt-0.5 truncate text-[11px] text-muted-foreground leading-tight">{kb.description}</div>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'industry',
+      header: '行业',
+      width: '100px',
+      accessor: (kb) => industryMap.get(kb.industry_id)?.name ?? '',
+      render: (kb) => {
+        const ind = industryMap.get(kb.industry_id);
+        if (!ind) return <span className="text-muted-foreground/60">—</span>;
+        const color = ind.color ?? 'var(--color-primary)';
+        return (
+          <Badge
+            variant="secondary"
+            className="gap-1 text-[10px]"
+            style={{ backgroundColor: `${color}12`, color }}
+          >
+            {ind.name}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'document_count',
+      header: '文档',
+      sortable: true,
+      width: '80px',
+      accessor: (kb) => kb.document_count,
+      render: (kb) => (
+        <Badge variant="secondary" className="text-[10px]">{kb.document_count} 篇</Badge>
+      ),
+    },
+    {
+      key: 'updated_at',
+      header: '更新',
+      sortable: true,
+      width: '100px',
+      accessor: (kb) => kb.updated_at,
+      render: (kb) => (
+        <span className="text-[11px] text-muted-foreground/60">{formatRelativeTime(kb.updated_at)}</span>
+      ),
+    },
+  ], [industryMap]);
+
+  const dtActions = useMemo((): DataTableAction<KnowledgeBase>[] => [
+    { label: '打开', icon: 'lucide:external-link', onClick: (kb) => navigate(`/knowledge/${kb.id}`) },
+    { label: '删除', icon: 'lucide:trash-2', variant: 'destructive', onClick: (kb) => setDeleteTarget(kb) },
+  ], [navigate]);
+
+  const dtBulkActions = useMemo((): BulkAction[] => [
+    {
+      label: '批量删除',
+      icon: 'lucide:trash-2',
+      variant: 'destructive',
+      onClick: (keys) => setBulkDeleteTarget(keys),
+    },
+  ], []);
 
   return (
     <div className="flex h-full flex-col gap-5">
@@ -332,13 +469,29 @@ export default function KnowledgePage() {
         {/* Right: Knowledge Bases */}
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Toolbar */}
-          <div className="mb-4 flex flex-wrap items-center gap-3 sm:flex-nowrap">
-            <SearchBar
-              value={searchQuery}
-              onChange={handleSearchChange}
-              placeholder="搜索知识库..."
-              className="min-w-0 flex-1"
-            />
+          <div className="mb-3 flex flex-wrap items-center gap-3 sm:flex-nowrap">
+            {/* Select-all checkbox (grid view only) */}
+            {filtered.length > 0 && viewMode === 'grid' && (
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <Checkbox
+                  checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="全选"
+                />
+                <span className="text-[11px] text-muted-foreground select-none cursor-pointer" onClick={toggleSelectAll}>
+                  全选
+                </span>
+              </div>
+            )}
+            {viewMode === 'grid' && (
+              <SearchBar
+                value={searchQuery}
+                onChange={handleSearchChange}
+                placeholder="搜索知识库..."
+                className="min-w-0 flex-1"
+              />
+            )}
+            {viewMode === 'list' && <div className="flex-1" />}
             <div className="flex rounded-lg border bg-muted/50 p-0.5">
               <Button
                 variant="ghost"
@@ -362,9 +515,56 @@ export default function KnowledgePage() {
             </CreateButton>
           </div>
 
+          {/* Bulk action bar (grid view only; DataTable has its own) */}
+          {viewMode === 'grid' && selectedIds.size > 0 && (
+            <div className="mb-3 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2">
+              <span className="text-[13px] font-medium text-primary">
+                已选 {selectedIds.size} 项
+              </span>
+              <div className="flex-1" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setBulkDeleteTarget([...selectedIds])}
+              >
+                <Icon icon="lucide:trash-2" width={13} height={13} />
+                批量删除
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                取消选择
+              </Button>
+            </div>
+          )}
+
           {/* Content */}
-          {loadingKB ? (
-            viewMode === 'grid' ? (
+          {viewMode === 'list' ? (
+            <DataTable<KnowledgeBase>
+              data={filtered}
+              columns={dtColumns}
+              rowKey={(kb) => kb.id}
+              isLoading={loadingKB}
+              onRowClick={(kb) => navigate(`/knowledge/${kb.id}`)}
+              searchPlaceholder="搜索知识库..."
+              searchAccessor={(kb) => kb.name}
+              actions={dtActions}
+              selectable
+              bulkActions={dtBulkActions}
+              emptyIcon="streamline-color:open-book"
+              emptyTitle="还没有知识库"
+              emptyDescription="创建你的第一个知识库，开始管理行业知识"
+              emptyActionLabel="新建知识库"
+              emptyActionClick={() => setShowCreateDialog(true)}
+              emptyActionColor="create"
+              defaultRowsPerPage={10}
+              cardClassName="card-glow-indigo"
+            />
+          ) : loadingKB ? (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <Card key={i} className="gap-0 py-0">
@@ -380,22 +580,6 @@ export default function KnowledgePage() {
                   </Card>
                 ))}
               </div>
-            ) : (
-              <Card className="flex-1 gap-0 py-0">
-                <div className="divide-y">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-4 px-5 py-4">
-                      <Skeleton className="h-9 w-9 rounded-lg" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-4 w-1/3" />
-                        <Skeleton className="h-3 w-1/4" />
-                      </div>
-                      <Skeleton className="h-5 w-14 rounded-full" />
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )
           ) : filtered.length === 0 ? (
             <EmptyState
               icon="streamline-color:open-book"
@@ -411,39 +595,23 @@ export default function KnowledgePage() {
             />
           ) : (
             <div className="flex flex-1 flex-col">
-              {viewMode === 'grid' ? (
-                <AnimatedList className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {paginated.map((kb) => (
-                    <AnimatedItem key={kb.id}>
-                      <ItemContextMenu actions={kbActions(kb)} showTriggerButton triggerClassName="absolute right-1.5 top-1.5 rounded-none">
-                        <KBCard
-                          kb={kb}
-                          industry={industryMap.get(kb.industry_id)}
-                          onOpen={() => navigate(`/knowledge/${kb.id}`)}
-                        />
-                      </ItemContextMenu>
-                    </AnimatedItem>
-                  ))}
-                </AnimatedList>
-              ) : (
-                <Card className="flex-1 gap-0 overflow-y-auto py-0 card-glow-indigo">
-                  <AnimatedList className="divide-y">
-                    {paginated.map((kb) => (
-                      <AnimatedItem key={kb.id}>
-                        <ItemContextMenu actions={kbActions(kb)} showTriggerButton>
-                          <KBRow
-                            kb={kb}
-                            industry={industryMap.get(kb.industry_id)}
-                            onOpen={() => navigate(`/knowledge/${kb.id}`)}
-                          />
-                        </ItemContextMenu>
-                      </AnimatedItem>
-                    ))}
-                  </AnimatedList>
-                </Card>
-              )}
+              <AnimatedList className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {paginated.map((kb) => (
+                  <AnimatedItem key={kb.id}>
+                    <ItemContextMenu actions={kbActions(kb)} showTriggerButton triggerClassName="absolute right-1.5 top-1.5 rounded-none">
+                      <KBCard
+                        kb={kb}
+                        industry={industryMap.get(kb.industry_id)}
+                        selected={selectedIds.has(kb.id)}
+                        onToggleSelect={() => toggleSelect(kb.id)}
+                        onOpen={() => navigate(`/knowledge/${kb.id}`)}
+                      />
+                    </ItemContextMenu>
+                  </AnimatedItem>
+                ))}
+              </AnimatedList>
 
-              {/* Pagination */}
+              {/* Pagination (grid view only; DataTable has its own) */}
               {totalPages > 1 && (
                 <Pagination
                   page={safePage}
@@ -517,6 +685,18 @@ export default function KnowledgePage() {
         variant="destructive"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate(deleteTarget.id); }}
         loading={deleteMutation.isPending}
+      />
+
+      {/* ---- Bulk Delete Confirm ---- */}
+      <ConfirmDialog
+        open={!!bulkDeleteTarget}
+        onOpenChange={(open) => { if (!open) setBulkDeleteTarget(null); }}
+        title={`批量删除 ${bulkDeleteTarget?.length ?? 0} 个知识库？`}
+        description="此操作不可恢复，所有选中的知识库及其文档将被永久删除。"
+        confirmLabel="确认删除"
+        variant="destructive"
+        onConfirm={() => bulkDeleteTarget && bulkDeleteMutation.mutate(bulkDeleteTarget)}
+        loading={bulkDeleteMutation.isPending}
       />
 
       {/* ---- Industry Create/Edit Dialog ---- */}
@@ -761,23 +941,40 @@ function IndustryItem({
 function KBCard({
   kb,
   industry,
+  selected,
+  onToggleSelect,
   onOpen,
 }: {
   kb: KnowledgeBase;
   industry?: Industry;
+  selected?: boolean;
+  onToggleSelect?: () => void;
   onOpen: () => void;
 }) {
   const accentColor = industry?.color ?? 'var(--color-primary)';
 
   return (
     <div
-      className="group cursor-pointer border border-border bg-[rgb(250,250,252)] dark:bg-card"
+      className={cn(
+        'group relative cursor-pointer border bg-[rgb(250,250,252)] dark:bg-card transition-colors',
+        selected ? 'border-primary/50 bg-primary/[0.02]' : 'border-border',
+      )}
       style={{
         boxShadow:
           'rgba(0,0,0,0.4) 0px 2px 4px, rgba(0,0,0,0.3) 0px 7px 13px -3px, rgba(0,0,0,0.2) 0px -3px 0px inset',
       }}
       onClick={onOpen}
     >
+      {/* Checkbox */}
+      <div
+        className={cn(
+          'absolute left-2 top-2 z-10 transition-opacity',
+          selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Checkbox checked={selected} onCheckedChange={onToggleSelect} aria-label={`选择 ${kb.name}`} />
+      </div>
       <div className="flex flex-col gap-3 px-5 pb-5 pt-5">
         <h3 className="truncate text-[14px] font-semibold text-foreground">{kb.name}</h3>
         {kb.description && (
@@ -801,54 +998,6 @@ function KBCard({
         </div>
         <span className="text-[10px] text-muted-foreground/60">{formatRelativeTime(kb.updated_at)}</span>
       </div>
-    </div>
-  );
-}
-
-/* ================================================================ */
-/*  KB Row (List View)                                               */
-/* ================================================================ */
-
-function KBRow({
-  kb,
-  industry,
-  onOpen,
-}: {
-  kb: KnowledgeBase;
-  industry?: Industry;
-  onOpen: () => void;
-}) {
-  const accentColor = industry?.color ?? 'var(--color-primary)';
-
-  return (
-    <div
-      className="group flex cursor-pointer items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4"
-      onClick={onOpen}
-    >
-      <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-        style={{ background: `linear-gradient(135deg, ${accentColor}20, ${accentColor}08)`, color: accentColor }}
-      >
-        <Icon icon="streamline-color:open-book" width={16} height={16} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-foreground">{kb.name}</div>
-        {kb.description && (
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{kb.description}</div>
-        )}
-      </div>
-      {industry && (
-        <Badge
-          variant="secondary"
-          className="hidden shrink-0 gap-1 text-[10px] sm:inline-flex"
-          style={{ backgroundColor: `${accentColor}12`, color: accentColor }}
-        >
-          {industry.name}
-        </Badge>
-      )}
-      <Badge variant="secondary" className="shrink-0">{kb.document_count} 篇</Badge>
-      <span className="hidden text-[11px] text-muted-foreground/60 sm:inline">{formatRelativeTime(kb.updated_at)}</span>
-      <Icon icon="lucide:chevron-right" width={16} height={16} className="hidden shrink-0 text-muted-foreground/40 sm:block" />
     </div>
   );
 }

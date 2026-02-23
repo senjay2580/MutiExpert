@@ -101,6 +101,7 @@ export default function SkillsPage() {
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<Skill | null>(null);
+  const [deleteRefTarget, setDeleteRefTarget] = useState<{ id: string; name: string } | null>(null);
   // Detail panel
   const [detailId, setDetailId] = useState<string | null>(null);
   // Script link
@@ -189,6 +190,7 @@ export default function SkillsPage() {
   const deleteRefMutation = useMutation({
     mutationFn: (refId: string) => skillsService.deleteRef(detailId!, refId),
     onSuccess: () => {
+      setDeleteRefTarget(null);
       queryClient.invalidateQueries({ queryKey: ['skills', detailId] });
       toast.success('引用已删除');
     },
@@ -416,7 +418,7 @@ export default function SkillsPage() {
                             <span className="text-sm truncate">{ref.name}</span>
                             <Badge variant="outline" className="text-[9px]">{ref.ref_type}</Badge>
                           </div>
-                          <button onClick={() => deleteRefMutation.mutate(ref.id)} className="text-muted-foreground hover:text-destructive shrink-0">
+                          <button onClick={() => setDeleteRefTarget({ id: ref.id, name: ref.name })} className="text-muted-foreground hover:text-destructive shrink-0">
                             <Icon icon="lucide:trash-2" className="size-3.5" />
                           </button>
                         </div>
@@ -520,7 +522,7 @@ export default function SkillsPage() {
                             <span className="text-xs truncate">{ref.name}</span>
                             <Badge variant="outline" className="text-[9px]">{ref.ref_type}</Badge>
                           </div>
-                          <button onClick={() => deleteRefMutation.mutate(ref.id)} className="text-muted-foreground hover:text-destructive shrink-0">
+                          <button onClick={() => setDeleteRefTarget({ id: ref.id, name: ref.name })} className="text-muted-foreground hover:text-destructive shrink-0">
                             <Icon icon="lucide:trash-2" className="size-3" />
                           </button>
                         </div>
@@ -572,6 +574,17 @@ export default function SkillsPage() {
         variant="destructive"
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
         loading={deleteMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteRefTarget}
+        onOpenChange={(open) => { if (!open) setDeleteRefTarget(null); }}
+        title={`删除引用「${deleteRefTarget?.name}」？`}
+        description="此操作不可撤销，引用将被永久删除。"
+        confirmLabel="确认删除"
+        variant="destructive"
+        onConfirm={() => deleteRefTarget && deleteRefMutation.mutate(deleteRefTarget.id)}
+        loading={deleteRefMutation.isPending}
       />
 
       <FloatingEditor

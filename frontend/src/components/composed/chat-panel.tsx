@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Icon } from '@iconify/react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -19,12 +20,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { cn } from '@/lib/utils';
 import api from '@/services/api';
 import { chatService, streamMessage } from '@/services/chatService';
 import { useAppStore } from '@/stores/useAppStore';
 import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
-import type { ModelProvider } from '@/types';
+import type { Conversation, ModelProvider } from '@/types';
 import ReactMarkdown from 'react-markdown';
 
 /* ================================================================ */
@@ -80,6 +82,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
   const [searchTerm, setSearchTerm] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
 
   const abortRef = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -107,15 +110,28 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
   const deleteConversation = useMutation({
     mutationFn: chatService.deleteConversation,
     onSuccess: (_data, deletedId) => {
+      setDeleteTarget(null);
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       if (conversationId === deletedId) handleNewChat();
+      toast.success('对话已删除');
     },
+    onError: () => toast.error('删除失败，请重试'),
   });
 
   const updateConversation = useMutation({
     mutationFn: ({ id, ...payload }: { id: string; title?: string | null; is_pinned?: boolean }) =>
       chatService.updateConversation(id, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (variables.title !== undefined) {
+        toast.success('对话标题已更新');
+      } else if (variables.is_pinned !== undefined) {
+        toast.success(variables.is_pinned ? '已置顶对话' : '已取消置顶');
+      } else {
+        toast.success('更新成功');
+      }
+    },
+    onError: () => toast.error('更新失败，请重试'),
   });
 
   // Derived
@@ -537,7 +553,7 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
                             {conv.is_pinned ? '取消置顶' : '置顶'}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-xs text-destructive" onClick={() => deleteConversation.mutate(conv.id)}>删除</DropdownMenuItem>
+                          <DropdownMenuItem className="text-xs text-destructive" onClick={() => setDeleteTarget(conv)}>删除</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -548,6 +564,18 @@ export function ChatPanel({ knowledgeBaseId, className, onClose }: ChatPanelProp
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="删除对话？"
+        description={deleteTarget ? `将永久删除「${deleteTarget.title || '未命名对话'}」。` : undefined}
+        confirmLabel="删除"
+        cancelLabel="取消"
+        variant="destructive"
+        onConfirm={() => deleteTarget && deleteConversation.mutate(deleteTarget.id)}
+        loading={deleteConversation.isPending}
+      />
     </div>
   );
 }

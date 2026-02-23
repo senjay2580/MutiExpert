@@ -11,6 +11,7 @@ import BasicSettingsPage from '../pages/settings/BasicSettingsPage';
 import IntegrationsPage from '../pages/settings/IntegrationsPage';
 import DataManagementPage from '../pages/settings/DataManagementPage';
 import StorageManagementPage from '../pages/settings/StorageManagementPage';
+import WorkspaceFilesPage from '../pages/settings/WorkspaceFilesPage';
 import ScheduledTasksPage from '../pages/scheduler/ScheduledTasksPage';
 import ScriptsPage from '../pages/scripts/ScriptsPage';
 import BotToolsPage from '../pages/bot-tools/BotToolsPage';
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
           { path: 'ai-models', element: <AIModelsPage /> },
           { path: 'integrations', element: <IntegrationsPage /> },
           { path: 'storage', element: <StorageManagementPage /> },
+          { path: 'workspace', element: <WorkspaceFilesPage /> },
           { path: 'data', element: <DataManagementPage /> },
         ],
       },

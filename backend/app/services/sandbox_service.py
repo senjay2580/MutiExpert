@@ -681,3 +681,61 @@ async def execute_python(code: str, timeout: int = 30) -> SandboxResult:
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# ── 结构化文件 API（供前端 UI 使用）──────────────────────────
+
+
+import mimetypes
+from datetime import datetime, timezone
+
+
+async def list_files_json(path: str = ".") -> dict:
+    """返回结构化目录内容（JSON 格式，供前端使用）。"""
+    try:
+        target = _safe_path(path)
+        os.makedirs(target, exist_ok=True)
+        entries = []
+        for entry in sorted(Path(target).iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if entry.is_dir():
+                try:
+                    child_count = sum(1 for _ in entry.iterdir())
+                except PermissionError:
+                    child_count = 0
+                entries.append({"name": entry.name, "type": "dir", "child_count": child_count})
+            else:
+                stat = entry.stat()
+                mime = mimetypes.guess_type(entry.name)[0] or ""
+                modified = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+                entries.append({
+                    "name": entry.name,
+                    "type": "file",
+                    "size": stat.st_size,
+                    "mime_type": mime,
+                    "modified": modified,
+                })
+        return {"success": True, "path": path, "entries": entries}
+    except ValueError as e:
+        return {"success": False, "path": path, "entries": [], "error": str(e)}
+    except Exception as e:
+        return {"success": False, "path": path, "entries": [], "error": str(e)}
+
+
+async def workspace_stats() -> dict:
+    """返回工作区统计信息。"""
+    try:
+        base = Path(_get_workspace()).resolve()
+        if not base.exists():
+            return {"success": True, "total_files": 0, "total_size": 0, "total_dirs": 0}
+        total_files = 0
+        total_size = 0
+        total_dirs = 0
+        for item in base.rglob("*"):
+            if item.is_file():
+                total_files += 1
+                total_size += item.stat().st_size
+            elif item.is_dir():
+                total_dirs += 1
+        return {"success": True, "total_files": total_files, "total_size": total_size, "total_dirs": total_dirs}
+    except Exception as e:
+        return {"success": False, "total_files": 0, "total_size": 0, "total_dirs": 0, "error": str(e)}

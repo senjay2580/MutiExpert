@@ -17,6 +17,8 @@ from app.services.sandbox_service import (
     read_file,
     write_file,
     list_files,
+    list_files_json,
+    workspace_stats,
     delete_file,
     find_file,
     fetch_url,
@@ -82,6 +84,16 @@ async def api_shell(req: ShellRequest):
 async def api_list_files(path: str = "."):
     result = await list_files(path)
     return _to_response(result)
+
+
+@router.get("/files/list-json", summary="列出工作区文件（结构化 JSON）")
+async def api_list_files_json(path: str = "."):
+    return await list_files_json(path)
+
+
+@router.get("/files/workspace-stats", summary="工作区统计信息")
+async def api_workspace_stats():
+    return await workspace_stats()
 
 
 @router.get("/files/read", summary="读取文件内容")
@@ -217,7 +229,7 @@ async def api_upload_file(
         "path": rel_path,
         "size": len(content),
         "mime_type": mime,
-        "url": oss_url or f"/api/v1/sandbox/files/download?path={rel_path}",
+        "url": oss_url or f"/api/v1/sandbox/files/download?path={rel_path}&inline=true",
     }
 
 

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Icon } from '@iconify/react';
@@ -234,6 +235,25 @@ export default function StorageManagementPage() {
           actions={actions}
           selectable
           bulkActions={bulkActions}
+          getRowExpandedContent={(f) => (
+            <div className="flex gap-6 text-xs">
+              {isImage(f.name) && (
+                <img
+                  src={getFileUrl(f)}
+                  alt={f.name}
+                  className="h-24 w-24 cursor-pointer rounded-lg border object-cover transition-opacity hover:opacity-80"
+                  onClick={() => setPreviewUrl(getFileUrl(f))}
+                />
+              )}
+              <div className="space-y-1.5 text-muted-foreground">
+                <div><span className="font-medium text-foreground">文件名：</span>{f.name}</div>
+                <div><span className="font-medium text-foreground">大小：</span>{formatSize(f.metadata?.size ?? 0)}</div>
+                <div><span className="font-medium text-foreground">类型：</span>{f.metadata?.mimetype || '—'}</div>
+                <div><span className="font-medium text-foreground">路径：</span>{getFileKey(f)}</div>
+                {f.metadata?.lastModified && <div><span className="font-medium text-foreground">更新时间：</span>{new Date(f.metadata.lastModified).toLocaleString('zh-CN')}</div>}
+              </div>
+            </div>
+          )}
           emptyIcon="lucide:file"
           emptyTitle="暂无文件"
           emptyDescription="当前目录下没有文件"
@@ -241,8 +261,8 @@ export default function StorageManagementPage() {
         />
       )}
 
-      {/* Image preview overlay */}
-      {previewUrl && (
+      {/* Image preview overlay — portal to body so sidebar can't cover it */}
+      {previewUrl && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={() => setPreviewUrl('')}>
           <div className="relative max-w-[80vw] max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
             <img src={previewUrl} alt="preview" className="max-w-full max-h-[80vh] rounded-lg shadow-xl" />
@@ -253,7 +273,8 @@ export default function StorageManagementPage() {
               <Icon icon="lucide:x" className="size-4" />
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
       {/* Delete confirm */}
       <ConfirmDialog

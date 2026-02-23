@@ -37,6 +37,9 @@ build/
 # Logs
 *.log
 
+# Workspace (sandbox runtime files)
+backend/workspace/
+
 # Cache
 .cache/
 */.cache/

@@ -83,7 +83,7 @@ export default function DataManagementPage() {
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <StatCard label="模型" value={embeddingInfo?.model ?? '-'} icon="streamline-color:module-three" />
-              <StatCard label="API 地址" value={embeddingInfo?.api_base?.replace('https://', '').replace('/v1', '') ?? '-'} icon="streamline-color:programming-browser" />
+              <StatCard label="API 地址" value={embeddingInfo?.api_base?.replace('https://', '').replace('/v1', '') ?? '-'} icon="streamline-color:earth-1" />
               <StatCard label="向量分片数" value={embeddingInfo?.total_chunks ?? 0} icon="streamline-color:database" />
             </div>
           )}

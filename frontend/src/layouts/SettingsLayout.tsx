@@ -13,6 +13,7 @@ export default function SettingsLayout() {
     { path: 'ai-models', label: 'AI 模型配置', icon: navIcons.aiModels },
     { path: 'integrations', label: '第三方集成', icon: navIcons.integrations },
     { path: 'storage', label: '文件存储', icon: 'streamline-color:multiple-file-2' },
+    { path: 'workspace', label: '工作区', icon: 'streamline-color:local-storage-folder' },
     { path: 'data', label: '数据管理', icon: navIcons.data },
   ];
 

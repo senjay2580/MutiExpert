@@ -22,8 +22,9 @@ import { uploadFile } from '@/services/fileService';
 import { cn } from '@/lib/utils';
 import { getFileTypeIcon, formatFileSize } from '@/lib/fileTypeIcons';
 import { useAppStore } from '@/stores/useAppStore';
-import type { FileAttachment, ModelProvider } from '@/types';
+import type { Conversation, FileAttachment, ModelProvider } from '@/types';
 import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
+import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
@@ -190,6 +191,7 @@ export default function AIAssistantChatPage() {
   const [selectedKbIds, setSelectedKbIds] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>(
@@ -234,10 +236,11 @@ export default function AIAssistantChatPage() {
 
   const deleteConversation = useMutation({
     mutationFn: chatService.deleteConversation,
-    onSuccess: () => {
+    onSuccess: (_data, deletedId) => {
+      setDeleteTarget(null);
       toast.success('对话已删除');
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      if (activeConvId && activeConvId === deleteConversation.variables) {
+      if (activeConvId && activeConvId === deletedId) {
         handleNewConversation();
       }
     },
@@ -1057,7 +1060,7 @@ export default function AIAssistantChatPage() {
                     return (
                     <div key={`${att.filename}-${i}`} className="group/file flex items-center gap-2 rounded-lg bg-muted/40 px-2.5 py-1.5 text-[11px]">
                       {att.mime_type.startsWith('image/') ? (
-                        <img src={att.url} alt={att.filename} className="h-8 w-8 rounded object-cover" />
+                        <img src={att.url?.includes('inline=true') || att.url?.startsWith('http') ? att.url : `${att.url}${att.url?.includes('?') ? '&' : '?'}inline=true`} alt={att.filename} className="h-8 w-8 rounded object-cover" />
                       ) : (
                         <Icon icon={ft!.icon} width={18} height={18} className="shrink-0" />
                       )}
@@ -1249,7 +1252,18 @@ export default function AIAssistantChatPage() {
                       <div className="min-w-0 text-left">
                         <div className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
                           {conv.is_pinned && <Icon icon="lucide:pin" width={11} height={11} className="shrink-0 text-muted-foreground" />}
-                          {conv.channel === 'feishu' && <span title="飞书对话"><Icon icon="simple-icons:lark" width={11} height={11} className="shrink-0 text-blue-500" /></span>}
+                          {conv.channel === 'feishu' && (
+                            <div
+                              className="shrink-0 size-5"
+                              title="飞书对话"
+                              style={{
+                                backgroundImage: 'url(https://lf-package-cn.feishucdn.com/obj/feishu-static/developer/console/frontend/images/899fa60e60151c73aaea2e25871102dc.svg)',
+                                backgroundPosition: '0 0',
+                                backgroundSize: 'auto 20px',
+                                backgroundRepeat: 'no-repeat',
+                              }}
+                            />
+                          )}
                           <span className="truncate">{conv.title || '未命名会话'}</span>
                         </div>
                         <div className="mt-0.5 text-[11px] text-muted-foreground">
@@ -1270,7 +1284,7 @@ export default function AIAssistantChatPage() {
                         <DropdownMenuItem onClick={() => handleStartRename(conv.id, conv.title)}>重命名</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleTogglePin(conv.id, !conv.is_pinned)}>{conv.is_pinned ? '取消置顶' : '置顶'}</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => deleteConversation.mutate(conv.id)} className="text-destructive">删除</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDeleteTarget(conv)} className="text-destructive">删除</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                     </div>
@@ -1281,6 +1295,18 @@ export default function AIAssistantChatPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="删除对话？"
+        description={deleteTarget ? `将永久删除「${deleteTarget.title || '未命名对话'}」。` : undefined}
+        confirmLabel="删除"
+        cancelLabel="取消"
+        variant="destructive"
+        onConfirm={() => deleteTarget && deleteConversation.mutate(deleteTarget.id)}
+        loading={deleteConversation.isPending}
+      />
     </div>
   );
 }
