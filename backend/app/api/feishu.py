@@ -165,6 +165,7 @@ async def _handle_feishu_question(parsed: dict):
             init_card = _build_stream_card("", "processing")
             card_resp = await svc.send_interactive_card(chat_id, init_card)
             card_msg_id = card_resp.get("message_id")
+            print(f"[FEISHU] 思考中卡片已发送: card_msg_id={card_msg_id}", flush=True)
 
             # 2. 流式处理 + 实时更新卡片
             request = PipelineRequest(
@@ -185,7 +186,9 @@ async def _handle_feishu_question(parsed: dict):
             all_file_attachments = []
             current_tool = ""
 
+            print(f"[FEISHU] 开始 run_stream: provider={provider}", flush=True)
             async for event in run_stream(request, db):
+                print(f"[FEISHU] 事件: {event.type}", flush=True)
                 if event.type == "text_chunk":
                     accumulated_text += event.data.get("content", "")
                 elif event.type == "thinking":
@@ -270,6 +273,7 @@ async def _handle_feishu_question(parsed: dict):
                     await svc.send_interactive_card(chat_id, file_card)
 
     except Exception as e:
+        print(f"[FEISHU] 异常: {type(e).__name__}: {e}", flush=True)
         # 出错时更新卡片为红色错误状态
         if svc and card_msg_id:
             try:

@@ -12,6 +12,10 @@ api.interceptors.request.use((config) => {
     config.headers = config.headers ?? {};
     config.headers['X-API-Key'] = apiKey;
   }
+  // FormData 时删除默认 JSON content-type，让浏览器自动设置 multipart boundary
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
   return config;
 });
 
