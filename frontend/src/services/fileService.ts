@@ -46,7 +46,24 @@ export async function uploadToWorkspace(file: File, path = ''): Promise<FileAtta
   };
 }
 
-/** 智能上传：文件存到工作区，后端自动推 Supabase Storage 返回公开 URL */
+/** 上传聊天附件（直传 Supabase，不写入服务器工作区） */
 export async function uploadFile(file: File): Promise<FileAttachment> {
-  return uploadToWorkspace(file, 'chat_uploads');
+  const formData = new FormData();
+  formData.append('file', file);
+  const resp = await api.post<{
+    filename: string;
+    path: string;
+    size: number;
+    mime_type: string;
+    url: string;
+  }>('/sandbox/files/upload-chat', formData, {
+    timeout: 120000,
+  });
+  return {
+    filename: resp.data.filename,
+    path: resp.data.path,
+    size: resp.data.size,
+    mime_type: resp.data.mime_type,
+    url: resp.data.url,
+  };
 }

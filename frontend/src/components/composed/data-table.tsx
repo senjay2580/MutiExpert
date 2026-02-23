@@ -1065,7 +1065,7 @@ export function DataTable<T>({
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground whitespace-nowrap">Rows per page</span>
                   <Select value={String(rowsPerPage)} onValueChange={(v) => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-                    <SelectTrigger className="h-7 w-[56px] text-xs"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-7 w-[68px] text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {rowsPerPageOptions.map((n) => (
                         <SelectItem key={n} value={String(n)} className="text-xs">{n}</SelectItem>

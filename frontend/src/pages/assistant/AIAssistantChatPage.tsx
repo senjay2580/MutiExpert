@@ -67,10 +67,10 @@ function CodeBlock({ className, children, ...props }: React.HTMLAttributes<HTMLE
   };
 
   return (
-    <div className="group/code relative my-3 overflow-hidden rounded-lg border border-border/50 bg-[#22272e]">
-      <div className="flex items-center justify-between border-b border-white/5 px-4 py-1.5 text-[11px] text-zinc-400">
-        <span>{lang || 'code'}</span>
-        <button onClick={handleCopy} className="flex items-center gap-1 transition-colors hover:text-zinc-200">
+    <div className="group/code relative my-3 overflow-hidden rounded-xl border border-white/[0.06] bg-[#1e1e2e] shadow-lg">
+      <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.03] px-4 py-2 text-[11px] text-zinc-500">
+        <span className="font-medium uppercase tracking-wider">{lang || 'code'}</span>
+        <button onClick={handleCopy} className="flex items-center gap-1.5 rounded-md px-2 py-0.5 transition-colors hover:bg-white/[0.06] hover:text-zinc-300">
           <Icon icon={copied ? 'lucide:check' : 'lucide:copy'} width={12} height={12} />
           {copied ? '已复制' : '复制'}
         </button>
@@ -156,13 +156,26 @@ const markdownComponents = {
   code({ className, children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
     const isBlock = className?.includes('language-') || className?.includes('hljs');
     if (isBlock) return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
-    return <code className={cn('rounded bg-muted/60 px-1.5 py-0.5 text-[12px] font-mono', className)} {...props}>{children}</code>;
+    return <code className={cn('rounded-md bg-primary/[0.08] px-1.5 py-0.5 text-[12px] font-semibold font-mono text-primary/80', className)} {...props}>{children}</code>;
   },
   pre({ children }: { children?: React.ReactNode }) {
     return <>{children}</>;
   },
   a({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-    return <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline decoration-blue-500/30 hover:decoration-blue-500 transition-colors" {...props}>{children}</a>;
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer"
+        className="text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary transition-colors"
+        {...props}>{children}</a>
+    );
+  },
+  blockquote({ children, ...props }: React.HTMLAttributes<HTMLQuoteElement>) {
+    return <blockquote {...props}>{children}</blockquote>;
+  },
+  table({ children, ...props }: React.HTMLAttributes<HTMLTableElement>) {
+    return <div className="my-3 overflow-x-auto rounded-lg border border-border/50"><table className="!m-0" {...props}>{children}</table></div>;
+  },
+  hr() {
+    return <hr />;
   },
 };
 

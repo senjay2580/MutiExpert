@@ -1515,11 +1515,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Markdown prose in chat */
-.prose p { margin: 0.5em 0; }
+.prose p { margin: 0.6em 0; line-height: 1.75; }
 .prose p:first-child { margin-top: 0; }
 .prose p:last-child { margin-bottom: 0; }
-.prose ul, .prose ol { margin: 0.5em 0; padding-left: 1.5em; }
-.prose li { margin: 0.25em 0; }
+.prose ul, .prose ol { margin: 0.6em 0; padding-left: 1.6em; }
+.prose ul { list-style-type: disc; }
+.prose ol { list-style-type: decimal; }
+.prose li { margin: 0.35em 0; line-height: 1.7; }
+.prose li::marker { color: hsl(var(--primary) / 0.5); }
 .prose code {
   font-size: 12px;
   padding: 0.15em 0.4em;
@@ -1534,14 +1537,54 @@ h1, h2, h3, h4, h5, h6 {
   overflow-x: auto;
 }
 .prose pre code { padding: 0; background: none; }
-.prose strong { font-weight: 600; }
-.prose h1, .prose h2, .prose h3 { margin: 0.75em 0 0.25em; font-weight: 600; }
-.prose blockquote {
-  margin: 0.5em 0;
-  padding-left: 1em;
-  border-left: 3px solid var(--border-strong);
-  color: var(--text-secondary);
+.prose strong { font-weight: 600; color: hsl(var(--foreground)); }
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  margin: 1em 0 0.4em;
+  font-weight: 700;
+  line-height: 1.4;
+  color: hsl(var(--foreground));
 }
+.prose h1 { font-size: 1.25em; }
+.prose h2 { font-size: 1.1em; }
+.prose h3 { font-size: 1em; }
+.prose blockquote {
+  margin: 0.75em 0;
+  padding: 0.6em 1em;
+  border-left: 3px solid hsl(var(--primary) / 0.4);
+  background: hsl(var(--primary) / 0.04);
+  border-radius: 0 8px 8px 0;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+.prose blockquote p { margin: 0.25em 0; }
+.prose hr {
+  margin: 1.2em 0;
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(var(--border)), transparent);
+}
+.prose table {
+  width: 100%;
+  margin: 0.75em 0;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+.prose thead th {
+  padding: 0.5em 0.75em;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+  border-bottom: 2px solid hsl(var(--border));
+}
+.prose tbody td {
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid hsl(var(--border) / 0.5);
+}
+.prose tbody tr:last-child td { border-bottom: none; }
+.prose tbody tr:hover { background: hsl(var(--muted) / 0.3); }
 
 /* Chat code block overrides */
 .prose pre { margin: 0; padding: 0; background: transparent; border: none; }

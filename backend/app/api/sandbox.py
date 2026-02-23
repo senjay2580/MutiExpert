@@ -188,6 +188,37 @@ async def api_send_file(req: FileSendRequest):
     }
 
 
+@router.post("/files/upload-chat", summary="上传聊天附件（直传 Supabase）")
+async def api_upload_chat(
+    file: UploadFile = File(...),
+):
+    """聊天附件直传 Supabase Storage，不写入服务器本地工作区。"""
+    from app.services.supabase_storage_service import upload_bytes, is_configured
+
+    if not await is_configured():
+        raise HTTPException(status_code=503, detail="Supabase Storage 未配置，无法上传聊天附件")
+
+    settings = get_settings()
+    content = await file.read()
+    if len(content) > settings.max_upload_size:
+        raise HTTPException(status_code=413, detail=f"文件超过 {settings.max_upload_size // 1048576}MB 限制")
+
+    filename = file.filename or "unnamed"
+    mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    r = await upload_bytes(content, filename, mime, "chat")
+    if not r.success:
+        raise HTTPException(status_code=502, detail=f"Supabase 上传失败: {r.error}")
+
+    return {
+        "filename": filename,
+        "path": r.key,
+        "size": len(content),
+        "mime_type": mime,
+        "url": r.url,
+    }
+
+
 @router.post("/files/upload", summary="上传文件到工作区")
 async def api_upload_file(
     file: UploadFile = File(...),
@@ -213,23 +244,12 @@ async def api_upload_file(
     rel_path = sub.replace("\\", "/")
     mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-    # 同步推到 Supabase Storage（供前端回显/下载）
-    from app.services.supabase_storage_service import upload_bytes, is_configured
-    oss_url = ""
-    try:
-        if await is_configured():
-            r = await upload_bytes(content, filename, mime, "uploads")
-            if r.success:
-                oss_url = r.url
-    except Exception as exc:
-        logger.warning("Supabase upload failed, fallback to local: %s", exc)
-
     return {
         "filename": filename,
         "path": rel_path,
         "size": len(content),
         "mime_type": mime,
-        "url": oss_url or f"/api/v1/sandbox/files/download?path={rel_path}&inline=true",
+        "url": f"/api/v1/sandbox/files/download?path={rel_path}&inline=true",
     }
 
 
