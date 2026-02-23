@@ -14,7 +14,7 @@ export const dashboardService = {
     api.get<Array<{ month: string; local_ai: number; feishu: number }>>('/dashboard/usage-trend', { params: { months } }).then((r) => r.data),
 
   getAIModelTrend: (months = 6) =>
-    api.get<Array<{ month: string; claude: number; openai: number; deepseek: number }>>('/dashboard/ai-model-trend', { params: { months } }).then((r) => r.data),
+    api.get<Array<Record<string, string | number>>>('/dashboard/ai-model-trend', { params: { months } }).then((r) => r.data),
 
   getIndustryDistribution: () =>
     api.get<Array<{ name: string; color: string | null; value: number }>>('/dashboard/industry-distribution').then((r) => r.data),

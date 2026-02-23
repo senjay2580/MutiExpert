@@ -106,18 +106,36 @@ async def get_ai_model_trend(
     months: int = Query(6, ge=1, le=12),
     db: AsyncSession = Depends(get_db),
 ):
-    """月度 AI 模型调用趋势：按模型分组"""
+    """月度 AI 模型调用趋势：动态按 model_used 分组"""
     trunc_col = func.date_trunc("month", Message.created_at)
     month_col = func.to_char(trunc_col, "YYYY-MM")
-    result = await db.execute(
-        select(
-            month_col.label("month"),
-            func.count(case((Message.model_used == "claude", Message.id))).label("claude"),
-            func.count(
-                case((Message.model_used.in_(["openai", "codex"]), Message.id))
-            ).label("openai"),
-            func.count(case((Message.model_used == "deepseek", Message.id))).label("deepseek"),
+
+    # 先查出所有实际使用过的模型
+    provider_rows = (await db.execute(
+        select(Message.model_used).where(
+            Message.role == "assistant",
+            Message.model_used.isnot(None),
+        ).distinct()
+    )).scalars().all()
+
+    # codex 归入 openai
+    providers: set[str] = set()
+    for p in provider_rows:
+        providers.add("openai" if p == "codex" else p)
+
+    if not providers:
+        return []
+
+    # 动态构建 case 列
+    columns = [month_col.label("month")]
+    for provider in sorted(providers):
+        match_values = ["openai", "codex"] if provider == "openai" else [provider]
+        columns.append(
+            func.count(case((Message.model_used.in_(match_values), Message.id))).label(provider)
         )
+
+    result = await db.execute(
+        select(*columns)
         .where(
             Message.role == "assistant",
             Message.created_at >= func.date_trunc(
@@ -127,7 +145,12 @@ async def get_ai_model_trend(
         .group_by(trunc_col)
         .order_by(trunc_col)
     )
-    return [{"month": r.month, "claude": r.claude, "openai": r.openai, "deepseek": r.deepseek} for r in result.fetchall()]
+
+    rows = result.fetchall()
+    return [
+        {"month": r.month, **{p: getattr(r, p) for p in sorted(providers)}}
+        for r in rows
+    ]
 
 
 @router.get("/industry-distribution")

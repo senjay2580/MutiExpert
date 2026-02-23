@@ -67,6 +67,13 @@ const barChartConfig = {
   feishu: { label: '飞书交互', color: 'var(--color-chart-2)', icon: 'simple-icons:lark' },
 } as const;
 
+const MODEL_CHART_CONFIG: Record<string, { label: string; color: string }> = {
+  claude:   { label: 'Claude',   color: 'var(--color-chart-1)' },
+  openai:   { label: 'OpenAI',   color: 'var(--color-chart-2)' },
+  deepseek: { label: 'DeepSeek', color: 'var(--color-chart-3)' },
+  qwen:     { label: '通义千问',  color: 'var(--color-chart-4)' },
+};
+
 const CHART_COLORS = [
   'var(--color-chart-1)',
   'var(--color-chart-2)',
@@ -172,9 +179,21 @@ export default function DashboardPage() {
   );
 
   const areaData = useMemo(
-    () => (aiModelTrend ?? []).map((d) => ({ ...d, month: formatMonth(d.month) })),
+    () => (aiModelTrend ?? []).map((d) => ({ ...d, month: formatMonth(d.month as string) })),
     [aiModelTrend],
   );
+
+  const modelKeys = useMemo(() => {
+    if (!areaData.length) return [];
+    const keys = Object.keys(areaData[0]).filter((k) => k !== 'month');
+    // 按 MODEL_CHART_CONFIG 中的顺序排列，未知的排最后
+    const order = Object.keys(MODEL_CHART_CONFIG);
+    return keys.sort((a, b) => {
+      const ai = order.indexOf(a);
+      const bi = order.indexOf(b);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+  }, [areaData]);
 
   const pieData = useMemo(
     () =>
@@ -353,12 +372,15 @@ export default function DashboardPage() {
                 <CardDescription>近 6 个月各模型调用量</CardDescription>
               </div>
               <div className="flex items-center gap-3">
-                {([['claude', 'Claude'], ['openai', 'OpenAI'], ['deepseek', 'DeepSeek']] as const).map(([key, label]) => (
-                  <div key={key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <ProviderIcon provider={key} size={16} />
-                    <span>{label}</span>
-                  </div>
-                ))}
+                {modelKeys.map((key) => {
+                  const cfg = MODEL_CHART_CONFIG[key] ?? { label: key, color: CHART_COLORS[modelKeys.indexOf(key) % CHART_COLORS.length] };
+                  return (
+                    <div key={key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <ProviderIcon provider={key} size={16} />
+                      <span>{cfg.label}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </CardHeader>
@@ -367,25 +389,25 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={areaData}>
                   <defs>
-                    <linearGradient id="fillClaude" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="var(--color-chart-1)" stopOpacity={0.1} />
-                    </linearGradient>
-                    <linearGradient id="fillOpenai" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0.1} />
-                    </linearGradient>
-                    <linearGradient id="fillDeepseek" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-chart-3)" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="var(--color-chart-3)" stopOpacity={0.1} />
-                    </linearGradient>
+                    {modelKeys.map((key) => {
+                      const cfg = MODEL_CHART_CONFIG[key] ?? { label: key, color: CHART_COLORS[modelKeys.indexOf(key) % CHART_COLORS.length] };
+                      return (
+                        <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={cfg.color} stopOpacity={0.8} />
+                          <stop offset="95%" stopColor={cfg.color} stopOpacity={0.1} />
+                        </linearGradient>
+                      );
+                    })}
                   </defs>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} stroke="var(--color-muted-foreground)" />
                   <Tooltip content={<ChartTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                  <Area dataKey="openai" name="OpenAI" type="natural" fill="url(#fillOpenai)" stroke="var(--color-chart-2)" stackId="a" />
-                  <Area dataKey="deepseek" name="DeepSeek" type="natural" fill="url(#fillDeepseek)" stroke="var(--color-chart-3)" stackId="a" />
-                  <Area dataKey="claude" name="Claude" type="natural" fill="url(#fillClaude)" stroke="var(--color-chart-1)" stackId="a" />
+                  {modelKeys.map((key) => {
+                    const cfg = MODEL_CHART_CONFIG[key] ?? { label: key, color: CHART_COLORS[modelKeys.indexOf(key) % CHART_COLORS.length] };
+                    return (
+                      <Area key={key} dataKey={key} name={cfg.label} type="natural" fill={`url(#fill-${key})`} stroke={cfg.color} stackId="a" />
+                    );
+                  })}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
