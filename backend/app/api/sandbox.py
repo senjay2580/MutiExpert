@@ -300,18 +300,28 @@ async def api_storage_stats():
     if not await is_configured():
         return {"success": False, "error": "Supabase Storage 未配置", "stats": {}}
 
+    # 递归遍历所有子目录
     all_files: list[dict] = []
-    offset = 0
-    while True:
-        batch = await list_objects("", limit=1000, offset=offset)
-        if isinstance(batch, StorageResult):
-            return {"success": False, "error": batch.error, "stats": {}}
-        if not batch:
-            break
-        all_files.extend(batch)
-        offset += len(batch)
-        if len(batch) < 1000:
-            break
+    dirs_to_scan = [""]
+    while dirs_to_scan:
+        current_prefix = dirs_to_scan.pop()
+        offset = 0
+        while True:
+            batch = await list_objects(current_prefix, limit=1000, offset=offset)
+            if isinstance(batch, StorageResult):
+                return {"success": False, "error": batch.error, "stats": {}}
+            if not batch:
+                break
+            for f in batch:
+                if f.get("id") is None:
+                    # 子目录，加入待扫描队列
+                    sub = f"{current_prefix}/{f['name']}" if current_prefix else f["name"]
+                    dirs_to_scan.append(sub)
+                else:
+                    all_files.append(f)
+            offset += len(batch)
+            if len(batch) < 1000:
+                break
 
     total_size = 0
     categories: dict[str, int] = {}
@@ -320,7 +330,6 @@ async def api_storage_stats():
         size = meta.get("size", 0) or 0
         total_size += size
         name = f.get("name", "")
-        # 按前缀分类
         prefix = name.split("/")[0] if "/" in name else "root"
         categories[prefix] = categories.get(prefix, 0) + 1
 
