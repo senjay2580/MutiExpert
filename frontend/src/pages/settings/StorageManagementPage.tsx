@@ -152,7 +152,6 @@ export default function StorageManagementPage() {
           </SolidButton>
         )}
       </div>
-// __CONTINUE_HERE__
 
       {/* File table */}
       <Card className="py-0">
