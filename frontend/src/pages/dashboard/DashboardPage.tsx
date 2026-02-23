@@ -252,7 +252,19 @@ export default function DashboardPage() {
                   onClick={() => setActiveChart(key)}
                 >
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Icon icon={barChartConfig[key].icon} width={14} height={14} />
+                    {key === 'feishu' ? (
+                      <div
+                        className="size-3.5"
+                        style={{
+                          backgroundImage: 'url(https://lf-package-cn.feishucdn.com/obj/feishu-static/developer/console/frontend/images/899fa60e60151c73aaea2e25871102dc.svg)',
+                          backgroundPosition: '0 0',
+                          backgroundSize: 'auto 14px',
+                          backgroundRepeat: 'no-repeat',
+                        }}
+                      />
+                    ) : (
+                      <Icon icon={barChartConfig[key].icon} width={14} height={14} />
+                    )}
                     {barChartConfig[key].label}
                   </span>
                   <span className="text-lg font-bold leading-none sm:text-3xl">
@@ -293,12 +305,24 @@ export default function DashboardPage() {
                 const iconInfo = isDoc
                   ? { icon: 'lucide:file-text', bg: 'bg-blue-500/10 text-blue-500' }
                   : isFeishu
-                    ? { icon: 'simple-icons:lark', bg: 'bg-violet-500/10 text-violet-500' }
+                    ? { icon: '', bg: 'bg-violet-500/10 text-violet-500' }
                     : { icon: 'lucide:monitor', bg: 'bg-emerald-500/10 text-emerald-500' };
                 return (
                   <div key={item.id} className="flex items-center gap-4">
                     <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-full', iconInfo.bg)}>
-                      <Icon icon={iconInfo.icon} width={18} height={18} />
+                      {isFeishu ? (
+                        <div
+                          className="size-5"
+                          style={{
+                            backgroundImage: 'url(https://lf-package-cn.feishucdn.com/obj/feishu-static/developer/console/frontend/images/899fa60e60151c73aaea2e25871102dc.svg)',
+                            backgroundPosition: '0 0',
+                            backgroundSize: 'auto 20px',
+                            backgroundRepeat: 'no-repeat',
+                          }}
+                        />
+                      ) : (
+                        <Icon icon={iconInfo.icon} width={18} height={18} />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1 space-y-1">
                       <p className="truncate text-sm font-medium leading-none">{item.title}</p>
