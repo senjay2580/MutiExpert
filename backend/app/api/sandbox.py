@@ -1,9 +1,12 @@
 """Sandbox API — Shell / File / Web / Python / Search 沙箱执行端点"""
 from __future__ import annotations
 
+import logging
 import mimetypes
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import FileResponse
@@ -201,10 +204,13 @@ async def api_upload_file(
     # 同步推到 Supabase Storage（供前端回显/下载）
     from app.services.supabase_storage_service import upload_bytes, is_configured
     oss_url = ""
-    if await is_configured():
-        r = await upload_bytes(content, filename, mime, "uploads")
-        if r.success:
-            oss_url = r.url
+    try:
+        if await is_configured():
+            r = await upload_bytes(content, filename, mime, "uploads")
+            if r.success:
+                oss_url = r.url
+    except Exception as exc:
+        logger.warning("Supabase upload failed, fallback to local: %s", exc)
 
     return {
         "filename": filename,

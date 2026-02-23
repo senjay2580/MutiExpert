@@ -249,7 +249,7 @@ async def _execute_skill(
         [{"role": "user", "content": prompt}],
         provider="claude", db=db,
     ):
-        full_response += chunk
+        full_response += chunk.content
     return full_response or "无法生成回答", bool(full_response)
 
 
