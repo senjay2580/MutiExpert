@@ -5,7 +5,6 @@ import logging
 from typing import Callable, Awaitable
 
 import lark_oapi as lark
-from lark_oapi.adapter.fastapi import parse_req
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
