@@ -980,7 +980,7 @@ export default function AIAssistantChatPage() {
                                 </div>
                               </div>
                             ) : (() => { const ft = getFileTypeIcon(att.filename, att.mime_type); return (
-                              <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="group flex items-center gap-3 rounded-xl bg-muted/40 px-3.5 py-3 text-[12px] transition-all hover:bg-muted/70 hover:shadow-sm">
+                              <a key={ai} href={`/api/v1/sandbox/files/download?path=${att.path}`} download={att.filename} className="group flex items-center gap-3 rounded-xl border border-border/50 bg-muted/60 px-3.5 py-3 text-[12px] transition-all hover:bg-muted hover:shadow-sm">
                                 <div className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: ft.color + '15' }}>
                                   <Icon icon={ft.icon} width={24} height={24} />
                                 </div>
