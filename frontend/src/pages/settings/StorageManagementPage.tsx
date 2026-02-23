@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { DataTable } from '@/components/composed/data-table';
 import type { DataTableColumn, DataTableAction, BulkAction } from '@/components/composed/data-table';
+import { getFileTypeIcon } from '@/lib/fileTypeIcons';
 import {
   listStorageFiles,
   deleteStorageFiles,
@@ -84,16 +85,24 @@ export default function StorageManagementPage() {
       key: 'name',
       header: '文件名',
       sortable: true,
-      accessor: (f) => f.name,
-      render: (f) => (
-        <div className="flex items-center gap-2">
-          <Icon
-            icon={isImage(f.name) ? 'lucide:image' : 'lucide:file'}
-            className={`size-4 ${isImage(f.name) ? 'text-pink-500' : 'text-blue-500'}`}
-          />
-          <span className="truncate max-w-[300px]">{f.name}</span>
-        </div>
-      ),
+      accessor: (f) => f.original_name || f.name,
+      render: (f) => {
+        const displayName = f.original_name || f.name;
+        const ft = getFileTypeIcon(displayName, f.metadata?.mimetype || '');
+        return (
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: ft.color + '15' }}>
+              <Icon icon={ft.icon} width={20} height={20} />
+            </div>
+            <div className="min-w-0">
+              <span className="truncate block max-w-[300px] font-medium">{displayName}</span>
+              {f.original_name && f.original_name !== f.name && (
+                <span className="text-[10px] text-muted-foreground/50 truncate block max-w-[300px]">{f.name}</span>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: 'size',
@@ -106,9 +115,28 @@ export default function StorageManagementPage() {
     {
       key: 'type',
       header: '类型',
-      width: '140px',
-      accessor: (f) => f.metadata?.mimetype ?? '',
-      render: (f) => <span className="text-muted-foreground truncate">{f.metadata?.mimetype || '—'}</span>,
+      width: '100px',
+      accessor: (f) => {
+        const displayName = f.original_name || f.name;
+        return getFileTypeIcon(displayName, f.metadata?.mimetype || '').label;
+      },
+      render: (f) => {
+        const displayName = f.original_name || f.name;
+        const ft = getFileTypeIcon(displayName, f.metadata?.mimetype || '');
+        return <span className="text-muted-foreground">{ft.label}</span>;
+      },
+    },
+    {
+      key: 'time',
+      header: '更新时间',
+      sortable: true,
+      width: '160px',
+      accessor: (f) => f.metadata?.lastModified || '',
+      render: (f) => (
+        <span className="text-muted-foreground text-xs">
+          {f.metadata?.lastModified ? new Date(f.metadata.lastModified).toLocaleString('zh-CN') : '—'}
+        </span>
+      ),
     },
   ], []);
 
@@ -116,13 +144,13 @@ export default function StorageManagementPage() {
     {
       label: '下载',
       icon: 'lucide:download',
-      onClick: (f) => downloadFile(getFileUrl(f), f.name),
+      onClick: (f) => downloadFile(getFileUrl(f), f.original_name || f.name),
     },
     {
       label: '预览',
       icon: 'lucide:eye',
       onClick: (f) => setPreviewUrl(getFileUrl(f)),
-      hidden: (f) => !isImage(f.name),
+      hidden: (f) => !isImage(f.original_name || f.name),
     },
     {
       label: '删除',
@@ -235,25 +263,29 @@ export default function StorageManagementPage() {
           actions={actions}
           selectable
           bulkActions={bulkActions}
-          getRowExpandedContent={(f) => (
-            <div className="flex gap-6 text-xs">
-              {isImage(f.name) && (
-                <img
-                  src={getFileUrl(f)}
-                  alt={f.name}
-                  className="h-24 w-24 cursor-pointer rounded-lg border object-cover transition-opacity hover:opacity-80"
-                  onClick={() => setPreviewUrl(getFileUrl(f))}
-                />
-              )}
-              <div className="space-y-1.5 text-muted-foreground">
-                <div><span className="font-medium text-foreground">文件名：</span>{f.name}</div>
-                <div><span className="font-medium text-foreground">大小：</span>{formatSize(f.metadata?.size ?? 0)}</div>
-                <div><span className="font-medium text-foreground">类型：</span>{f.metadata?.mimetype || '—'}</div>
-                <div><span className="font-medium text-foreground">路径：</span>{getFileKey(f)}</div>
-                {f.metadata?.lastModified && <div><span className="font-medium text-foreground">更新时间：</span>{new Date(f.metadata.lastModified).toLocaleString('zh-CN')}</div>}
+          getRowExpandedContent={(f) => {
+            const displayName = f.original_name || f.name;
+            return (
+              <div className="flex gap-6 text-xs">
+                {isImage(displayName) && (
+                  <img
+                    src={getFileUrl(f)}
+                    alt={displayName}
+                    className="h-24 w-24 cursor-pointer rounded-lg border object-cover transition-opacity hover:opacity-80"
+                    onClick={() => setPreviewUrl(getFileUrl(f))}
+                  />
+                )}
+                <div className="space-y-1.5 text-muted-foreground">
+                  <div><span className="font-medium text-foreground">文件名：</span>{displayName}</div>
+                  {f.original_name && <div><span className="font-medium text-foreground">存储名：</span>{f.name}</div>}
+                  <div><span className="font-medium text-foreground">大小：</span>{formatSize(f.metadata?.size ?? 0)}</div>
+                  <div><span className="font-medium text-foreground">类型：</span>{f.metadata?.mimetype || '—'}</div>
+                  <div><span className="font-medium text-foreground">路径：</span>{getFileKey(f)}</div>
+                  {f.metadata?.lastModified && <div><span className="font-medium text-foreground">更新时间：</span>{new Date(f.metadata.lastModified).toLocaleString('zh-CN')}</div>}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          }}
           emptyIcon="lucide:file"
           emptyTitle="暂无文件"
           emptyDescription="当前目录下没有文件"

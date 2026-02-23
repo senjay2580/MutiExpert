@@ -9,6 +9,7 @@ from pathlib import Path
 
 import httpx
 from sqlalchemy import select
+from urllib.parse import quote
 
 from app.config import get_settings
 
@@ -101,9 +102,15 @@ async def upload_bytes(
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            encoded_name = quote(filename, safe='')
             resp = await client.post(
                 url,
-                headers={"Authorization": f"Bearer {cfg.service_key}", "Content-Type": mime_type},
+                headers={
+                    "Authorization": f"Bearer {cfg.service_key}",
+                    "Content-Type": mime_type,
+                    "x-upsert": "true",
+                    "Content-Disposition": f"inline; filename*=UTF-8''{encoded_name}",
+                },
                 content=file_bytes,
             )
             if resp.status_code in (200, 201):

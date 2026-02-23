@@ -9,7 +9,7 @@ function ToastGlyph({ kind }: { kind: ToastKind }) {
   const config: Record<ToastKind, { icon: string; ring: string; bg: string }> =
     {
       success: {
-        icon: "lucide:check",
+        icon: "lucide:check-circle-2",
         bg: "bg-gradient-to-br from-emerald-500/90 to-cyan-500/90",
         ring: "shadow-[0_10px_30px_rgba(16,185,129,0.25)]",
       },
@@ -24,7 +24,7 @@ function ToastGlyph({ kind }: { kind: ToastKind }) {
         ring: "shadow-[0_10px_30px_rgba(245,158,11,0.25)]",
       },
       error: {
-        icon: "lucide:x",
+        icon: "lucide:x-circle",
         bg: "bg-gradient-to-br from-rose-500/90 to-red-500/90",
         ring: "shadow-[0_10px_30px_rgba(244,63,94,0.25)]",
       },
@@ -61,6 +61,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={resolvedTheme as ToasterProps["theme"]}
       position="top-right"
+      closeButton
       className="toaster group"
       icons={{
         success: <ToastGlyph kind="success" />,
@@ -72,6 +73,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
+          zIndex: 99999,
           "--normal-bg": isDark
             ? "oklch(0.18 0.005 265 / 0.72)"
             : "oklch(0.99 0 0 / 0.72)",

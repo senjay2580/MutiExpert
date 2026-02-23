@@ -311,11 +311,30 @@ async def api_test_storage():
 @router.get("/storage/list", summary="列出 Storage 文件")
 async def api_storage_list(prefix: str = "", limit: int = 100, offset: int = 0):
     from app.services.supabase_storage_service import list_objects, StorageResult, _get_config
+    from urllib.parse import unquote
     result = await list_objects(prefix, limit, offset)
     if isinstance(result, StorageResult):
         return {"success": False, "error": result.error, "files": [], "public_url_prefix": ""}
     cfg = await _get_config()
     url_prefix = f"{cfg.url}/storage/v1/object/public/{cfg.bucket}" if cfg.url else ""
+    # 解析 Content-Disposition 中的原始文件名
+    for f in result:
+        meta = f.get("metadata") or {}
+        cd = meta.get("contentDisposition", "")
+        original = ""
+        if "filename*=" in cd:
+            # filename*=UTF-8''encoded_name
+            try:
+                original = unquote(cd.split("filename*=UTF-8''", 1)[1])
+            except Exception:
+                pass
+        elif 'filename="' in cd:
+            try:
+                original = cd.split('filename="', 1)[1].rstrip('"')
+            except Exception:
+                pass
+        if original:
+            f["original_name"] = original
     return {"success": True, "error": "", "files": result, "public_url_prefix": url_prefix}
 
 

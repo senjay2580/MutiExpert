@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/composed/confirm-dialog';
 import { DataTable } from '@/components/composed/data-table';
 import type { DataTableColumn, DataTableAction, BulkAction } from '@/components/composed/data-table';
+import { getFileTypeIcon } from '@/lib/fileTypeIcons';
 import { workspaceService } from '@/services/workspaceService';
 import { uploadToWorkspace } from '@/services/fileService';
 import type { WorkspaceEntry } from '@/services/workspaceService';
@@ -23,15 +24,6 @@ function formatSize(bytes: number) {
 
 function isImage(name: string) {
   return /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(name);
-}
-
-function getFileIcon(name: string): { icon: string; color: string } {
-  if (isImage(name)) return { icon: 'lucide:image', color: 'text-pink-500' };
-  if (/\.(pdf)$/i.test(name)) return { icon: 'lucide:file-text', color: 'text-red-500' };
-  if (/\.(docx?|xlsx?|pptx?|csv)$/i.test(name)) return { icon: 'lucide:file-spreadsheet', color: 'text-green-500' };
-  if (/\.(js|ts|py|sh|json|yaml|yml|md|html|css)$/i.test(name)) return { icon: 'lucide:file-code', color: 'text-violet-500' };
-  if (/\.(zip|tar|gz|rar|7z)$/i.test(name)) return { icon: 'lucide:file-archive', color: 'text-amber-500' };
-  return { icon: 'lucide:file', color: 'text-blue-500' };
 }
 
 export default function WorkspaceFilesPage() {
@@ -103,11 +95,13 @@ export default function WorkspaceFilesPage() {
       sortable: true,
       accessor: (f) => f.name,
       render: (f) => {
-        const fi = getFileIcon(f.name);
+        const ft = getFileTypeIcon(f.name, f.mime_type || '');
         return (
-          <div className="flex items-center gap-2">
-            <Icon icon={fi.icon} className={`size-4 ${fi.color}`} />
-            <span className="truncate max-w-[300px]">{f.name}</span>
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: ft.color + '15' }}>
+              <Icon icon={ft.icon} width={20} height={20} />
+            </div>
+            <span className="truncate max-w-[300px] font-medium">{f.name}</span>
           </div>
         );
       },
@@ -123,9 +117,12 @@ export default function WorkspaceFilesPage() {
     {
       key: 'type',
       header: '类型',
-      width: '140px',
-      accessor: (f) => f.mime_type ?? '',
-      render: (f) => <span className="text-muted-foreground truncate">{f.mime_type || '—'}</span>,
+      width: '100px',
+      accessor: (f) => getFileTypeIcon(f.name, f.mime_type || '').label,
+      render: (f) => {
+        const ft = getFileTypeIcon(f.name, f.mime_type || '');
+        return <span className="text-muted-foreground">{ft.label}</span>;
+      },
     },
     {
       key: 'modified',
@@ -134,7 +131,7 @@ export default function WorkspaceFilesPage() {
       width: '160px',
       accessor: (f) => f.modified ?? '',
       render: (f) => (
-        <span className="text-muted-foreground">
+        <span className="text-muted-foreground text-xs">
           {f.modified ? new Date(f.modified).toLocaleString('zh-CN') : '—'}
         </span>
       ),

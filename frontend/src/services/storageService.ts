@@ -3,6 +3,7 @@ import api from './api';
 export interface StorageFile {
   name: string;
   id?: string;
+  original_name?: string;
   metadata?: {
     size?: number;
     mimetype?: string;
