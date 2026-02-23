@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Icon } from '@iconify/react';
 import { PageHeader } from '@/components/composed/page-header';
 import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { SolidButton } from '@/components/composed/solid-button';
+import { DataTable } from '@/components/composed/data-table';
+import type { DataTableColumn, DataTableAction, BulkAction } from '@/components/composed/data-table';
 import {
   listStorageFiles,
   deleteStorageFiles,
   getStorageStats,
 } from '@/services/storageService';
+import type { StorageFile } from '@/services/storageService';
 
 function formatSize(bytes: number) {
   if (bytes === 0) return '0 B';
@@ -23,10 +24,20 @@ function isImage(name: string) {
   return /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(name);
 }
 
+function downloadFile(url: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export default function StorageManagementPage() {
   const queryClient = useQueryClient();
   const [prefix, setPrefix] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [previewUrl, setPreviewUrl] = useState('');
 
   const { data: statsData } = useQuery({
@@ -42,7 +53,6 @@ export default function StorageManagementPage() {
   const deleteMutation = useMutation({
     mutationFn: (keys: string[]) => deleteStorageFiles(keys),
     onSuccess: () => {
-      setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: ['storage-files'] });
       queryClient.invalidateQueries({ queryKey: ['storage-stats'] });
     },
@@ -52,33 +62,77 @@ export default function StorageManagementPage() {
   const publicUrlPrefix = filesData?.public_url_prefix ?? '';
   const stats = statsData?.stats && statsData.stats.total_files !== undefined ? statsData.stats : undefined;
 
-  // 从文件列表提取子目录（id 为 null 的是文件夹）
-  const folders = files.filter((f) => f.id === null);
-  const realFiles = files.filter((f) => f.id !== null);
+  const folders = files.filter((f) => f.id === null || f.id === undefined);
+  const realFiles = files.filter((f) => f.id !== null && f.id !== undefined);
 
   const breadcrumbs = prefix ? prefix.split('/').filter(Boolean) : [];
 
-  const navigateTo = (p: string) => {
-    setPrefix(p);
-    setSelected(new Set());
-  };
+  const navigateTo = (p: string) => setPrefix(p);
 
-  const toggleSelect = (key: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  const getFileKey = (f: StorageFile) => prefix ? `${prefix}/${f.name}` : f.name;
+  const getFileUrl = (f: StorageFile) => `${publicUrlPrefix}/${getFileKey(f)}`;
 
-  const toggleAll = () => {
-    if (selected.size === realFiles.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(realFiles.map((f) => (prefix ? `${prefix}/${f.name}` : f.name))));
-    }
-  };
+  const columns = useMemo((): DataTableColumn<StorageFile>[] => [
+    {
+      key: 'name',
+      header: '文件名',
+      sortable: true,
+      accessor: (f) => f.name,
+      render: (f) => (
+        <div className="flex items-center gap-2">
+          <Icon
+            icon={isImage(f.name) ? 'lucide:image' : 'lucide:file'}
+            className={`size-4 ${isImage(f.name) ? 'text-pink-500' : 'text-blue-500'}`}
+          />
+          <span className="truncate max-w-[300px]">{f.name}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'size',
+      header: '大小',
+      sortable: true,
+      width: '100px',
+      accessor: (f) => f.metadata?.size ?? 0,
+      render: (f) => <span className="text-muted-foreground">{formatSize(f.metadata?.size ?? 0)}</span>,
+    },
+    {
+      key: 'type',
+      header: '类型',
+      width: '140px',
+      accessor: (f) => f.metadata?.mimetype ?? '',
+      render: (f) => <span className="text-muted-foreground truncate">{f.metadata?.mimetype || '—'}</span>,
+    },
+  ], []);
+
+  const actions = useMemo((): DataTableAction<StorageFile>[] => [
+    {
+      label: '下载',
+      icon: 'lucide:download',
+      onClick: (f) => downloadFile(getFileUrl(f), f.name),
+    },
+    {
+      label: '预览',
+      icon: 'lucide:eye',
+      onClick: (f) => setPreviewUrl(getFileUrl(f)),
+      hidden: (f) => !isImage(f.name),
+    },
+    {
+      label: '删除',
+      icon: 'lucide:trash-2',
+      variant: 'destructive',
+      onClick: (f) => deleteMutation.mutate([getFileKey(f)]),
+    },
+  ], [publicUrlPrefix, prefix, deleteMutation, setPreviewUrl]);
+
+  const bulkActions = useMemo((): BulkAction[] => [
+    {
+      label: '批量删除',
+      icon: 'lucide:trash-2',
+      variant: 'destructive',
+      onClick: (keys) => deleteMutation.mutate(keys),
+    },
+  ], [deleteMutation]);
 
   return (
     <div className="space-y-4">
@@ -123,141 +177,69 @@ export default function StorageManagementPage() {
         </div>
       )}
 
-      {/* Breadcrumb + actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 text-sm">
-          <button onClick={() => navigateTo('')} className="text-primary hover:underline">
-            根目录
-          </button>
-          {breadcrumbs.map((seg, i) => {
-            const path = breadcrumbs.slice(0, i + 1).join('/');
-            return (
-              <span key={path} className="flex items-center gap-1">
-                <Icon icon="lucide:chevron-right" className="size-3 text-muted-foreground" />
-                <button onClick={() => navigateTo(path)} className="text-primary hover:underline">
-                  {seg}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        {selected.size > 0 && (
-          <SolidButton
-            color="destructive"
-            icon="lucide:trash-2"
-            onClick={() => deleteMutation.mutate([...selected])}
-            loading={deleteMutation.isPending}
-            loadingText="删除中..."
-          >
-            删除 ({selected.size})
-          </SolidButton>
-        )}
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1 text-sm">
+        <button onClick={() => navigateTo('')} className="text-primary hover:underline">根目录</button>
+        {breadcrumbs.map((seg, i) => {
+          const path = breadcrumbs.slice(0, i + 1).join('/');
+          return (
+            <span key={path} className="flex items-center gap-1">
+              <Icon icon="lucide:chevron-right" className="size-3 text-muted-foreground" />
+              <button onClick={() => navigateTo(path)} className="text-primary hover:underline">{seg}</button>
+            </span>
+          );
+        })}
       </div>
 
+      {/* Folders */}
+      {folders.length > 0 && (
+        <Card className="py-0">
+          <CardContent className="p-0">
+            {folders.map((f) => (
+              <div
+                key={f.name}
+                className="flex items-center gap-2 px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/30 cursor-pointer"
+                onClick={() => navigateTo(prefix ? `${prefix}/${f.name}` : f.name)}
+              >
+                <Icon icon="lucide:folder" className="size-4 text-amber-500" />
+                <span className="text-sm">{f.name}</span>
+                <Icon icon="lucide:chevron-right" className="size-3.5 text-muted-foreground ml-auto" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* File table */}
-      <Card className="py-0">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">加载中...</div>
-          ) : !filesData?.success ? (
-            <div className="flex items-center justify-center py-12 text-sm text-destructive">
-              {filesData?.error || 'Supabase Storage 未配置，请先在「第三方集成」中配置'}
-            </div>
-          ) : files.length === 0 ? (
-            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">暂无文件</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="w-10 px-3 py-2">
-                    {realFiles.length > 0 && (
-                      <Checkbox checked={selected.size === realFiles.length && realFiles.length > 0} onCheckedChange={toggleAll} />
-                    )}
-                  </th>
-                  <th className="px-3 py-2">文件名</th>
-                  <th className="w-24 px-3 py-2">大小</th>
-                  <th className="w-32 px-3 py-2">类型</th>
-                  <th className="w-20 px-3 py-2">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {folders.map((f) => (
-                  <tr
-                    key={f.name}
-                    className="border-b hover:bg-muted/30 cursor-pointer"
-                    onClick={() => navigateTo(prefix ? `${prefix}/${f.name}` : f.name)}
-                  >
-                    <td className="px-3 py-2" />
-                    <td className="px-3 py-2 flex items-center gap-2">
-                      <Icon icon="lucide:folder" className="size-4 text-amber-500" />
-                      <span>{f.name}</span>
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">—</td>
-                    <td className="px-3 py-2 text-muted-foreground">文件夹</td>
-                    <td className="px-3 py-2" />
-                  </tr>
-                ))}
-                {realFiles.map((f) => {
-                  const key = prefix ? `${prefix}/${f.name}` : f.name;
-                  const size = f.metadata?.size ?? 0;
-                  const mime = f.metadata?.mimetype ?? '';
-                  return (
-                    <tr key={f.name} className="border-b hover:bg-muted/30">
-                      <td className="px-3 py-2">
-                        <Checkbox checked={selected.has(key)} onCheckedChange={() => toggleSelect(key)} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <Icon
-                            icon={isImage(f.name) ? 'lucide:image' : 'lucide:file'}
-                            className={`size-4 ${isImage(f.name) ? 'text-pink-500' : 'text-blue-500'}`}
-                          />
-                          <span className="truncate max-w-[300px]">{f.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">{formatSize(size)}</td>
-                      <td className="px-3 py-2 text-muted-foreground truncate max-w-[120px]">{mime || '—'}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          {isImage(f.name) && (
-                            <button
-                              onClick={() => setPreviewUrl(`${publicUrlPrefix}/${key}`)}
-                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                              title="预览"
-                            >
-                              <Icon icon="lucide:eye" className="size-3.5" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => deleteMutation.mutate([key])}
-                            className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                            title="删除"
-                          >
-                            <Icon icon="lucide:trash-2" className="size-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+      {!filesData?.success && !isLoading ? (
+        <Card className="py-12">
+          <CardContent className="flex items-center justify-center text-sm text-destructive">
+            {filesData?.error || 'Supabase Storage 未配置，请先在「第三方集成」中配置'}
+          </CardContent>
+        </Card>
+      ) : (
+        <DataTable<StorageFile>
+          data={realFiles}
+          columns={columns}
+          rowKey={(f) => getFileKey(f)}
+          isLoading={isLoading}
+          searchPlaceholder="搜索文件名..."
+          searchAccessor={(f) => f.name}
+          actions={actions}
+          selectable
+          bulkActions={bulkActions}
+          emptyIcon="lucide:file"
+          emptyTitle="暂无文件"
+          emptyDescription="当前目录下没有文件"
+          defaultRowsPerPage={20}
+        />
+      )}
 
       {/* Image preview overlay */}
       {previewUrl && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
-          onClick={() => setPreviewUrl('')}
-        >
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={() => setPreviewUrl('')}>
           <div className="relative max-w-[80vw] max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={previewUrl}
-              alt="preview"
-              className="max-w-full max-h-[80vh] rounded-lg shadow-xl"
-            />
+            <img src={previewUrl} alt="preview" className="max-w-full max-h-[80vh] rounded-lg shadow-xl" />
             <button
               onClick={() => setPreviewUrl('')}
               className="absolute -top-3 -right-3 flex h-7 w-7 items-center justify-center rounded-full bg-background shadow border"
@@ -267,6 +249,7 @@ export default function StorageManagementPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
