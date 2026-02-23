@@ -113,8 +113,13 @@ def _build_stream_card(text: str, status: str = "processing", tool_name: str = "
     }
 
 
+import logging as _logging
+_feishu_logger = _logging.getLogger(__name__)
+
+
 async def _handle_feishu_question(parsed: dict):
     """后台任务：流式卡片回复飞书消息，实时更新进度"""
+    _feishu_logger.info("_handle_feishu_question 进入: text=%s, chat_id=%s", parsed.get("text", "")[:50], parsed.get("chat_id"))
     question = parsed["text"]
     message_id = parsed.get("message_id")
     chat_id = parsed.get("chat_id")
