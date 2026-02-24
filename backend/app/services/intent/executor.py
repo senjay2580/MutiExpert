@@ -123,6 +123,54 @@ async def execute_action(intent: IntentResult) -> dict[str, Any]:
         }
 
 
+async def execute_supabase_sql(
+    args: dict[str, Any], tool_def: dict[str, Any], db,
+) -> dict[str, Any]:
+    """专用路径：直接调 Supabase Management API 执行 SQL"""
+    from sqlalchemy import select
+    from app.models.extras import ExternalService
+
+    query = args.get("query", "")
+    if not query:
+        return {"success": False, "error": "缺少 query 参数", "tool_name": "supabase_sql"}
+
+    service_id = tool_def.get("service_id")
+    if not service_id:
+        return {"success": False, "error": "supabase_mgmt 服务未配置", "tool_name": "supabase_sql"}
+
+    result = await db.execute(
+        select(ExternalService).where(ExternalService.id == service_id)
+    )
+    service = result.scalar_one_or_none()
+    if not service:
+        return {"success": False, "error": "supabase_mgmt 服务未找到", "tool_name": "supabase_sql"}
+
+    token = (service.auth_config or {}).get("token", "")
+    endpoint = tool_def.get("endpoint", "")
+    url = f"{service.base_url.rstrip('/')}{endpoint}"
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        resp = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"query": query},
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            data = resp.text
+
+        return {
+            "success": 200 <= resp.status_code < 400,
+            "status_code": resp.status_code,
+            "data": data,
+            "tool_name": "supabase_sql",
+        }
+
+
 def format_result(result: dict[str, Any]) -> str:
     """将 API 返回结果格式化为可读文本"""
     if not result.get("success"):

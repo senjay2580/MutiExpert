@@ -168,6 +168,12 @@ async def _execute_tool_call(
         return f"未知工具: {tc.name}", False
 
     if tool_def["source"] == "bot_tool":
+        # supabase_sql 专用路径：直接调 Management API
+        if tc.name == "supabase_sql":
+            from app.services.intent.executor import execute_supabase_sql, format_result
+            result = await execute_supabase_sql(tc.arguments, tool_def, db)
+            return format_result(result), result.get("success", False)
+
         intent = IntentResult(
             has_tool_call=True,
             tool_name=tc.name,
