@@ -269,12 +269,17 @@ async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
 
 
 def adapt_markdown_for_feishu(text: str) -> str:
-    """将标准 Markdown 转换为飞书卡片支持的 Markdown 子集。"""
+    """将标准 Markdown 文本转换为飞书卡片支持的 Markdown 子集。
+
+    注意：表格不在此处处理，由 _build_content_elements 在 element 层面
+    转为飞书原生 Table 组件。
+    """
     lines = text.split("\n")
-    result = []
+    result: list[str] = []
     in_code_block = False
     for line in lines:
-        if line.strip().startswith("```"):
+        stripped = line.strip()
+        if stripped.startswith("```"):
             in_code_block = not in_code_block
             result.append(line)
             continue
@@ -290,11 +295,102 @@ def adapt_markdown_for_feishu(text: str) -> str:
             qt = quote_match.group(1).strip()
             result.append(f"*{qt}*" if qt else "")
             continue
-        if re.match(r'^-{3,}$', line.strip()) or re.match(r'^\*{3,}$', line.strip()):
+        if re.match(r'^-{3,}$', stripped) or re.match(r'^\*{3,}$', stripped):
             result.append("")
             continue
         result.append(line)
     return "\n".join(result)
+
+
+def _parse_markdown_table(lines: list[str]) -> dict | None:
+    """将 Markdown 表格行解析为飞书原生 Table 组件 JSON。
+
+    要求至少 3 行（表头 + 分隔线 + ≥1 数据行）。
+    """
+    if len(lines) < 3:
+        return None
+    sep_line = lines[1].strip()
+    if not re.match(r'^\|[\s\-:|]+\|?\s*$', sep_line):
+        return None
+    headers = [h.strip() for h in lines[0].strip().strip("|").split("|")]
+    rows: list[dict] = []
+    for line in lines[2:]:
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        row = {f"col_{i}": (cells[i] if i < len(cells) else "") for i in range(len(headers))}
+        rows.append(row)
+    if not rows:
+        return None
+    columns = [
+        {"name": f"col_{i}", "display_name": h, "data_type": "text", "width": "auto"}
+        for i, h in enumerate(headers)
+    ]
+    return {
+        "tag": "table",
+        "page_size": len(rows),
+        "row_height": "low",
+        "header_style": {
+            "text_align": "left",
+            "text_size": "normal",
+            "background_style": "grey",
+            "bold": True,
+            "lines": 1,
+        },
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def _build_content_elements(text: str) -> list[dict]:
+    """将 Markdown 文本拆分为飞书卡片元素列表。
+
+    普通文本 → {"tag": "markdown", ...}（经 adapt_markdown_for_feishu 转换）
+    表格     → {"tag": "table", ...}（飞书原生 Table 组件）
+    """
+    lines = text.split("\n")
+    elements: list[dict] = []
+    text_buf: list[str] = []
+    table_buf: list[str] = []
+    in_code_block = False
+
+    def _flush_text():
+        if not text_buf:
+            return
+        md = adapt_markdown_for_feishu("\n".join(text_buf)).strip()
+        if md:
+            elements.append({"tag": "markdown", "content": md})
+        text_buf.clear()
+
+    def _flush_table():
+        if not table_buf:
+            return
+        table_elem = _parse_markdown_table(table_buf)
+        if table_elem:
+            _flush_text()
+            elements.append(table_elem)
+        else:
+            # 无效表格，回退为普通文本
+            text_buf.extend(table_buf)
+        table_buf.clear()
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            _flush_table()
+            in_code_block = not in_code_block
+            text_buf.append(line)
+            continue
+        if in_code_block:
+            text_buf.append(line)
+            continue
+        if stripped.startswith("|") and stripped.count("|") >= 2:
+            table_buf.append(line)
+            continue
+        _flush_table()
+        text_buf.append(line)
+
+    _flush_table()
+    _flush_text()
+    return elements
 
 
 def build_stream_card(
@@ -304,19 +400,24 @@ def build_stream_card(
     tool_calls: list[dict] | None = None,
     sources: list[dict] | None = None,
 ) -> dict:
-    """构建流式更新卡片 JSON"""
+    """构建流式更新卡片 JSON（Card JSON 2.0，支持原生 Table 组件）"""
     templates = {"processing": "blue", "completed": "green", "error": "red"}
     titles = {"processing": "AI 助手", "completed": "AI 助手", "error": "AI 助手 · 出错"}
     header_title = titles.get(status, "AI 助手")
     if status == "processing" and tool_name:
         header_title = f"AI 助手 · 调用 {tool_name}..."
+
     content = text or "思考中..."
-    content = adapt_markdown_for_feishu(content)
     if status == "processing":
         content += " ▌"
     if len(content) > 28000:
         content = content[:28000] + "\n\n...(内容过长已截断)"
-    elements: list[dict] = [{"tag": "markdown", "content": content}]
+
+    # 拆分为 markdown + table 元素
+    elements = _build_content_elements(content)
+    if not elements:
+        elements = [{"tag": "markdown", "content": adapt_markdown_for_feishu(content)}]
+
     if status == "completed" and tool_calls:
         tool_lines = []
         for tc in tool_calls:
@@ -332,11 +433,15 @@ def build_stream_card(
         if src_lines:
             elements.append({"tag": "hr"})
             elements.append({"tag": "markdown", "content": "**参考来源**\n" + "\n".join(src_lines)})
+
     return {
+        "schema": "2.0",
         "config": {"wide_screen_mode": True, "update_multi": True},
         "header": {
             "title": {"tag": "plain_text", "content": header_title},
             "template": templates.get(status, "blue"),
         },
-        "elements": elements,
+        "body": {
+            "elements": elements,
+        },
     }

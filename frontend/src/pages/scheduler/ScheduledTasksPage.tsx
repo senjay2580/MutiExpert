@@ -36,7 +36,8 @@ import {
 import { illustrationPresets } from '@/lib/illustrations';
 import { scheduledTaskService } from '@/services/scheduledTaskService';
 import { scriptService } from '@/services/scriptService';
-import type { ScheduledTask, UserScript } from '@/types';
+import { skillsService } from '@/services/skillsService';
+import type { ScheduledTask, Skill, UserScript } from '@/types';
 
 // ======================== Config ========================
 
@@ -250,6 +251,11 @@ export default function ScheduledTasksPage() {
   const { data: scripts = [] } = useQuery({
     queryKey: ['scripts'],
     queryFn: scriptService.list,
+  });
+
+  const { data: skills = [] } = useQuery<Skill[]>({
+    queryKey: ['skills'],
+    queryFn: skillsService.list,
   });
 
   const toggleMutation = useMutation({
@@ -667,11 +673,25 @@ export default function ScheduledTasksPage() {
 
             {form.task_type === 'skill_exec' && (
               <div className="space-y-2">
-                <Input
-                  placeholder="技能名称"
+                <label className="text-xs text-muted-foreground mb-1 block">选择技能</label>
+                <Select
                   value={form.skill_name}
-                  onChange={(e) => setForm({ ...form, skill_name: e.target.value })}
-                />
+                  onValueChange={(value) => setForm({ ...form, skill_name: value })}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="选择要执行的技能" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {skills.filter((s) => s.enabled).map((s) => (
+                      <SelectItem key={s.id} value={s.name}>
+                        {s.name}
+                        {s.description && (
+                          <span className="ml-2 text-muted-foreground text-xs">— {s.description}</span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Textarea
                   placeholder="技能参数 JSON"
                   value={form.skill_params}
