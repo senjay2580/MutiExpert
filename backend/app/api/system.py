@@ -172,7 +172,7 @@ async def update_tavily_config(
 
 # ── Supabase Storage 配置 ────────────────────────────────────
 
-_SUPABASE_KEYS = ("supabase_url", "supabase_service_key", "supabase_bucket")
+_SUPABASE_KEYS = ("supabase_url", "supabase_service_key", "supabase_bucket", "supabase_db_url")
 
 
 def _mask(val: str) -> str:
@@ -190,11 +190,14 @@ async def get_supabase_config(db: AsyncSession = Depends(get_db)):
     url = rows.get("supabase_url", "")
     key = rows.get("supabase_service_key", "")
     bucket = rows.get("supabase_bucket", "")
+    db_url = rows.get("supabase_db_url", "")
     return {
         "supabase_url": url,
         "supabase_service_key_masked": _mask(key),
         "supabase_service_key_set": bool(key),
         "supabase_bucket": bucket or "public-files",
+        "supabase_db_url_masked": _mask(db_url),
+        "supabase_db_url_set": bool(db_url),
     }
 
 

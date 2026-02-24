@@ -351,6 +351,8 @@ interface SupabaseConfig {
   supabase_service_key_masked: string;
   supabase_service_key_set: boolean;
   supabase_bucket: string;
+  supabase_db_url_masked: string;
+  supabase_db_url_set: boolean;
 }
 
 function SupabaseCard() {
@@ -358,6 +360,7 @@ function SupabaseCard() {
   const [url, setUrl] = useState('');
   const [serviceKey, setServiceKey] = useState('');
   const [bucket, setBucket] = useState('');
+  const [dbUrl, setDbUrl] = useState('');
   const [saved, setSaved] = useState(false);
 
   const { data: config } = useQuery({
@@ -371,11 +374,13 @@ function SupabaseCard() {
         supabase_url: url || undefined,
         supabase_service_key: serviceKey || undefined,
         supabase_bucket: bucket || undefined,
+        supabase_db_url: dbUrl || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['supabase-config'] });
       setSaved(true);
       setServiceKey('');
+      setDbUrl('');
       setTimeout(() => setSaved(false), 2000);
       toast.success('配置已保存');
     },
@@ -430,8 +435,14 @@ function SupabaseCard() {
           )}
           <Field label="Service Role Key" value={serviceKey} onChange={setServiceKey} placeholder="eyJhbGciOi..." type="password" />
           <Field label="Bucket 名称" value={bucket} onChange={setBucket} placeholder={config?.supabase_bucket || 'public-files'} />
+          {config?.supabase_db_url_set && (
+            <p className="text-[11px] text-muted-foreground">
+              当前 DB URL: {config.supabase_db_url_masked}（输入新值可覆盖）
+            </p>
+          )}
+          <Field label="Database URL" value={dbUrl} onChange={setDbUrl} placeholder="postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres" type="password" />
           <p className="text-[11px] text-muted-foreground">
-            聊天中上传的文件会自动推送到 Supabase Storage，生成公开下载链接。
+            聊天中上传的文件会自动推送到 Supabase Storage，生成公开下载链接。配置 Database URL 后启动时自动创建 AI 所需的 RPC 函数。
           </p>
         </div>
 
