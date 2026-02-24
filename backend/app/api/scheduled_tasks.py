@@ -14,7 +14,7 @@ class TaskCreate(BaseModel):
     name: str
     description: str | None = None
     cron_expression: str
-    task_type: str  # skill_exec | ai_query | feishu_push
+    task_type: str  # skill_exec | ai_query | script_exec
     task_config: dict = {}
     enabled: bool = True
 

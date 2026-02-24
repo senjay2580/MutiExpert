@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import re
 import httpx
 from datetime import datetime, timedelta
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -265,3 +266,77 @@ async def get_feishu_service(db: AsyncSession | None = None) -> FeishuService:
         default_chat_id=default_chat_id,
         default_provider=default_provider,
     )
+
+
+def adapt_markdown_for_feishu(text: str) -> str:
+    """将标准 Markdown 转换为飞书卡片支持的 Markdown 子集。"""
+    lines = text.split("\n")
+    result = []
+    in_code_block = False
+    for line in lines:
+        if line.strip().startswith("```"):
+            in_code_block = not in_code_block
+            result.append(line)
+            continue
+        if in_code_block:
+            result.append(line)
+            continue
+        heading_match = re.match(r'^(#{1,6})\s+(.+)$', line)
+        if heading_match:
+            result.append(f"**{heading_match.group(2).strip()}**")
+            continue
+        quote_match = re.match(r'^>\s*(.*)$', line)
+        if quote_match:
+            qt = quote_match.group(1).strip()
+            result.append(f"*{qt}*" if qt else "")
+            continue
+        if re.match(r'^-{3,}$', line.strip()) or re.match(r'^\*{3,}$', line.strip()):
+            result.append("")
+            continue
+        result.append(line)
+    return "\n".join(result)
+
+
+def build_stream_card(
+    text: str,
+    status: str = "processing",
+    tool_name: str = "",
+    tool_calls: list[dict] | None = None,
+    sources: list[dict] | None = None,
+) -> dict:
+    """构建流式更新卡片 JSON"""
+    templates = {"processing": "blue", "completed": "green", "error": "red"}
+    titles = {"processing": "AI 助手", "completed": "AI 助手", "error": "AI 助手 · 出错"}
+    header_title = titles.get(status, "AI 助手")
+    if status == "processing" and tool_name:
+        header_title = f"AI 助手 · 调用 {tool_name}..."
+    content = text or "思考中..."
+    content = adapt_markdown_for_feishu(content)
+    if status == "processing":
+        content += " ▌"
+    if len(content) > 28000:
+        content = content[:28000] + "\n\n...(内容过长已截断)"
+    elements: list[dict] = [{"tag": "markdown", "content": content}]
+    if status == "completed" and tool_calls:
+        tool_lines = []
+        for tc in tool_calls:
+            icon = "✅" if tc.get("success") else "❌"
+            name = tc.get("name", "unknown")
+            result_preview = tc.get("result", "")[:100]
+            tool_lines.append(f"{icon} **{name}**：{result_preview}")
+        if tool_lines:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "**工具调用**\n" + "\n".join(tool_lines)})
+    if status == "completed" and sources:
+        src_lines = [f"· {s.get('document_title', s.get('title', ''))}" for s in sources[:5]]
+        if src_lines:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "**参考来源**\n" + "\n".join(src_lines)})
+    return {
+        "config": {"wide_screen_mode": True, "update_multi": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": header_title},
+            "template": templates.get(status, "blue"),
+        },
+        "elements": elements,
+    }

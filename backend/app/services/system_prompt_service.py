@@ -225,7 +225,6 @@ async def _tasks_summary(db: AsyncSession) -> str:
     rows = result.all()
     type_label = {
         "ai_query": "AI问答",
-        "feishu_push": "飞书推送",
         "skill_exec": "技能执行",
         "script_exec": "脚本执行",
     }

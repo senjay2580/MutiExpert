@@ -9,7 +9,7 @@ from app.models.extras import ScheduledTask
 from app.models.knowledge import KnowledgeBase
 from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
-from app.services.feishu_service import get_feishu_service
+from app.services.feishu_service import get_feishu_service, build_stream_card
 from app.services.skill_executor import execute_skill
 from app.services.script_executor import execute_script
 
@@ -68,23 +68,12 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
                 svc = await get_feishu_service(db)
                 chat_id = config.get("feishu_chat_id") or svc.default_chat_id
                 title = config.get("feishu_title") or f"AI 定时任务：{task.name}"
+                card = build_stream_card(response, "completed")
+                card["header"]["title"]["content"] = title
                 if chat_id:
-                    await svc.send_text_message(chat_id, response)
+                    await svc.send_interactive_card(chat_id, card)
                 else:
                     await svc.send_webhook_message(title, response)
-            status = "success"
-
-        elif task.task_type == "feishu_push":
-            svc = await get_feishu_service(db)
-            chat_id = config.get("chat_id") or svc.default_chat_id
-            title = config.get("title") or task.name
-            content = config.get("content") or ""
-            if chat_id:
-                result = await svc.send_text_message(chat_id, content)
-            else:
-                result = await svc.send_webhook_message(title, content)
-            if not result.get("success"):
-                raise RuntimeError(result.get("error", "feishu push failed"))
             status = "success"
 
         elif task.task_type == "skill_exec":
@@ -100,8 +89,10 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
                 chat_id = config.get("feishu_chat_id") or svc.default_chat_id
                 title = config.get("feishu_title") or f"技能任务：{skill_name}"
                 content = result.get("result", "")
+                card = build_stream_card(content, "completed")
+                card["header"]["title"]["content"] = title
                 if chat_id:
-                    await svc.send_text_message(chat_id, content)
+                    await svc.send_interactive_card(chat_id, card)
                 else:
                     await svc.send_webhook_message(title, content)
             status = "success"

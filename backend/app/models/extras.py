@@ -113,7 +113,7 @@ class ScheduledTask(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)  # e.g. "0 9 * * 1" = 每周一9点
-    task_type: Mapped[str] = mapped_column(String(50), nullable=False)  # skill_exec | ai_query | feishu_push | script_exec
+    task_type: Mapped[str] = mapped_column(String(50), nullable=False)  # skill_exec | ai_query | script_exec
     task_config = mapped_column(JSONB, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     script_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("user_scripts.id", ondelete="SET NULL"))

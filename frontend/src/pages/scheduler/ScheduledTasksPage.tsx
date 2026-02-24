@@ -46,11 +46,10 @@ const CRON_PRESETS = [
   { label: '每天 18:00', value: '0 18 * * *' },
 ];
 
-type TaskType = 'ai_query' | 'feishu_push' | 'skill_exec' | 'script_exec';
+type TaskType = 'ai_query' | 'skill_exec' | 'script_exec';
 
 const TASK_TYPE_LABEL: Record<TaskType, string> = {
   ai_query: 'AI 问答',
-  feishu_push: '飞书推送',
   skill_exec: '技能执行',
   script_exec: '脚本执行',
 };
@@ -64,7 +63,6 @@ type FormData = {
   push_to_feishu: boolean;
   feishu_title: string;
   feishu_chat_id: string;
-  feishu_content: string;
   skill_name: string;
   skill_params: string;
   script_id: string;
@@ -79,7 +77,6 @@ const EMPTY_FORM: FormData = {
   push_to_feishu: false,
   feishu_title: '',
   feishu_chat_id: '',
-  feishu_content: '',
   skill_name: '',
   skill_params: '{}',
   script_id: '',
@@ -317,9 +314,8 @@ export default function ScheduledTasksPage() {
       task_type: task.task_type as TaskType,
       prompt: String(config.prompt || ''),
       push_to_feishu: Boolean(config.push_to_feishu),
-      feishu_title: String(config.feishu_title || config.title || ''),
-      feishu_chat_id: String(config.feishu_chat_id || config.chat_id || ''),
-      feishu_content: String(config.content || ''),
+      feishu_title: String(config.feishu_title || ''),
+      feishu_chat_id: String(config.feishu_chat_id || ''),
       skill_name: String(config.skill_name || ''),
       skill_params: JSON.stringify(config.params || {}, null, 2),
       script_id: task.script_id || '',
@@ -338,12 +334,6 @@ export default function ScheduledTasksPage() {
         if (form.feishu_title) taskConfig.feishu_title = form.feishu_title;
         if (form.feishu_chat_id) taskConfig.feishu_chat_id = form.feishu_chat_id;
       }
-    }
-
-    if (form.task_type === 'feishu_push') {
-      if (form.feishu_title) taskConfig.title = form.feishu_title;
-      taskConfig.content = form.feishu_content;
-      if (form.feishu_chat_id) taskConfig.chat_id = form.feishu_chat_id;
     }
 
     if (form.task_type === 'skill_exec') {
@@ -417,7 +407,6 @@ export default function ScheduledTasksPage() {
       icon: 'lucide:tag',
       options: [
         { value: 'ai_query', label: 'AI 问答', icon: 'lucide:brain' },
-        { value: 'feishu_push', label: '飞书推送', icon: 'lucide:send' },
         { value: 'skill_exec', label: '技能执行', icon: 'lucide:zap' },
         { value: 'script_exec', label: '脚本执行', icon: 'lucide:file-code' },
       ],
@@ -591,7 +580,6 @@ export default function ScheduledTasksPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ai_query">AI 问答</SelectItem>
-                  <SelectItem value="feishu_push">飞书推送</SelectItem>
                   <SelectItem value="skill_exec">技能执行</SelectItem>
                   <SelectItem value="script_exec">脚本执行</SelectItem>
                 </SelectContent>
@@ -651,27 +639,6 @@ export default function ScheduledTasksPage() {
                     />
                   </div>
                 )}
-              </div>
-            )}
-
-            {form.task_type === 'feishu_push' && (
-              <div className="space-y-2">
-                <Input
-                  placeholder="飞书消息标题"
-                  value={form.feishu_title}
-                  onChange={(e) => setForm({ ...form, feishu_title: e.target.value })}
-                />
-                <Textarea
-                  placeholder="飞书消息内容"
-                  value={form.feishu_content}
-                  onChange={(e) => setForm({ ...form, feishu_content: e.target.value })}
-                  rows={3}
-                />
-                <Input
-                  placeholder="飞书 Chat ID（可选）"
-                  value={form.feishu_chat_id}
-                  onChange={(e) => setForm({ ...form, feishu_chat_id: e.target.value })}
-                />
               </div>
             )}
 

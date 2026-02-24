@@ -133,7 +133,7 @@ export interface ScheduledTask {
   name: string;
   description: string | null;
   cron_expression: string;
-  task_type: 'skill_exec' | 'ai_query' | 'feishu_push' | 'script_exec';
+  task_type: 'skill_exec' | 'ai_query' | 'script_exec';
   task_config: Record<string, unknown>;
   enabled: boolean;
   script_id: string | null;

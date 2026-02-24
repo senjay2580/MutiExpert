@@ -18,6 +18,8 @@ from app.services.feishu_service import (
     verify_feishu_signature,
     decrypt_feishu_event,
     encrypt_secret,
+    adapt_markdown_for_feishu as _adapt_markdown_for_feishu,
+    build_stream_card as _build_stream_card,
 )
 from app.services.pipeline_service import PipelineRequest, run_stream
 
@@ -113,106 +115,6 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
         background_tasks.add_task(_handle_feishu_question, parsed)
     return {"code": 0, "msg": "ok"}
 
-
-
-
-def _adapt_markdown_for_feishu(text: str) -> str:
-    """将标准 Markdown 转换为飞书卡片支持的 Markdown 子集。
-
-    飞书卡片不支持: # 标题、> 引用、--- 分割线、表格
-    飞书卡片支持: **加粗**、*斜体*、~~删除线~~、`行内代码`、代码块、列表、链接
-    """
-    lines = text.split("\n")
-    result = []
-    in_code_block = False
-
-    for line in lines:
-        # 代码块内不做转换
-        if line.strip().startswith("```"):
-            in_code_block = not in_code_block
-            result.append(line)
-            continue
-        if in_code_block:
-            result.append(line)
-            continue
-
-        # ## 标题 → **标题**（加粗模拟）
-        heading_match = re.match(r'^(#{1,6})\s+(.+)$', line)
-        if heading_match:
-            heading_text = heading_match.group(2).strip()
-            result.append(f"**{heading_text}**")
-            continue
-
-        # > 引用 → 斜体模拟
-        quote_match = re.match(r'^>\s*(.*)$', line)
-        if quote_match:
-            quote_text = quote_match.group(1).strip()
-            if quote_text:
-                result.append(f"*{quote_text}*")
-            else:
-                result.append("")
-            continue
-
-        # --- 分割线 → 空行
-        if re.match(r'^-{3,}$', line.strip()) or re.match(r'^\*{3,}$', line.strip()):
-            result.append("")
-            continue
-
-        result.append(line)
-
-    return "\n".join(result)
-
-
-def _build_stream_card(
-    text: str,
-    status: str = "processing",
-    tool_name: str = "",
-    tool_calls: list[dict] | None = None,
-    sources: list[dict] | None = None,
-) -> dict:
-    """构建流式更新卡片 JSON"""
-    templates = {"processing": "blue", "completed": "green", "error": "red"}
-    titles = {"processing": "AI 助手", "completed": "AI 助手", "error": "AI 助手 · 出错"}
-    header_title = titles.get(status, "AI 助手")
-    if status == "processing" and tool_name:
-        header_title = f"AI 助手 · 调用 {tool_name}..."
-    content = text or "思考中..."
-    content = _adapt_markdown_for_feishu(content)
-    if status == "processing":
-        content += " ▌"
-    # 飞书卡片 markdown 最大约 30000 字符，截断保护
-    if len(content) > 28000:
-        content = content[:28000] + "\n\n...(内容过长已截断)"
-
-    elements: list[dict] = [{"tag": "markdown", "content": content}]
-
-    # 完成时追加 tool calls 摘要
-    if status == "completed" and tool_calls:
-        tool_lines = []
-        for tc in tool_calls:
-            icon = "✅" if tc.get("success") else "❌"
-            name = tc.get("name", "unknown")
-            result_preview = tc.get("result", "")[:100]
-            tool_lines.append(f"{icon} **{name}**：{result_preview}")
-        if tool_lines:
-            elements.append({"tag": "hr"})
-            elements.append({"tag": "markdown", "content": "**工具调用**\n" + "\n".join(tool_lines)})
-
-    # 完成时追加知识库来源
-    if status == "completed" and sources:
-        src_lines = [f"· {s.get('document_title', s.get('title', ''))}" for s in sources[:5]]
-        if src_lines:
-            elements.append({"tag": "hr"})
-            elements.append({"tag": "markdown", "content": "**参考来源**\n" + "\n".join(src_lines)})
-
-    return {
-        "config": {"wide_screen_mode": True, "update_multi": True},
-        "header": {
-            "title": {"tag": "plain_text", "content": header_title},
-            "template": templates.get(status, "blue"),
-        },
-        "elements": elements,
-    }
 
 
 _feishu_logger = logging.getLogger(__name__)
