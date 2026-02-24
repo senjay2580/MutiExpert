@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Icon } from '@iconify/react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Collapsible,
   CollapsibleContent,
@@ -77,12 +78,17 @@ export function MessageBubble({
           {isAssistant ? (
             <>
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   table: ({ children }) => (
-                    <div className="table-wrapper">
-                      <table>{children}</table>
+                    <div className="my-2 overflow-x-auto rounded-lg border border-border">
+                      <table className="w-full !m-0 border-collapse text-sm">{children}</table>
                     </div>
                   ),
+                  thead: ({ children }) => <thead className="bg-muted/50">{children}</thead>,
+                  th: ({ children }) => <th className="px-3 py-2 text-left text-xs font-semibold text-foreground border-b border-border [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/30">{children}</th>,
+                  td: ({ children }) => <td className="px-3 py-2 border-b border-border/40 [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/20">{children}</td>,
+                  tr: ({ children }) => <tr className="hover:bg-primary/5 even:bg-muted/15">{children}</tr>,
                 }}
               >
                 {content}

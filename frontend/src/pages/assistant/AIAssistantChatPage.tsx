@@ -185,7 +185,19 @@ const markdownComponents = {
     return <blockquote {...props}>{children}</blockquote>;
   },
   table({ children, ...props }: React.HTMLAttributes<HTMLTableElement>) {
-    return <div className="my-3 overflow-x-auto rounded-lg border border-border/50"><table className="!m-0" {...props}>{children}</table></div>;
+    return <div className="my-3 overflow-x-auto rounded-lg border border-border"><table className="w-full !m-0 border-collapse text-sm" {...props}>{children}</table></div>;
+  },
+  thead({ children, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
+    return <thead className="bg-muted/50" {...props}>{children}</thead>;
+  },
+  th({ children, ...props }: React.HTMLAttributes<HTMLTableCellElement>) {
+    return <th className="px-3 py-2 text-left text-xs font-semibold text-foreground border-b border-border [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/30" {...props}>{children}</th>;
+  },
+  td({ children, ...props }: React.HTMLAttributes<HTMLTableCellElement>) {
+    return <td className="px-3 py-2 border-b border-border/40 [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/20" {...props}>{children}</td>;
+  },
+  tr({ children, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
+    return <tr className="hover:bg-primary/5 even:bg-muted/15" {...props}>{children}</tr>;
   },
   hr() {
     return <hr />;

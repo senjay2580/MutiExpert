@@ -28,6 +28,7 @@ import { useAppStore } from '@/stores/useAppStore';
 import { ProviderIcon, getProviderLabel } from '@/components/composed/provider-icon';
 import type { Conversation, ModelProvider } from '@/types';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 /* ================================================================ */
 /*  Types                                                            */
@@ -633,12 +634,17 @@ function CCMessage({ message, providerLabel, provider }: { message: ChatMessage;
           </div>
           <div className="prose-cc text-[13px] leading-relaxed text-[var(--cc-fg)]">
             <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
               components={{
                 table: ({ children }) => (
-                  <div className="table-wrapper">
-                    <table>{children}</table>
+                  <div className="my-2 overflow-x-auto rounded-lg border border-border">
+                    <table className="w-full !m-0 border-collapse text-[12px]">{children}</table>
                   </div>
                 ),
+                thead: ({ children }) => <thead className="bg-muted/50">{children}</thead>,
+                th: ({ children }) => <th className="px-2.5 py-1.5 text-left text-[11px] font-semibold border-b border-border [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/30">{children}</th>,
+                td: ({ children }) => <td className="px-2.5 py-1.5 border-b border-border/40 [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/20">{children}</td>,
+                tr: ({ children }) => <tr className="hover:bg-primary/5 even:bg-muted/15">{children}</tr>,
               }}
             >
               {message.content}
