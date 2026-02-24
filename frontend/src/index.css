@@ -1513,6 +1513,40 @@ h1, h2, h3, h4, h5, h6 {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.prose-cc .table-wrapper {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  border: 1px solid var(--cc-border);
+  border-radius: 0.5rem;
+}
+.prose-cc table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+.prose-cc thead th {
+  padding: 0.5em 0.75em;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.85em;
+  color: var(--cc-fg);
+  background: var(--cc-bg-elevated);
+  border-bottom: 1.5px solid var(--cc-border);
+}
+.prose-cc thead th:not(:last-child) {
+  border-right: 1px solid var(--cc-border);
+}
+.prose-cc tbody td {
+  padding: 0.45em 0.75em;
+  border-bottom: 1px solid color-mix(in srgb, var(--cc-border) 50%, transparent);
+}
+.prose-cc tbody td:not(:last-child) {
+  border-right: 1px solid color-mix(in srgb, var(--cc-border) 30%, transparent);
+}
+.prose-cc tbody tr:last-child td { border-bottom: none; }
+.prose-cc tbody tr:nth-child(even) { background: color-mix(in srgb, var(--cc-bg-elevated) 40%, transparent); }
+.prose-cc tbody tr:hover { background: color-mix(in srgb, var(--cc-accent) 8%, transparent); }
 
 /* Markdown prose in chat */
 .prose p { margin: 0.6em 0; line-height: 1.75; }
@@ -1563,28 +1597,41 @@ h1, h2, h3, h4, h5, h6 {
   height: 1px;
   background: linear-gradient(90deg, transparent, hsl(var(--border)), transparent);
 }
+.prose .table-wrapper {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+}
 .prose table {
   width: 100%;
-  margin: 0.75em 0;
+  margin: 0;
   border-collapse: collapse;
   font-size: 0.85em;
 }
 .prose thead th {
-  padding: 0.5em 0.75em;
+  padding: 0.6em 0.85em;
   text-align: left;
   font-weight: 600;
   font-size: 0.8em;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: hsl(var(--muted-foreground));
-  border-bottom: 2px solid hsl(var(--border));
+  letter-spacing: 0.02em;
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.5);
+  border-bottom: 1.5px solid hsl(var(--border));
+}
+.prose thead th:not(:last-child) {
+  border-right: 1px solid hsl(var(--border) / 0.3);
 }
 .prose tbody td {
-  padding: 0.5em 0.75em;
-  border-bottom: 1px solid hsl(var(--border) / 0.5);
+  padding: 0.55em 0.85em;
+  border-bottom: 1px solid hsl(var(--border) / 0.4);
+}
+.prose tbody td:not(:last-child) {
+  border-right: 1px solid hsl(var(--border) / 0.2);
 }
 .prose tbody tr:last-child td { border-bottom: none; }
-.prose tbody tr:hover { background: hsl(var(--muted) / 0.3); }
+.prose tbody tr:nth-child(even) { background: hsl(var(--muted) / 0.15); }
+.prose tbody tr:hover { background: hsl(var(--primary) / 0.06); }
 
 /* Chat code block overrides */
 .prose pre { margin: 0; padding: 0; background: transparent; border: none; }

@@ -632,7 +632,17 @@ function CCMessage({ message, providerLabel, provider }: { message: ChatMessage;
             <span className="text-[11px] font-semibold text-[var(--cc-accent)]">{providerLabel}</span>
           </div>
           <div className="prose-cc text-[13px] leading-relaxed text-[var(--cc-fg)]">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            <ReactMarkdown
+              components={{
+                table: ({ children }) => (
+                  <div className="table-wrapper">
+                    <table>{children}</table>
+                  </div>
+                ),
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
             {message.isStreaming && (
               <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse rounded-sm bg-[var(--cc-accent)]" />
             )}

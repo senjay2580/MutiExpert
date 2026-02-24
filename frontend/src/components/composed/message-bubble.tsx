@@ -76,7 +76,17 @@ export function MessageBubble({
         >
           {isAssistant ? (
             <>
-              <ReactMarkdown>{content}</ReactMarkdown>
+              <ReactMarkdown
+                components={{
+                  table: ({ children }) => (
+                    <div className="table-wrapper">
+                      <table>{children}</table>
+                    </div>
+                  ),
+                }}
+              >
+                {content}
+              </ReactMarkdown>
               {isStreaming && (
                 <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-primary" />
               )}
