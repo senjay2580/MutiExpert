@@ -382,7 +382,7 @@ SUPABASE_TOOLS = [
     },
     {
         "name": "supabase_rpc",
-        "description": "调用 Supabase 数据库中的 RPC 函数（存储过程）。可用于执行 DDL（如建表）等高级操作。",
+        "description": "调用 Supabase 数据库中的 RPC 函数（存储过程）。",
         "action_type": "mutation",
         "endpoint": "/rpc/{function_name}",
         "method": "POST",
@@ -399,23 +399,36 @@ SUPABASE_TOOLS = [
 ]
 
 
+SUPABASE_SQL_PARAMS = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "要执行的 SQL 语句"},
+    },
+    "required": ["query"],
+}
+
+
 async def ensure_supabase_service(db: AsyncSession) -> None:
     """如果 Supabase 已配置，自动创建 ExternalService + PostgREST 工具。"""
+    import re
     from app.models.extras import SiteSetting
 
     rows = await db.execute(
-        select(SiteSetting).where(SiteSetting.key.in_(("supabase_url", "supabase_service_key")))
+        select(SiteSetting).where(
+            SiteSetting.key.in_(("supabase_url", "supabase_service_key", "supabase_access_token"))
+        )
     )
     config = {r.key: r.value for r in rows.scalars()}
     supabase_url = (config.get("supabase_url") or "").strip()
     service_key = (config.get("supabase_service_key") or "").strip()
+    access_token = (config.get("supabase_access_token") or "").strip()
 
     if not supabase_url or not service_key:
         return
 
     postgrest_url = f"{supabase_url.rstrip('/')}/rest/v1"
 
-    # Upsert ExternalService
+    # ── PostgREST ExternalService ──
     result = await db.execute(
         select(ExternalService).where(ExternalService.name == "supabase_postgrest")
     )
@@ -445,7 +458,7 @@ async def ensure_supabase_service(db: AsyncSession) -> None:
             "Prefer": "return=representation",
         }
 
-    # Upsert Supabase tools
+    # Upsert PostgREST tools
     for tool_def in SUPABASE_TOOLS:
         result = await db.execute(
             select(BotTool).where(BotTool.name == tool_def["name"])
@@ -458,75 +471,56 @@ async def ensure_supabase_service(db: AsyncSession) -> None:
         else:
             db.add(BotTool(service_id=service.id, **tool_def))
 
-    await db.commit()
+    # ── Management API ExternalService (supabase_sql) ──
+    if access_token:
+        m = re.match(r"https://([^.]+)\.supabase\.co", supabase_url)
+        project_ref = m.group(1) if m else ""
 
-    # 自动引导：通过直连 Supabase PostgreSQL 创建辅助 RPC 函数
-    await _bootstrap_supabase_functions(db)
-
-
-# ── Supabase RPC 函数引导 ──
-
-_SUPABASE_BOOTSTRAP_SQL = [
-    """
-    CREATE OR REPLACE FUNCTION list_tables()
-    RETURNS jsonb LANGUAGE sql SECURITY DEFINER AS $$
-      SELECT coalesce(jsonb_agg(jsonb_build_object(
-        'table_name', table_name, 'table_type', table_type
-      )), '[]'::jsonb)
-      FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
-    $$;
-    """,
-    """
-    CREATE OR REPLACE FUNCTION execute_sql(query text)
-    RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
-    BEGIN
-      EXECUTE query;
-      RETURN jsonb_build_object('success', true);
-    EXCEPTION WHEN OTHERS THEN
-      RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-    END;
-    $$;
-    """,
-]
-
-
-async def _bootstrap_supabase_functions(db) -> None:
-    """通过 Supabase Management API 创建 list_tables / execute_sql 函数。"""
-    import logging
-    import re
-    import httpx
-    from app.models.extras import SiteSetting
-
-    logger = logging.getLogger(__name__)
-
-    rows = await db.execute(
-        select(SiteSetting).where(
-            SiteSetting.key.in_(("supabase_url", "supabase_access_token"))
+        result = await db.execute(
+            select(ExternalService).where(ExternalService.name == "supabase_mgmt")
         )
-    )
-    cfg = {r.key: r.value for r in rows.scalars()}
-    supa_url = (cfg.get("supabase_url") or "").strip()
-    token = (cfg.get("supabase_access_token") or "").strip()
-    if not supa_url or not token:
-        logger.info("supabase_access_token 未配置，跳过 RPC 函数引导")
-        return
+        mgmt_svc = result.scalar_one_or_none()
+        if not mgmt_svc:
+            mgmt_svc = ExternalService(
+                name="supabase_mgmt",
+                description="Supabase Management API — 执行 SQL、管理项目",
+                base_url="https://api.supabase.com",
+                auth_type="bearer",
+                auth_config={"token": access_token},
+                default_headers={"Content-Type": "application/json"},
+                enabled=True,
+            )
+            db.add(mgmt_svc)
+            await db.flush()
+        else:
+            mgmt_svc.auth_config = {"token": access_token}
 
-    m = re.match(r"https://([^.]+)\.supabase\.co", supa_url)
-    if not m:
-        logger.warning(f"无法从 supabase_url 提取 project_ref: {supa_url}")
-        return
-    ref = m.group(1)
+        # endpoint 直接写死 project_ref，AI 只需传 query
+        fixed_endpoint = f"/v1/projects/{project_ref}/database/query"
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            for sql in _SUPABASE_BOOTSTRAP_SQL:
-                resp = await client.post(
-                    f"https://api.supabase.com/v1/projects/{ref}/database/query",
-                    headers={"Authorization": f"Bearer {token}"},
-                    json={"query": sql},
-                )
-                resp.raise_for_status()
-        logger.info("Supabase RPC 辅助函数已就绪 (list_tables, execute_sql)")
-    except Exception as e:
-        logger.warning(f"Supabase RPC 函数引导失败: {e}")
+        result = await db.execute(
+            select(BotTool).where(BotTool.name == "supabase_sql")
+        )
+        existing = result.scalar_one_or_none()
+        desc = "通过 Supabase Management API 执行任意 SQL（建表、查表、DDL 等）。只需传 query 参数。"
+        if existing:
+            existing.endpoint = fixed_endpoint
+            existing.description = desc
+            existing.method = "POST"
+            existing.action_type = "mutation"
+            existing.param_mapping = {"query": "body.query"}
+            existing.parameters = SUPABASE_SQL_PARAMS
+            existing.service_id = mgmt_svc.id
+        else:
+            db.add(BotTool(
+                name="supabase_sql",
+                description=desc,
+                action_type="mutation",
+                endpoint=fixed_endpoint,
+                method="POST",
+                param_mapping={"query": "body.query"},
+                parameters=SUPABASE_SQL_PARAMS,
+                service_id=mgmt_svc.id,
+            ))
+
+    await db.commit()
