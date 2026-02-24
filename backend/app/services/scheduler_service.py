@@ -44,7 +44,14 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
     try:
         if task.task_type == "ai_query":
             prompt = config.get("prompt") or task.name
-            provider = config.get("model_provider") or "claude"
+            # 读取系统默认模型（和 AI 问答一致）
+            if config.get("model_provider"):
+                provider = config["model_provider"]
+            else:
+                from app.models.extras import FeishuConfig
+                fc_result = await db.execute(select(FeishuConfig).limit(1))
+                fc = fc_result.scalar_one_or_none()
+                provider = (fc.default_provider if fc else None) or "claude"
             raw_kb_ids = config.get("knowledge_base_ids") or []
             kb_ids = []
             for kid in raw_kb_ids:
