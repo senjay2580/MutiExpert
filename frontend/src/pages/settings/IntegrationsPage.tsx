@@ -442,7 +442,7 @@ function SupabaseCard() {
           )}
           <Field label="Access Token" value={accessToken} onChange={setAccessToken} placeholder="sbp_xxxxxxxxxxxxxxxx" type="password" />
           <p className="text-[11px] text-muted-foreground">
-            聊天中上传的文件会自动推送到 Supabase Storage。配置 Access Token 后启动时自动创建 AI 所需的 RPC 函数。
+            聊天中上传的文件会自动推送到 Supabase Storage。配置 Access Token 后 AI 可直接执行 SQL 操作数据库。
             前往 <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noreferrer" className="underline">Account → Access Tokens</a> 生成。
           </p>
         </div>

@@ -292,112 +292,9 @@ async def ensure_default_tools(db: AsyncSession) -> None:
     await db.commit()
 
 
-# ── Supabase PostgREST 工具定义 ──
+# ── Supabase SQL 工具（Management API） ──
 
-SUPABASE_TOOLS = [
-    {
-        "name": "supabase_query",
-        "description": "查询 Supabase 数据库表。table_name 是表名，select 指定返回列（默认 *），order 排序（如 created_at.desc），limit 限制行数。可用于检查数据是否已存在。",
-        "action_type": "query",
-        "endpoint": "/{table_name}",
-        "method": "GET",
-        "param_mapping": {
-            "table_name": "path.table_name",
-            "select": "query.select",
-            "order": "query.order",
-            "limit": "query.limit",
-            "offset": "query.offset",
-        },
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "table_name": {"type": "string", "description": "表名"},
-                "select": {"type": "string", "description": "返回列，默认 *"},
-                "order": {"type": "string", "description": "排序，如 created_at.desc"},
-                "limit": {"type": "integer", "description": "返回行数限制"},
-                "offset": {"type": "integer", "description": "偏移量"},
-            },
-            "required": ["table_name"],
-        },
-    },
-    {
-        "name": "supabase_insert",
-        "description": "向 Supabase 数据库表插入一行或多行数据。record 是要插入的数据对象。",
-        "action_type": "mutation",
-        "endpoint": "/{table_name}",
-        "method": "POST",
-        "param_mapping": {"table_name": "path.table_name", "record": "body"},
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "table_name": {"type": "string", "description": "表名"},
-                "record": {"type": "object", "description": "要插入的数据，键为列名"},
-            },
-            "required": ["table_name", "record"],
-        },
-    },
-    {
-        "name": "supabase_update",
-        "description": "更新 Supabase 表中匹配条件的行。match_column 和 match_value 指定过滤条件（PostgREST 语法如 eq.123）。",
-        "action_type": "mutation",
-        "endpoint": "/{table_name}",
-        "method": "PATCH",
-        "param_mapping": {
-            "table_name": "path.table_name",
-            "updates": "body",
-            "match_column": "query_key",
-            "match_value": "query_value",
-        },
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "table_name": {"type": "string", "description": "表名"},
-                "updates": {"type": "object", "description": "要更新的字段"},
-                "match_column": {"type": "string", "description": "匹配列名，如 id"},
-                "match_value": {"type": "string", "description": "匹配值，PostgREST 语法如 eq.123"},
-            },
-            "required": ["table_name", "updates", "match_column", "match_value"],
-        },
-    },
-    {
-        "name": "supabase_delete",
-        "description": "删除 Supabase 表中匹配条件的行。必须提供 match 条件防止全表删除。",
-        "action_type": "mutation",
-        "endpoint": "/{table_name}",
-        "method": "DELETE",
-        "param_mapping": {
-            "table_name": "path.table_name",
-            "match_column": "query_key",
-            "match_value": "query_value",
-        },
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "table_name": {"type": "string", "description": "表名"},
-                "match_column": {"type": "string", "description": "匹配列名，如 id"},
-                "match_value": {"type": "string", "description": "匹配值，PostgREST 语法如 eq.123"},
-            },
-            "required": ["table_name", "match_column", "match_value"],
-        },
-    },
-    {
-        "name": "supabase_rpc",
-        "description": "调用 Supabase 数据库中的 RPC 函数（存储过程）。",
-        "action_type": "mutation",
-        "endpoint": "/rpc/{function_name}",
-        "method": "POST",
-        "param_mapping": {"function_name": "path.function_name", "args": "body"},
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "function_name": {"type": "string", "description": "RPC 函数名"},
-                "args": {"type": "object", "description": "函数参数"},
-            },
-            "required": ["function_name"],
-        },
-    },
-]
-
+_OLD_SUPABASE_TOOLS = ("supabase_query", "supabase_insert", "supabase_update", "supabase_delete", "supabase_rpc")
 
 SUPABASE_SQL_PARAMS = {
     "type": "object",
@@ -409,118 +306,80 @@ SUPABASE_SQL_PARAMS = {
 
 
 async def ensure_supabase_service(db: AsyncSession) -> None:
-    """如果 Supabase 已配置，自动创建 ExternalService + PostgREST 工具。"""
+    """如果 Supabase 已配置，注册 supabase_sql 工具（Management API 执行 SQL）。"""
     import re
     from app.models.extras import SiteSetting
 
     rows = await db.execute(
         select(SiteSetting).where(
-            SiteSetting.key.in_(("supabase_url", "supabase_service_key", "supabase_access_token"))
+            SiteSetting.key.in_(("supabase_url", "supabase_access_token"))
         )
     )
     config = {r.key: r.value for r in rows.scalars()}
     supabase_url = (config.get("supabase_url") or "").strip()
-    service_key = (config.get("supabase_service_key") or "").strip()
     access_token = (config.get("supabase_access_token") or "").strip()
 
-    if not supabase_url or not service_key:
+    if not supabase_url or not access_token:
         return
 
-    postgrest_url = f"{supabase_url.rstrip('/')}/rest/v1"
+    m = re.match(r"https://([^.]+)\.supabase\.co", supabase_url)
+    if not m:
+        return
+    project_ref = m.group(1)
 
-    # ── PostgREST ExternalService ──
-    result = await db.execute(
-        select(ExternalService).where(ExternalService.name == "supabase_postgrest")
+    # 清理旧的 PostgREST 工具
+    old = await db.execute(
+        select(BotTool).where(BotTool.name.in_(_OLD_SUPABASE_TOOLS))
     )
-    service = result.scalar_one_or_none()
-    if not service:
-        service = ExternalService(
-            name="supabase_postgrest",
-            description="Supabase PostgREST API — 直接操作 Supabase 数据库表",
-            base_url=postgrest_url,
-            auth_type="apikey_header",
-            auth_config={"header_name": "apikey", "value": service_key},
-            default_headers={
-                "Authorization": f"Bearer {service_key}",
-                "Content-Type": "application/json",
-                "Prefer": "return=representation",
-            },
+    for t in old.scalars():
+        await db.delete(t)
+
+    # Upsert Management API ExternalService
+    result = await db.execute(
+        select(ExternalService).where(ExternalService.name == "supabase_mgmt")
+    )
+    svc = result.scalar_one_or_none()
+    if not svc:
+        svc = ExternalService(
+            name="supabase_mgmt",
+            description="Supabase Management API",
+            base_url="https://api.supabase.com",
+            auth_type="bearer",
+            auth_config={"token": access_token},
+            default_headers={"Content-Type": "application/json"},
             enabled=True,
         )
-        db.add(service)
+        db.add(svc)
         await db.flush()
     else:
-        service.base_url = postgrest_url
-        service.auth_config = {"header_name": "apikey", "value": service_key}
-        service.default_headers = {
-            "Authorization": f"Bearer {service_key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=representation",
-        }
+        svc.auth_config = {"token": access_token}
 
-    # Upsert PostgREST tools
-    for tool_def in SUPABASE_TOOLS:
-        result = await db.execute(
-            select(BotTool).where(BotTool.name == tool_def["name"])
-        )
-        existing = result.scalar_one_or_none()
-        if existing:
-            for k, v in tool_def.items():
-                setattr(existing, k, v)
-            existing.service_id = service.id
-        else:
-            db.add(BotTool(service_id=service.id, **tool_def))
+    # Upsert supabase_sql tool
+    endpoint = f"/v1/projects/{project_ref}/database/query"
+    desc = "通过 Supabase Management API 执行任意 SQL（建表、查询、插入、更新、删除等）。只需传 query 参数。"
 
-    # ── Management API ExternalService (supabase_sql) ──
-    if access_token:
-        m = re.match(r"https://([^.]+)\.supabase\.co", supabase_url)
-        project_ref = m.group(1) if m else ""
-
-        result = await db.execute(
-            select(ExternalService).where(ExternalService.name == "supabase_mgmt")
-        )
-        mgmt_svc = result.scalar_one_or_none()
-        if not mgmt_svc:
-            mgmt_svc = ExternalService(
-                name="supabase_mgmt",
-                description="Supabase Management API — 执行 SQL、管理项目",
-                base_url="https://api.supabase.com",
-                auth_type="bearer",
-                auth_config={"token": access_token},
-                default_headers={"Content-Type": "application/json"},
-                enabled=True,
-            )
-            db.add(mgmt_svc)
-            await db.flush()
-        else:
-            mgmt_svc.auth_config = {"token": access_token}
-
-        # endpoint 直接写死 project_ref，AI 只需传 query
-        fixed_endpoint = f"/v1/projects/{project_ref}/database/query"
-
-        result = await db.execute(
-            select(BotTool).where(BotTool.name == "supabase_sql")
-        )
-        existing = result.scalar_one_or_none()
-        desc = "通过 Supabase Management API 执行任意 SQL（建表、查表、DDL 等）。只需传 query 参数。"
-        if existing:
-            existing.endpoint = fixed_endpoint
-            existing.description = desc
-            existing.method = "POST"
-            existing.action_type = "mutation"
-            existing.param_mapping = {"query": "body.query"}
-            existing.parameters = SUPABASE_SQL_PARAMS
-            existing.service_id = mgmt_svc.id
-        else:
-            db.add(BotTool(
-                name="supabase_sql",
-                description=desc,
-                action_type="mutation",
-                endpoint=fixed_endpoint,
-                method="POST",
-                param_mapping={"query": "body.query"},
-                parameters=SUPABASE_SQL_PARAMS,
-                service_id=mgmt_svc.id,
-            ))
+    result = await db.execute(
+        select(BotTool).where(BotTool.name == "supabase_sql")
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.endpoint = endpoint
+        existing.description = desc
+        existing.method = "POST"
+        existing.action_type = "mutation"
+        existing.param_mapping = {"query": "body.query"}
+        existing.parameters = SUPABASE_SQL_PARAMS
+        existing.service_id = svc.id
+    else:
+        db.add(BotTool(
+            name="supabase_sql",
+            description=desc,
+            action_type="mutation",
+            endpoint=endpoint,
+            method="POST",
+            param_mapping={"query": "body.query"},
+            parameters=SUPABASE_SQL_PARAMS,
+            service_id=svc.id,
+        ))
 
     await db.commit()
