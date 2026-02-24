@@ -492,29 +492,41 @@ _SUPABASE_BOOTSTRAP_SQL = [
 
 
 async def _bootstrap_supabase_functions(db) -> None:
-    """用 asyncpg 直连 Supabase PostgreSQL，创建 list_tables / execute_sql 函数。"""
+    """通过 Supabase Management API 创建 list_tables / execute_sql 函数。"""
     import logging
+    import re
+    import httpx
     from app.models.extras import SiteSetting
 
     logger = logging.getLogger(__name__)
 
-    result = await db.execute(
-        select(SiteSetting).where(SiteSetting.key == "supabase_db_url")
+    rows = await db.execute(
+        select(SiteSetting).where(
+            SiteSetting.key.in_(("supabase_url", "supabase_access_token"))
+        )
     )
-    row = result.scalar_one_or_none()
-    db_url = (row.value if row else "").strip() if row else ""
-    if not db_url:
-        logger.info("supabase_db_url 未配置，跳过 RPC 函数引导")
+    cfg = {r.key: r.value for r in rows.scalars()}
+    supa_url = (cfg.get("supabase_url") or "").strip()
+    token = (cfg.get("supabase_access_token") or "").strip()
+    if not supa_url or not token:
+        logger.info("supabase_access_token 未配置，跳过 RPC 函数引导")
         return
 
+    m = re.match(r"https://([^.]+)\.supabase\.co", supa_url)
+    if not m:
+        logger.warning(f"无法从 supabase_url 提取 project_ref: {supa_url}")
+        return
+    ref = m.group(1)
+
     try:
-        import asyncpg
-        conn = await asyncpg.connect(db_url, timeout=10)
-        try:
+        async with httpx.AsyncClient(timeout=15) as client:
             for sql in _SUPABASE_BOOTSTRAP_SQL:
-                await conn.execute(sql)
-            logger.info("Supabase RPC 辅助函数已就绪 (list_tables, execute_sql)")
-        finally:
-            await conn.close()
+                resp = await client.post(
+                    f"https://api.supabase.com/v1/projects/{ref}/database/query",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"query": sql},
+                )
+                resp.raise_for_status()
+        logger.info("Supabase RPC 辅助函数已就绪 (list_tables, execute_sql)")
     except Exception as e:
         logger.warning(f"Supabase RPC 函数引导失败: {e}")
