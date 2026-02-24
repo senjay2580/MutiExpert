@@ -459,3 +459,62 @@ async def ensure_supabase_service(db: AsyncSession) -> None:
             db.add(BotTool(service_id=service.id, **tool_def))
 
     await db.commit()
+
+    # 自动引导：通过直连 Supabase PostgreSQL 创建辅助 RPC 函数
+    await _bootstrap_supabase_functions(db)
+
+
+# ── Supabase RPC 函数引导 ──
+
+_SUPABASE_BOOTSTRAP_SQL = [
+    """
+    CREATE OR REPLACE FUNCTION list_tables()
+    RETURNS jsonb LANGUAGE sql SECURITY DEFINER AS $$
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'table_name', table_name, 'table_type', table_type
+      )), '[]'::jsonb)
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+    $$;
+    """,
+    """
+    CREATE OR REPLACE FUNCTION execute_sql(query text)
+    RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+    BEGIN
+      EXECUTE query;
+      RETURN jsonb_build_object('success', true);
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+    END;
+    $$;
+    """,
+]
+
+
+async def _bootstrap_supabase_functions(db) -> None:
+    """用 asyncpg 直连 Supabase PostgreSQL，创建 list_tables / execute_sql 函数。"""
+    import logging
+    from app.models.extras import SiteSetting
+
+    logger = logging.getLogger(__name__)
+
+    result = await db.execute(
+        select(SiteSetting).where(SiteSetting.key == "supabase_db_url")
+    )
+    row = result.scalar_one_or_none()
+    db_url = (row.value if row else "").strip() if row else ""
+    if not db_url:
+        logger.info("supabase_db_url 未配置，跳过 RPC 函数引导")
+        return
+
+    try:
+        import asyncpg
+        conn = await asyncpg.connect(db_url, timeout=10)
+        try:
+            for sql in _SUPABASE_BOOTSTRAP_SQL:
+                await conn.execute(sql)
+            logger.info("Supabase RPC 辅助函数已就绪 (list_tables, execute_sql)")
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.warning(f"Supabase RPC 函数引导失败: {e}")
