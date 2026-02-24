@@ -183,11 +183,15 @@ def format_result(result: dict[str, Any]) -> str:
         return f"操作失败 (HTTP {status}): {data}"
 
     data = result.get("data")
+    tool_name = result.get("tool_name", "")
 
     # 列表类结果
     if isinstance(data, list):
         if not data:
             return "查询结果为空。"
+        # SQL 结果：直接 JSON 输出完整数据
+        if tool_name == "supabase_sql":
+            return json.dumps(data[:50], ensure_ascii=False, indent=2)
         lines = []
         for i, item in enumerate(data[:20], 1):
             if isinstance(item, dict):
