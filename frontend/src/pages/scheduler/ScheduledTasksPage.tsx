@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Play, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -87,6 +88,8 @@ const EMPTY_FORM: FormData = {
 const buildColumns = (
   onToggle: (id: string) => void,
   scripts: UserScript[],
+  onRun: (id: string) => void,
+  runningId: string | null,
 ): DataTableColumn<ScheduledTask>[] => [
   {
     key: 'name',
@@ -195,6 +198,26 @@ const buildColumns = (
       ) : (
         <span className="text-xs text-muted-foreground">尚未执行</span>
       ),
+  },
+  {
+    key: 'run',
+    header: '测试',
+    width: '70px',
+    render: (task) => {
+      const isRunning = runningId === task.id;
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-400 dark:hover:text-cyan-300"
+          disabled={isRunning}
+          onClick={(e) => { e.stopPropagation(); onRun(task.id); }}
+          title="立即执行"
+        >
+          {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+        </Button>
+      );
+    },
   },
   {
     key: 'enabled',
@@ -376,7 +399,7 @@ export default function ScheduledTasksPage() {
     saveMutation.mutate({ id: editingTask?.id, data: payload });
   };
 
-  const columns = useMemo(() => buildColumns(handleToggle, scripts), [handleToggle, scripts]);
+  const columns = useMemo(() => buildColumns(handleToggle, scripts, (id) => runMutation.mutate(id), runMutation.isPending ? (runMutation.variables as string) : null), [handleToggle, scripts, runMutation]);
   const totalTasks = tasks.length;
   const activeTasks = tasks.filter((task) => task.enabled).length;
   const pausedTasks = totalTasks - activeTasks;

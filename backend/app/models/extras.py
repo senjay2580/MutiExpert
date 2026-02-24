@@ -192,6 +192,22 @@ class FeishuPendingAction(Base):
     __table_args__ = (Index("idx_pending_actions_status", "status", "expires_at"),)
 
 
+class ExternalService(Base):
+    """外部服务连接器 — 轻量 MCP，让 AI 工具能调用任意外部 API"""
+    __tablename__ = "external_services"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    base_url: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_type: Mapped[str] = mapped_column(String(30), nullable=False, default="none")
+    auth_config = mapped_column(JSONB, default=dict)
+    default_headers = mapped_column(JSONB, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BotTool(Base):
     __tablename__ = "bot_tools"
 
@@ -203,6 +219,9 @@ class BotTool(Base):
     method: Mapped[str] = mapped_column(String(10), nullable=False, default="GET")
     param_mapping = mapped_column(JSONB, default=dict)
     parameters = mapped_column(JSONB, default=dict)
+    service_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("external_services.id", ondelete="SET NULL"), nullable=True,
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

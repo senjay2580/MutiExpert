@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 import time
 import collections
 import threading
@@ -18,7 +17,6 @@ from app.services.feishu_service import (
     verify_feishu_signature,
     decrypt_feishu_event,
     encrypt_secret,
-    adapt_markdown_for_feishu as _adapt_markdown_for_feishu,
     build_stream_card as _build_stream_card,
 )
 from app.services.pipeline_service import PipelineRequest, run_stream

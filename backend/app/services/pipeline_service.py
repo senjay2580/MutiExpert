@@ -68,6 +68,7 @@ async def _collect_tools(db: AsyncSession) -> tuple[list[dict], dict[str, dict]]
             "method": t["method"],
             "param_mapping": t.get("param_mapping", {}),
             "source": "bot_tool",
+            "service_id": t.get("service_id"),
         }
 
     # 2. Skills（enabled + 有 description）
@@ -175,6 +176,7 @@ async def _execute_tool_call(
             endpoint=tool_def["endpoint"],
             method=tool_def["method"],
             param_mapping=tool_def.get("param_mapping"),
+            service_id=tool_def.get("service_id"),
         )
         from app.services.intent.executor import execute_action, format_result
         result = await execute_action(intent)

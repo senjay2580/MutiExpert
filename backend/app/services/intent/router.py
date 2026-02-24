@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.ai_service import generate as ai_generate
 from app.services.intent.tools import load_tools, to_openai_tools
@@ -20,6 +21,7 @@ class IntentResult:
     method: str = "GET"
     param_mapping: dict[str, Any] | None = None
     text_response: str = ""  # 如果没有 tool_call，AI 的文本回复
+    service_id: UUID | None = None  # 外部服务 ID（None = 内部 API）
 
 
 async def recognize_intent(
@@ -68,6 +70,7 @@ async def recognize_intent(
                 endpoint=tool_def["endpoint"],
                 method=tool_def["method"],
                 param_mapping=tool_def.get("param_mapping"),
+                service_id=tool_def.get("service_id"),
             )
 
     return IntentResult(

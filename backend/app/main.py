@@ -13,9 +13,10 @@ async def lifespan(app: FastAPI):
     # Startup: auto-create tables + seed bot tools
     await init_db()
     from app.database import AsyncSessionLocal
-    from app.services.intent.seed import ensure_default_tools
+    from app.services.intent.seed import ensure_default_tools, ensure_supabase_service
     async with AsyncSessionLocal() as db:
         await ensure_default_tools(db)
+        await ensure_supabase_service(db)
     scheduler = SchedulerService()
     await scheduler.start()
     # 启动飞书 WebSocket 长连接

@@ -15,7 +15,7 @@ from app.models.extras import BotTool
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-EXCLUDED_PREFIXES = ("/api/v1/bot-tools", "/api/v1/health", "/api/v1/config", "/api/v1/sandbox")
+EXCLUDED_PREFIXES = ("/api/v1/bot-tools", "/api/v1/health", "/api/v1/config", "/api/v1/sandbox", "/api/v1/external-services")
 MUTATION_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
@@ -133,6 +133,7 @@ def _tool_to_dict(t: BotTool) -> dict:
         "method": t.method,
         "param_mapping": t.param_mapping,
         "parameters": t.parameters,
+        "service_id": str(t.service_id) if t.service_id else None,
         "enabled": t.enabled,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,

@@ -22,6 +22,7 @@ async def load_tools(db: AsyncSession) -> list[dict[str, Any]]:
             "method": t.method,
             "param_mapping": t.param_mapping or {},
             "parameters": t.parameters or {},
+            "service_id": t.service_id,
         })
     return tools
 
