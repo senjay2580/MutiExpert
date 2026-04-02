@@ -1,0 +1,99 @@
+name: github_daily
+description: 每日 GitHub 项目推荐 - 从多个优质渠道获取热门项目
+version: 1.0.0
+author: MutiExpert
+type: yaml
+
+parameters:
+  count:
+    type: integer
+    default: 10
+    description: 返回项目数量
+  language:
+    type: string
+    default: ""
+    description: 编程语言过滤（如 python, javascript, go）
+  days:
+    type: integer
+    default: 1
+    description: 最近N天内更新的项目
+  source:
+    type: string
+    default: "all"
+    description: 指定渠道（trending/hellogithub/hn/trendshift，逗号分隔，all=全部）
+  min_stars:
+    type: integer
+    default: 0
+    description: 最小 Stars 数阈值
+
+prompt: |
+  你是一个 GitHub 项目推荐专家。用户请求获取每日 GitHub 热门项目推荐。
+
+  **用户参数**：
+  - 数量：{count} 个项目
+  - 语言：{language}（空=不限）
+  - 时间范围：最近 {days} 天
+  - 渠道：{source}
+  - 最小 Stars：{min_stars}
+
+  **执行步骤**：
+
+  1. **并行搜索多个渠道**（使用 web-search-plus）：
+
+     根据 source 参数选择渠道：
+     - trending: GitHub 官方 Trending
+     - hellogithub: HelloGitHub 月刊
+     - hn: Hacker News Show HN
+     - trendshift: Trendshift 实时追踪
+     - all: 全部渠道
+
+     执行搜索命令（并行）：
+     ```bash
+     # GitHub Trending
+     python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" -p github -q "{language} trending" --github-sort stars --github-created ">=YYYY-MM-DD" -n {count}
+
+     # Trendshift（通过 Serper）
+     python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" -p serper -q "site:trendshift.io {language}" -n {count}
+
+     # HelloGitHub
+     python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" -p serper -q "site:hellogithub.com {language}" -n {count}
+
+     # Hacker News Show HN
+     python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" -p serper -q "site:news.ycombinator.com/show {language}" -n {count}
+     ```
+
+  2. **数据聚合与去重**：
+     - 按 GitHub URL 去重（同一项目只保留一次）
+     - 合并多渠道的同一项目信息
+     - 过滤掉 Stars < {min_stars} 的项目
+
+  3. **智能排序**：
+     - 综合评分 = Stars × 0.6 + Forks × 0.2 + 更新时效性 × 0.2
+     - 优先展示高质量且活跃的项目
+
+  4. **结构化输出**（Markdown 格式）：
+
+  ```markdown
+  # GitHub 每日推荐 — {今天日期}
+
+  > 共 {实际数量} 个项目，来自 {渠道数量} 个渠道
+
+  ## 1. [项目名称](GitHub链接) ⭐ {stars}k
+  **语言**: {language} | **更新**: {时间} | **来源**: {渠道}
+
+  {项目描述}
+
+  **亮点**：{提取的关键特性}
+
+  ---
+
+  ## 2. ...
+  ```
+
+  **注意事项**：
+  - 如果某个渠道搜索失败，继续其他渠道，不要中断
+  - 时间范围计算：今天是 {今天日期}，{days} 天前是 {计算后的日期}
+  - 语言参数为空时，搜索全语言项目
+  - 每个项目必须包含：名称、链接、Stars、语言、描述、来源渠道
+
+  开始执行搜索和推荐。

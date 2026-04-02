@@ -31,3 +31,13 @@ skills:
     type: yaml
     path: yaml/qa_enhancer.yaml
     description: 问答质量增强（深度解析+追问建议）
+
+  - name: github_daily
+    type: yaml
+    path: github_daily.yaml
+    description: 每日 GitHub 项目推荐 - 从多个优质渠道获取热门项目
+
+  - name: github_miner
+    type: yaml
+    path: github_miner.yaml
+    description: GitHub 项目数据挖掘 - 深度分析和挖掘 GitHub 项目数据

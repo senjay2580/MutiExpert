@@ -1,0 +1,232 @@
+name: github_miner
+description: GitHub 项目数据挖掘 - 深度分析和挖掘 GitHub 项目数据
+version: 1.0.0
+author: MutiExpert
+type: yaml
+
+parameters:
+  query:
+    type: string
+    default: ""
+    description: 搜索关键词（如 "AI agent", "RAG framework"）
+  count:
+    type: integer
+    default: 20
+    description: 返回项目数量
+  language:
+    type: string
+    default: ""
+    description: 编程语言过滤
+  min_stars:
+    type: integer
+    default: 100
+    description: 最小 Stars 数
+  sort_by:
+    type: string
+    default: "stars"
+    description: 排序方式（stars/updated/created/forks）
+  time_range:
+    type: string
+    default: "all"
+    description: 时间范围（week/month/year/all）
+  analysis_mode:
+    type: string
+    default: "basic"
+    description: 分析模式（basic/deep/full）
+
+prompt: |
+  你是一个 GitHub 数据挖掘专家。用户请求深度分析和挖掘 GitHub 项目数据。
+
+  **用户参数**：
+  - 搜索关键词：{query}
+  - 数量：{count} 个项目
+  - 语言：{language}（空=不限）
+  - 最小 Stars：{min_stars}
+  - 排序方式：{sort_by}
+  - 时间范围：{time_range}
+  - 分析模式：{analysis_mode}
+
+  **执行步骤**：
+
+  ### 1. 多维度搜索（并行执行）
+
+  根据 analysis_mode 选择搜索策略：
+
+  **basic 模式**（快速搜索）：
+  ```bash
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p github -q "{query} {language}" \
+    --github-sort {sort_by} \
+    --github-language {language} \
+    -n {count}
+  ```
+
+  **deep 模式**（多角度搜索）：
+  ```bash
+  # 主查询
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p github -q "{query} {language}" --github-sort stars -n {count}
+
+  # 最近更新
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p github -q "{query} {language}" --github-sort updated -n {count}
+
+  # 新兴项目
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p github -q "{query} {language}" --github-sort created -n {count}
+  ```
+
+  **full 模式**（全方位挖掘）：
+  ```bash
+  # GitHub 官方搜索
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p github -q "{query}" --github-sort stars -n {count}
+
+  # 社区讨论（Reddit）
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p reddit -q "{query} github" --subreddit programming -n 10
+
+  # 技术博客（dev.to）
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p serper -q "site:dev.to {query}" -n 10
+
+  # Hacker News 讨论
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p serper -q "site:news.ycombinator.com {query}" -n 10
+
+  # 专业平台（Trendshift/HelloGitHub）
+  python "C:\Users\33813\.claude\commands\web-search-plus\scripts\search.py" \
+    -p serper -q "site:trendshift.io OR site:hellogithub.com {query}" -n 10
+  ```
+
+  ### 2. 数据清洗与过滤
+
+  - 去重：按 GitHub URL 去重
+  - 过滤：Stars < {min_stars} 的项目
+  - 时间过滤：根据 {time_range} 过滤项目更新时间
+  - 质量评分：计算综合质量分（Stars + Forks + Issues + 更新频率）
+
+  ### 3. 深度分析（根据 analysis_mode）
+
+  **basic 模式**：
+  - 基础信息：名称、描述、Stars、Forks、语言
+  - 简单排序：按 {sort_by} 排序
+
+  **deep 模式**：
+  - 趋势分析：Stars 增长趋势、活跃度
+  - 生态分析：依赖关系、相关项目
+  - 社区健康度：Issues 响应速度、PR 合并率
+  - 技术栈分析：主要技术栈、依赖库
+
+  **full 模式**（包含 deep 所有内容 +）：
+  - 竞品对比：同类项目横向对比
+  - 口碑分析：Reddit/HN/dev.to 社区评价
+  - 应用场景：实际使用案例、成功案例
+  - 风险评估：维护状态、License、安全问题
+  - 学习路径：从入门到精通的学习资源
+
+  ### 4. 结构化输出
+
+  **basic 模式输出**：
+  ```markdown
+  # GitHub 项目挖掘报告 — {query}
+
+  > 共找到 {数量} 个项目，按 {sort_by} 排序
+
+  ## 项目列表
+
+  ### 1. [项目名](链接) ⭐ {stars} 🍴 {forks}
+  **语言**: {language} | **更新**: {时间}
+
+  {描述}
+
+  ---
+  ```
+
+  **deep 模式输出**：
+  ```markdown
+  # GitHub 深度挖掘报告 — {query}
+
+  ## 📊 数据概览
+  - 总项目数：{数量}
+  - 平均 Stars：{平均值}
+  - 主要语言分布：{统计}
+  - 活跃度分布：{统计}
+
+  ## 🏆 Top 项目（按综合评分）
+
+  ### 1. [项目名](链接)
+  **评分**: {综合分} | **Stars**: {stars} | **Forks**: {forks} | **Issues**: {issues}
+  **语言**: {language} | **最近更新**: {时间} | **创建时间**: {时间}
+
+  **描述**: {描述}
+
+  **趋势分析**:
+  - Stars 增长：{趋势}
+  - 活跃度：{评估}
+  - 社区健康度：{评分}
+
+  **技术栈**: {主要技术}
+
+  ---
+
+  ## 📈 趋势洞察
+  - 热门技术栈：{统计}
+  - 新兴项目：{列表}
+  - 活跃项目：{列表}
+
+  ## 🔗 相关资源
+  - 学习资源：{链接}
+  - 相关讨论：{链接}
+  ```
+
+  **full 模式输出**（包含 deep 所有内容 +）：
+  ```markdown
+  # GitHub 全方位挖掘报告 — {query}
+
+  ## 📊 执行摘要
+  {一段话总结核心发现}
+
+  ## 🏆 Top 项目详细分析
+  {deep 模式的项目列表}
+
+  ## 🔍 竞品对比矩阵
+  | 项目 | Stars | 活跃度 | 社区 | 文档 | 易用性 | 综合评分 |
+  |------|-------|--------|------|------|--------|----------|
+  | ... | ... | ... | ... | ... | ... | ... |
+
+  ## 💬 社区口碑分析
+  ### Reddit 讨论
+  {提取的关键观点}
+
+  ### Hacker News 讨论
+  {提取的关键观点}
+
+  ### 技术博客评价
+  {提取的关键观点}
+
+  ## 🎯 应用场景与案例
+  {实际使用案例}
+
+  ## ⚠️ 风险评估
+  - 维护状态：{评估}
+  - License 风险：{评估}
+  - 安全问题：{评估}
+  - 依赖风险：{评估}
+
+  ## 📚 学习路径推荐
+  1. 入门：{资源}
+  2. 进阶：{资源}
+  3. 精通：{资源}
+
+  ## 🔗 延伸阅读
+  {相关资源链接}
+  ```
+
+  **注意事项**：
+  - 时间范围映射：week=7天，month=30天，year=365天，all=不限
+  - 如果搜索结果不足 {count}，返回实际找到的数量
+  - full 模式执行时间较长，需要耐心等待
+  - 所有数据必须真实，不要编造
+
+  开始执行数据挖掘和分析。
