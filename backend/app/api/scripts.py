@@ -34,6 +34,11 @@ class ScriptUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class ScriptTestBody(BaseModel):
+    """测试脚本时的运行时参数（可选）"""
+    env: dict[str, str] | None = None  # 注入的环境变量；脚本里 os.environ.get(键) 即可读取
+
+
 # ── UserScript endpoints ──
 
 @router.get("/env-vars/available")
@@ -106,19 +111,27 @@ async def delete_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 async def test_script(
     script_id: uuid.UUID,
     timeout: int = 30,
+    body: ScriptTestBody | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """timeout (query 参数)：单次执行超时秒数，默认 30，最大 900。
-    长任务（视频转录、爬虫等）建议传 timeout=600。"""
+    """测试运行用户脚本。
+
+    - **timeout** (query 参数, 秒): 默认 30，最大 900。长任务（视频转录、爬虫）建议 600。
+    - **env** (body 字段): 注入到脚本进程的环境变量字典，脚本用 `os.environ.get("键")`
+      读取。例如 B站视频转录脚本可传 `{"env": {"BILIBILI_URL": "https://..."}}` 切换视频。
+    """
     script = await _get_script_or_404(script_id, db)
-    timeout = max(1, min(timeout, 900))  # 限制 1-900 秒
-    # 预处理：解析系统配置环境变量 + 检测硬编码密钥
+    timeout = max(1, min(timeout, 900))
     env_result = await prepare_script_env(db, script.script_content)
+    # 合并系统注入的 env + 调用方传入的运行时 env（运行时优先级更高）
+    merged_env = dict(env_result.env_vars)
+    if body and body.env:
+        merged_env.update(body.env)
     result = await execute_script(
         script.script_content,
         timeout_seconds=timeout,
         script_type=script.script_type or "typescript",
-        extra_env=env_result.env_vars,
+        extra_env=merged_env,
     )
     script.last_test_at = datetime.utcnow()
     script.last_test_status = "success" if result.success else "failed"

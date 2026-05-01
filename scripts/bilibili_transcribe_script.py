@@ -17,11 +17,16 @@ from datetime import datetime
 from pathlib import Path
 
 # ════════════════════════════════════════════════════════
-# 用户每次只需要改这一行（或在前端编辑脚本）
+# 运行时参数（优先级：环境变量 > 默认值）
+# AI 通过 create_scripts_by_id_test 调用时传 {"env": {"BILIBILI_URL": "..."}}
+# 即可切换视频，无需改 script_content。
 # ════════════════════════════════════════════════════════
-BILIBILI_URL = "https://www.bilibili.com/video/BV1x2doBCEyT/?spm_id_from=333.1007.tianma.1-1-1.click"
-LANG = "zh"
-PROXY = None  # 容器若无外网代理则保持 None；境内服务器访问 groq.com 可能需要中转
+BILIBILI_URL = os.environ.get(
+    "BILIBILI_URL",
+    "https://www.bilibili.com/video/BV1SkNJeCEy4/?spm_id_from=333.337.search-card.all.click",
+)
+LANG = os.environ.get("LANG_CODE", "zh")
+PROXY = os.environ.get("HTTP_PROXY") or None
 # ════════════════════════════════════════════════════════
 
 # ── Supabase（FluxFilter 项目，存了 Groq key 池 + B站 cookie） ──
@@ -34,7 +39,7 @@ SUPABASE_USER_ID = "b3cc2a9b-b50b-4684-aad1-c1e4c6d1e29f"  # senjay 用户
 # ── DeepSeek（校对，硬编码） ──
 DEEPSEEK_API_KEY = "sk-PLACEHOLDER_REPLACE_BEFORE_UPLOAD"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-v4-pro"
+DEEPSEEK_MODEL = "deepseek-v4-pro"  # 实测 flash 推理深度不够：跟着谐音表反而过度改写，输出大量 🎼 符号 + 把 "Haiku/Sonnet/Opus" 全删了。pro 慢但稳。
 
 # ── SiliconFlow 语音识别（境内服务，替代 Groq——Groq 在国内 IP 直连 403） ──
 # 模型 FunAudioLLM/SenseVoiceSmall：阿里达摩院开源的中文语音识别，速度快质量好
@@ -274,16 +279,30 @@ def transcribe_with_rotation(chunks: list[str]) -> str:
 
 def polish(raw: str) -> str:
     log("[校对] DeepSeek 修正中...")
-    prompt = f"""你是一位资深技术内容编辑，精通中英文混合的科技/编程领域语音转录校对。
+    # 用显式映射表代替"靠模型推理判断"，让 v4-flash 不靠思考也能修对
+    # （v4-flash 推理深度不足，单纯描述任务它判断不出 "CloudOps" 是 "Claude Opus"，
+    #  但给它一张表让它做查找替换就能精准修复）
+    prompt = f"""你是 Whisper 语音转录后处理编辑。Whisper 把英文术语听成的中文谐音必须按下表替换：
 
-你收到的文本来自 Whisper 语音识别引擎的原始输出。修复以下系统性缺陷：
-1. 谐音乱码：把听错的中文谐音字组合还原为正确的英文/中文术语（如 "Cloud" → "Claude"，"CloudOps" → "Claude Opus"）
-2. 大小写与拼写：技术产品名按官方写法（JavaScript / GitHub / Claude / Gemini）
-3. 断词粘连：长段无标点文本根据语义断句、加标点、自然分段
-4. 口语冗余：精简过度重复的语气词，但保留自然表达
-5. 内容忠实：绝不增删实质内容、不改变原意
+| Whisper 误识 | 正确术语 |
+|---|---|
+| Cloud / 克劳德 | Claude |
+| CloudOps / 克劳德 Ops | Claude Opus |
+| Hiku / 嗨库 / 海库 | Haiku |
+| Sonic / 索尼克 / 索奈特 | Sonnet |
+| Genimini / 杰明尼 / 杰米尼 | Gemini |
+| Open AI 的 | OpenAI |
+| GPT-five / GPT 五 | GPT-5 |
+| 卡德 / 卡尔德 | Cursor |
 
-通读全文，按话题自然分段，段间空一行。直接输出正文，不要前言/标题/总结。
+任务：
+1. 严格按上表替换所有出现的谐音词（重要！这是必修项）
+2. 其它技术产品名按官方写法（JavaScript / GitHub / Python / VSCode 等）
+3. 长段无标点文本根据语义断句、加标点、按话题自然分段
+4. 精简重复的语气词（"就是说""然后然后"），但保留自然表达
+5. 绝不增删实质内容、不改变原意
+
+直接输出修正后的正文，不要前言/标题/解释。段间空一行。
 
 ## 原文
 {raw}"""
