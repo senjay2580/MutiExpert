@@ -224,10 +224,10 @@ def format_result(result: dict[str, Any]) -> str:
             stderr = data.get("error") or ""
             if data.get("success", True):
                 main = output or "(空结果)"
-                # 把 stderr（脚本进度日志：[supabase]/[下载]/[转录] 等）作为
-                # 可折叠的"执行日志"附在主结果后，让用户能看到执行过程
+                # stderr 进度日志（[supabase]/[下载]/[转录] 等）放主体后，
+                # 用 markdown 分隔线 + 代码块，避免依赖 <details> raw HTML 支持
                 if stderr.strip():
-                    main += f"\n\n<details>\n<summary>📋 执行日志</summary>\n\n```\n{stderr.strip()}\n```\n\n</details>"
+                    main += f"\n\n---\n\n**📋 执行日志**\n\n```log\n{stderr.strip()}\n```"
                 return main
             else:
                 err_msg = stderr or "未知错误"
