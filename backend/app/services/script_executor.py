@@ -23,11 +23,13 @@ async def execute_script(
     script_type: str = "typescript",
     allow_net_hosts: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
+    extra_args: list[str] | None = None,
 ) -> ScriptResult:
-    """根据 script_type 分发到对应执行器"""
+    """根据 script_type 分发到对应执行器。
+    extra_args 作为命令行参数追加到子进程（脚本里 sys.argv / argparse 读取）。"""
     if script_type == "python":
-        return await _execute_python(script_content, timeout_seconds, extra_env)
-    return await _execute_deno(script_content, timeout_seconds, allow_net_hosts, extra_env)
+        return await _execute_python(script_content, timeout_seconds, extra_env, extra_args)
+    return await _execute_deno(script_content, timeout_seconds, allow_net_hosts, extra_env, extra_args)
 
 
 def _build_script_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
@@ -48,6 +50,7 @@ async def _execute_deno(
     timeout_seconds: int = 30,
     allow_net_hosts: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
+    extra_args: list[str] | None = None,
 ) -> ScriptResult:
     """用 Deno 沙箱执行 TypeScript 脚本"""
     with tempfile.NamedTemporaryFile(
@@ -57,12 +60,11 @@ async def _execute_deno(
         script_path = f.name
 
     try:
-        cmd = ["deno", "run", "--no-prompt"]
-
-        cmd.append("--allow-net")
-        cmd.append("--allow-env")
-        cmd.append(script_path)
-
+        cmd = ["deno", "run", "--no-prompt", "--allow-net", "--allow-env", script_path]
+        # Deno 命令行参数在脚本路径后面，用 -- 分隔传给脚本
+        if extra_args:
+            cmd.append("--")
+            cmd.extend(extra_args)
         return await _run_process(cmd, timeout_seconds, extra_env)
     finally:
         try:
@@ -75,8 +77,9 @@ async def _execute_python(
     script_content: str,
     timeout_seconds: int = 30,
     extra_env: dict[str, str] | None = None,
+    extra_args: list[str] | None = None,
 ) -> ScriptResult:
-    """用 Python 执行用户脚本"""
+    """用 Python 执行用户脚本。extra_args 直接附加到 sys.argv"""
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".py", delete=False, dir="/tmp", encoding="utf-8"
     ) as f:
@@ -85,6 +88,8 @@ async def _execute_python(
 
     try:
         cmd = ["python3", script_path]
+        if extra_args:
+            cmd.extend(extra_args)
         return await _run_process(cmd, timeout_seconds, extra_env)
     finally:
         try:

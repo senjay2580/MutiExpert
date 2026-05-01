@@ -35,8 +35,16 @@ class ScriptUpdate(BaseModel):
 
 
 class ScriptTestBody(BaseModel):
-    """测试脚本时的运行时参数（可选）"""
-    env: dict[str, str] | None = None  # 注入的环境变量；脚本里 os.environ.get(键) 即可读取
+    """测试脚本时的运行时参数（可选）。两种传参方式可单独/组合用：
+
+    - **args** (推荐): 命令行参数列表，脚本里用 `argparse` 或 `sys.argv` 读取。
+      示例：传 `{"args": ["--url", "https://www.bilibili.com/video/BVxxx/"]}`
+      脚本里 `parser.add_argument("--url"); url = parser.parse_args().url`
+    - **env**: 注入到子进程的环境变量字典，脚本里 `os.environ.get("键")` 读取。
+      args 优先（更标准），env 适合配置类参数（key/path/flag）。
+    """
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
 
 
 # ── UserScript endpoints ──
@@ -128,11 +136,13 @@ async def test_script(
     merged_env = dict(env_result.env_vars)
     if body and body.env:
         merged_env.update(body.env)
+    extra_args = body.args if body and body.args else None
     result = await execute_script(
         script.script_content,
         timeout_seconds=timeout,
         script_type=script.script_type or "typescript",
         extra_env=merged_env,
+        extra_args=extra_args,
     )
     script.last_test_at = datetime.utcnow()
     script.last_test_status = "success" if result.success else "failed"

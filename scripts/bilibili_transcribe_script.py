@@ -8,6 +8,7 @@ B站视频转录脚本 — MutiExpert 脚本系统版
 输出方式：直接 print Markdown 到 stdout，scheduler 自动送飞书。
 """
 
+import argparse
 import os
 import re
 import subprocess
@@ -17,16 +18,22 @@ from datetime import datetime
 from pathlib import Path
 
 # ════════════════════════════════════════════════════════
-# 运行时参数（优先级：环境变量 > 默认值）
-# AI 通过 create_scripts_by_id_test 调用时传 {"env": {"BILIBILI_URL": "..."}}
-# 即可切换视频，无需改 script_content。
+# 标准命令行参数（推荐）+ 环境变量兜底
+# AI 通过 create_scripts_by_id_test 调用，两种传参方式：
+#   推荐: {"args": ["--url", "https://www.bilibili.com/video/BVxxx/"]}
+#   备选: {"env": {"BILIBILI_URL": "https://www.bilibili.com/video/BVxxx/"}}
 # ════════════════════════════════════════════════════════
-BILIBILI_URL = os.environ.get(
-    "BILIBILI_URL",
-    "https://www.bilibili.com/video/BV1SkNJeCEy4/?spm_id_from=333.337.search-card.all.click",
-)
-LANG = os.environ.get("LANG_CODE", "zh")
-PROXY = os.environ.get("HTTP_PROXY") or None
+def _parse_args() -> tuple[str, str, str | None]:
+    p = argparse.ArgumentParser(description="B 站视频转录")
+    p.add_argument("--url", "-u", help="B 站视频 URL")
+    p.add_argument("--lang", default=os.environ.get("LANG_CODE", "zh"), help="语言代码（默认 zh）")
+    p.add_argument("--proxy", default=os.environ.get("HTTP_PROXY"), help="HTTP 代理")
+    args, _ = p.parse_known_args()
+    url = args.url or os.environ.get("BILIBILI_URL", "")
+    return url.strip(), args.lang, args.proxy or None
+
+
+BILIBILI_URL, LANG, PROXY = _parse_args()
 # ════════════════════════════════════════════════════════
 
 # ── Supabase（FluxFilter 项目，存了 Groq key 池 + B站 cookie） ──
@@ -273,8 +280,18 @@ def transcribe_with_rotation(chunks: list[str]) -> str:
 
 
 def main():
+    if not BILIBILI_URL:
+        print(
+            "ERROR: 必须传入 B 站视频 URL。\n"
+            "正确调用方式（标准命令行参数）：\n"
+            '  create_scripts_by_id_test(script_id=..., timeout=600, '
+            'args=["--url", "https://www.bilibili.com/video/BVxxxx/"])\n'
+            "也支持环境变量备选：env={\"BILIBILI_URL\": \"https://...\"}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if not is_url(BILIBILI_URL):
-        print("ERROR: BILIBILI_URL 不是合法链接", file=sys.stderr)
+        print(f"ERROR: 不是合法 B 站链接: {BILIBILI_URL}", file=sys.stderr)
         sys.exit(1)
 
     fetch_supabase_secrets()
