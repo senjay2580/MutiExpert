@@ -499,29 +499,36 @@ async def run_stream(
                 request.provider, tc, result.text, tool_result_text,
             ))
 
-        # 终态工具守护：历史上只要有终态工具成功执行过，立即结束循环
-        # （V4-Pro 在 test 成功后跨多轮 sandbox_write/python/list/find 重复造轮子。
-        #  之前 guard 只看当轮 tool_calls 漏掉了跨轮场景，改成扫全历史。）
+        # 终态工具守护：终态工具成功后，直接把工具完整 stdout 输出给用户，跳过 LLM
+        # （V4-Pro 在 reasoning 模式下经常 final content 为空——1300+ tokens 全花在
+        #  思考但最终输出空。脚本输出本来就是 Markdown 转录稿，直接 yield 给前端，
+        #  不再依赖 LLM 决策。）
         terminal_tool_names = {"create_scripts_by_id_test", "sandbox_send_file"}
-        if any(
-            r.get("name") in terminal_tool_names and r.get("success")
-            for r in all_tool_calls
-        ):
-            logger.info("[guard] 终态工具已成功，强制结束循环（共 %d 个工具调用）", len(all_tool_calls))
-            messages.append({
-                "role": "user",
-                "content": "上面工具调用已成功完成主任务，请基于工具返回的内容直接给出最终回答，不要再调用任何工具。",
-            })
-            final_messages = _flatten_tool_messages(messages, request.provider)
-            final_result = await ai_generate(
-                final_messages, request.provider, system_prompt, tools=None, db=db,
+        last_terminal = next(
+            (r for r in reversed(all_tool_calls)
+             if r.get("name") in terminal_tool_names and r.get("success")),
+            None,
+        )
+        if last_terminal:
+            logger.info(
+                "[guard] 终态工具 %s 已成功，直接输出工具结果（共 %d 次工具调用）",
+                last_terminal.get("name"), len(all_tool_calls),
             )
-            if final_result.text:
-                yield PipelineEvent(type="text_chunk", data={"content": final_result.text})
+            # 从 messages 里取最后一条 tool 完整结果（all_tool_calls 里被截到 2000 字）
+            full_output = last_terminal.get("result", "")
+            for msg in reversed(messages):
+                if msg.get("role") == "tool":
+                    full_output = msg.get("content") or full_output
+                    break
+                if msg.get("type") == "function_call_output":
+                    full_output = msg.get("output") or full_output
+                    break
+            if full_output:
+                yield PipelineEvent(type="text_chunk", data={"content": full_output})
             yield PipelineEvent(type="done", data={
                 "tool_calls": all_tool_calls,
                 "file_attachments": all_file_attachments,
-                "usage": final_result.usage,
+                "usage": {},
             })
             return
 
