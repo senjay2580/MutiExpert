@@ -24,45 +24,60 @@ LANG = "zh"
 PROXY = None  # 容器若无外网代理则保持 None；境内服务器访问 groq.com 可能需要中转
 # ════════════════════════════════════════════════════════
 
-# ── API Keys ──
-# 注意：本仓库版本只是源代码模板，git 里的 Keys 是占位符。
-# MutiExpert 数据库 user_scripts 表里的 script_content 字段存的是带真实 Keys 的版本，
-# scheduler 与"测试脚本"接口实际执行的是数据库里的副本，与本文件无关。
-# 如要重新通过 API 上传带真实 Keys 的版本，参见 scripts/deploy_fixes.py（不入库）。
-GROQ_API_KEYS = [
-    "gsk_PLACEHOLDER_REPLACE_BEFORE_UPLOAD_1",
-    "gsk_PLACEHOLDER_REPLACE_BEFORE_UPLOAD_2",
-]
+# ── Supabase（FluxFilter 项目，存了 Groq key 池 + B站 cookie） ──
+# 启动时动态拉取，避免硬编码过期或耗尽。supabase ANON_KEY 受 RLS 控制，
+# 仅能读 ai_config（whisper-large-v3*）+ user 表，符合 FluxFilter 的安全策略。
+SUPABASE_URL = "https://slddpmqvawlqlqggcbfe.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNsZGRwbXF2YXdscWxxZ2djYmZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNjc3MjgsImV4cCI6MjA4MDk0MzcyOH0.Vni6mgtPZTKO6t-BhG2C7LQgXGZUNFySkdLKrRSYDdU"
+SUPABASE_USER_ID = "b3cc2a9b-b50b-4684-aad1-c1e4c6d1e29f"  # senjay 用户
+
+# ── DeepSeek（校对，硬编码） ──
 DEEPSEEK_API_KEY = "sk-PLACEHOLDER_REPLACE_BEFORE_UPLOAD"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-v4-pro"  # V4 Pro：49B 激活，校对长文本术语谐音错误质量显著优于 flash（实测 Claude/Haiku/Sonnet 等术语只有 pro 能修对）
+DEEPSEEK_MODEL = "deepseek-v4-pro"
+
 WHISPER_MODEL = "whisper-large-v3"
 MAX_FILE_SIZE = 24 * 1024 * 1024  # Groq 25MB 限制留 1MB 余量
 BILIBILI_PATTERN = re.compile(r"(bilibili\.com|b23\.tv|BV[a-zA-Z0-9]+)")
 
+# 运行时填充
+GROQ_API_KEYS: list[str] = []
+BILIBILI_COOKIE: str = ""
+
 
 # ── 启动时自装依赖（容器无预装） ──
-# 注意：sandbox 是 root 容器，直接装全局 site-packages，不要用 --user。
-# 因为 sys.path 在解释器启动时已固定，pip install --user 装到 ~/.local/...
-# 但 sys.path 不会自动重新加载，导致 install 完仍然 ImportError。
-def ensure_pkg(pkg: str, import_name: str | None = None):
+# 历史坑 1：之前用 --user 装到 ~/.local/...，但当前进程 sys.path 不会重新
+#         加载 user site-packages，导致 install 完仍然 ImportError。
+# 历史坑 2：之前 --user 留下的 yt-dlp 旧版本即使我装新版到 global，sys.path
+#         里 user 路径优先，仍然 import 旧版（B站 412 修不掉）→ 主动从
+#         sys.path 移除 user 路径，并 --upgrade 强制升级 yt-dlp 到最新版。
+import site as _site
+_user_site = _site.getusersitepackages()
+sys.path = [p for p in sys.path if _user_site not in p]
+
+
+def ensure_pkg(pkg: str, import_name: str | None = None, upgrade: bool = False):
     name = import_name or pkg.replace("-", "_")
-    try:
-        __import__(name)
-        return
-    except ImportError:
-        pass
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet",
-         "-i", "https://mirrors.aliyun.com/pypi/simple/", pkg],
-        check=True,
-    )
-    # 装到全局 site-packages 后让 importlib 看到新包
+    if not upgrade:
+        try:
+            __import__(name)
+            return
+        except ImportError:
+            pass
+    cmd = [sys.executable, "-m", "pip", "install", "--quiet",
+           "-i", "https://mirrors.aliyun.com/pypi/simple/"]
+    if upgrade:
+        cmd.append("--upgrade")
+    cmd.append(pkg)
+    subprocess.run(cmd, check=True)
     import importlib
     importlib.invalidate_caches()
+    if name in sys.modules:
+        del sys.modules[name]
     __import__(name)
 
-ensure_pkg("yt-dlp", "yt_dlp")
+# yt-dlp 必须 --upgrade：B 站反爬规则经常变，老版本会 412
+ensure_pkg("yt-dlp", "yt_dlp", upgrade=True)
 ensure_pkg("imageio-ffmpeg", "imageio_ffmpeg")
 ensure_pkg("httpx")
 
@@ -82,6 +97,59 @@ def is_url(s: str) -> bool:
     return s.startswith(("http://", "https://")) or bool(BILIBILI_PATTERN.search(s))
 
 
+# ── 从 supabase 动态拉 Groq key 池 + B 站 cookie ──
+def fetch_supabase_secrets():
+    """启动时调用，填充 GROQ_API_KEYS 和 BILIBILI_COOKIE 全局变量。
+    cookie 从 FluxFilter 的 user 表里读，过期就重新登录 FluxFilter 即可。"""
+    global GROQ_API_KEYS, BILIBILI_COOKIE
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+    }
+    with httpx.Client(timeout=20.0) as client:
+        # Groq keys（model_id 包含 whisper-large-v3 系列）
+        r = client.get(
+            f"{SUPABASE_URL}/rest/v1/ai_config"
+            "?select=api_key,model_id"
+            "&model_id=in.(whisper-large-v3,whisper-large-v3-turbo)",
+            headers=headers,
+        )
+        r.raise_for_status()
+        GROQ_API_KEYS = [row["api_key"] for row in r.json() if row.get("api_key")]
+        log(f"[supabase] 拉到 {len(GROQ_API_KEYS)} 个 Groq key")
+
+        # B 站 cookie
+        r = client.get(
+            f"{SUPABASE_URL}/rest/v1/user"
+            f"?select=bilibili_cookie&id=eq.{SUPABASE_USER_ID}",
+            headers=headers,
+        )
+        r.raise_for_status()
+        rows = r.json()
+        if rows and rows[0].get("bilibili_cookie"):
+            BILIBILI_COOKIE = rows[0]["bilibili_cookie"]
+            log(f"[supabase] 拉到 B站 cookie，长度 {len(BILIBILI_COOKIE)} 字节")
+        else:
+            log("[supabase] 警告：未拉到 B站 cookie，B 站下载可能 412")
+
+    if not GROQ_API_KEYS:
+        raise RuntimeError("Groq key 池为空，请在 FluxFilter 的 supabase ai_config 添加 whisper-large-v3 类型 key")
+
+
+def cookie_str_to_netscape_file(cookie_str: str, out_path: str):
+    """yt-dlp 需要 Netscape 格式的 cookies 文件。
+    把 'k1=v1; k2=v2' 形式转成 cookies.txt 格式。"""
+    lines = ["# Netscape HTTP Cookie File"]
+    for pair in cookie_str.split(";"):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        k, v = pair.split("=", 1)
+        # 字段：domain, includeSubdomain, path, secure, expiry, name, value
+        lines.append(f".bilibili.com\tTRUE\t/\tFALSE\t2147483647\t{k.strip()}\t{v.strip()}")
+    Path(out_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def download_audio(url: str, tmp_dir: str) -> tuple[str, str]:
     """用 yt-dlp Python API 下载（仅音频流），返回 (文件路径, 标题)"""
     log(f"[下载] {url}")
@@ -92,7 +160,8 @@ def download_audio(url: str, tmp_dir: str) -> tuple[str, str]:
         "outtmpl": output_template,
         "quiet": True,
         "no_warnings": True,
-        # B 站反爬：必须带 Referer + 合法 User-Agent，否则 412 Precondition Failed
+        # B 站反爬三件套：Referer + 合法 UA + cookies（buvid3 / SESSDATA / bili_jct）
+        # 缺 cookie 经常 412 Precondition Failed
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "https://www.bilibili.com/",
@@ -100,6 +169,11 @@ def download_audio(url: str, tmp_dir: str) -> tuple[str, str]:
     }
     if PROXY:
         ydl_opts["proxy"] = PROXY
+    if BILIBILI_COOKIE:
+        cookie_file = os.path.join(tmp_dir, "cookies.txt")
+        cookie_str_to_netscape_file(BILIBILI_COOKIE, cookie_file)
+        ydl_opts["cookiefile"] = cookie_file
+        log("[下载] 使用 B 站 cookie 认证")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -241,6 +315,8 @@ def main():
     if not is_url(BILIBILI_URL):
         print("ERROR: BILIBILI_URL 不是合法链接", file=sys.stderr)
         sys.exit(1)
+
+    fetch_supabase_secrets()
 
     with tempfile.TemporaryDirectory(prefix="vtrans_") as tmp:
         media_path, title = download_audio(BILIBILI_URL, tmp)
