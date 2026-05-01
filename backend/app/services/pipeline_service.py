@@ -37,7 +37,8 @@ class PipelineRequest:
     modes: set[str] = field(default_factory=lambda: {"knowledge"})
     knowledge_base_ids: list[UUID] = field(default_factory=list)
     history: list[dict] | None = None
-    max_tool_rounds: int = 5
+    max_tool_rounds: int = 30  # 几乎不限制，正常对话 3-5 轮就停；只在 AI 死循环时
+                               # 兜底切到流式输出。日常长任务（爬虫 + 多轮转录）也够。
     memory_summary: str | None = None
     attachments: list[dict] = field(default_factory=list)
 
@@ -495,14 +496,19 @@ async def run_stream(
                 request.provider, tc, result.text, tool_result_text,
             ))
 
-    # 6. 最后一轮：流式输出（无工具或超过最大轮次）
-    # 对不支持 tool 消息角色的 provider，将工具调用历史扁平化为普通文本
+    # 6. 已用完工具轮次预算：明确告知 LLM 不再继续调工具，请直接收尾
+    # 不走 stream（stream 路径不解析 tool_calls，会把 LLM 想调的最后一个 tool_call 吞掉，
+    # 表现为"AI 说要执行 X 但实际没发出请求"）。改用 generate 拿最后一轮 text。
+    messages.append({
+        "role": "user",
+        "content": f"已达到工具调用轮次上限（{request.max_tool_rounds} 轮），请基于上面工具结果直接给出最终回答，不要再调用工具。",
+    })
     final_messages = _flatten_tool_messages(messages, request.provider)
-    async for chunk in stream_chat(final_messages, request.provider, system_prompt, db=db):
-        if chunk.type == "thinking":
-            yield PipelineEvent(type="thinking", data={"content": chunk.content})
-        else:
-            yield PipelineEvent(type="text_chunk", data={"content": chunk.content})
+    final_result = await ai_generate(
+        final_messages, request.provider, system_prompt, tools=None, db=db,
+    )
+    if final_result.text:
+        yield PipelineEvent(type="text_chunk", data={"content": final_result.text})
 
     yield PipelineEvent(type="done", data={
         "tool_calls": all_tool_calls,
