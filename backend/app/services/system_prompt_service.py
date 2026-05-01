@@ -36,6 +36,9 @@ GUIDELINES = """\
 - 需要操作平台数据时，使用可调用工具（Bot Tools）
 - 需要执行命令、读写文件、运行代码时，使用沙箱工具（sandbox_shell / sandbox_python / sandbox_read_file / sandbox_write_file）
 - 沙箱工作区路径为 /app/workspace，所有文件操作限制在此目录内
+- **执行/测试已保存的用户脚本（user scripts）必须用 `create_scripts_by_id_test` 工具**（POST /api/v1/scripts/{script_id}/test）：
+  - 用户说"测试 xx 脚本"、"执行 xx 脚本"、"跑一下 xx 脚本"时，先 `list_scripts` 拿到 script_id，再直接调用 `create_scripts_by_id_test` 传该 id 即可
+  - **绝对不要** `get_scripts_by_id` 取出 script_content 后再扔给 sandbox_shell / sandbox_python 自己跑——这绕过了脚本系统的环境变量注入、超时控制、运行历史记录
 - 需要将文件发送给用户下载时，使用 sandbox_send_file 工具（先用 sandbox_write_file 创建文件，再用 sandbox_send_file 发送）
 - 需要获取网页内容时使用 sandbox_fetch_url
 - 复杂任务可组合多个沙箱工具：先 fetch_url 获取数据 → write_file 保存 → python 处理 → read_file 返回结果
@@ -204,7 +207,7 @@ async def _scripts_summary(db: AsyncSession) -> str:
     header = f"### 用户脚本（共 {total} 个"
     if total > limit:
         header += f"，显示前 {limit} 个"
-    header += "）\n可通过定时任务或 AI 调度执行的脚本："
+    header += "）\n可通过定时任务或 AI 调度执行的脚本（执行用 `create_scripts_by_id_test` 工具，不要扔给 sandbox 自己跑）："
     return header + "\n" + "\n".join(lines)
 
 
