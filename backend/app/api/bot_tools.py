@@ -72,7 +72,25 @@ def _extract_parameters(openapi: dict, path: str, method: str) -> dict:
         for name, p_schema in body_schema["properties"].items():
             if "$ref" in p_schema:
                 p_schema = _resolve_ref(openapi, p_schema["$ref"])
+            # 处理 Optional[X] / X | None → Pydantic 生成的 anyOf [X, null]
+            # 取第一个非 null 子 schema（保留 array/object 等真实类型）
+            if "anyOf" in p_schema:
+                outer_desc = p_schema.get("description") or p_schema.get("title")
+                for sub in p_schema["anyOf"]:
+                    if "$ref" in sub:
+                        sub = _resolve_ref(openapi, sub["$ref"])
+                    if sub.get("type") != "null":
+                        p_schema = sub
+                        if outer_desc and not p_schema.get("description"):
+                            p_schema = {**p_schema, "description": outer_desc}
+                        break
             prop = {"type": p_schema.get("type", "string")}
+            # 保留 array 的 items（list[str] 必须有这个，否则 LLM 不知道传什么）
+            if prop["type"] == "array" and "items" in p_schema:
+                prop["items"] = p_schema["items"]
+            # 保留 object 的 additionalProperties（dict[str, str] 用这个）
+            if prop["type"] == "object" and "additionalProperties" in p_schema:
+                prop["additionalProperties"] = p_schema["additionalProperties"]
             desc = p_schema.get("description") or p_schema.get("title")
             if desc:
                 prop["description"] = desc

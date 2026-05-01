@@ -118,8 +118,8 @@ async def delete_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 @router.post("/{script_id}/test")
 async def test_script(
     script_id: uuid.UUID,
+    body: ScriptTestBody = ScriptTestBody(),  # 默认空对象，OpenAPI 直接生成 ScriptTestBody schema 不走 anyOf（避免 BotTool 解析丢字段）
     timeout: int = 600,
-    body: ScriptTestBody | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """测试运行用户脚本。
@@ -134,9 +134,9 @@ async def test_script(
     env_result = await prepare_script_env(db, script.script_content)
     # 合并系统注入的 env + 调用方传入的运行时 env（运行时优先级更高）
     merged_env = dict(env_result.env_vars)
-    if body and body.env:
+    if body.env:
         merged_env.update(body.env)
-    extra_args = body.args if body and body.args else None
+    extra_args = body.args if body.args else None
     result = await execute_script(
         script.script_content,
         timeout_seconds=timeout,
