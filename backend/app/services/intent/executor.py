@@ -94,7 +94,9 @@ async def execute_action(intent: IntentResult) -> dict[str, Any]:
     for key, val in path_replacements.items():
         final_url = final_url.replace(f"{{{key}}}", val)
 
-    timeout = httpx.Timeout(30.0 if intent.service_id else 15.0)
+    # 长任务（脚本测试、视频转录、爬虫）服务端可能跑 60-900 秒，
+    # connect/write/pool 短一点（30s）保证网络问题快速感知，read 给 15 分钟。
+    timeout = httpx.Timeout(connect=30.0, read=900.0, write=30.0, pool=30.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         method = intent.method.upper()
         if method == "GET":
