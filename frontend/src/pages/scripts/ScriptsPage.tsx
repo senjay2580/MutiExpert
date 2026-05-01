@@ -144,7 +144,8 @@ function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResult
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[95vw] !max-w-[1400px] h-[88vh] flex flex-col p-6"
+        className="flex flex-col p-6"
+        style={{ width: '95vw', maxWidth: '1400px', height: '88vh' }}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
