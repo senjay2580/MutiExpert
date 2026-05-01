@@ -89,6 +89,32 @@ export function MessageBubble({
                   th: ({ children }) => <th className="px-3 py-2 text-left text-xs font-semibold text-foreground border-b border-border [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/30">{children}</th>,
                   td: ({ children }) => <td className="px-3 py-2 border-b border-border/40 [&:not(:last-child)]:border-r [&:not(:last-child)]:border-border/20">{children}</td>,
                   tr: ({ children }) => <tr className="hover:bg-primary/5 even:bg-muted/15">{children}</tr>,
+                  // 拦截 ```log 代码块渲染成可折叠的"执行日志"块（类似 thinking）
+                  code: (props: any) => {
+                    const { className, children } = props;
+                    const inline = !className;
+                    if (!inline && className === 'language-log') {
+                      const text = String(children).replace(/\n$/, '');
+                      const lineCount = text.split('\n').length;
+                      return (
+                        <Collapsible className="my-2">
+                          <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/60 transition-colors [&[data-state=open]>svg:first-child]:rotate-90">
+                            <Icon icon="lucide:chevron-right" className="h-3.5 w-3.5 transition-transform" />
+                            <Icon icon="lucide:terminal" className="h-3.5 w-3.5" />
+                            <span>执行日志（{lineCount} 行）</span>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <pre className="mt-1 overflow-x-auto rounded-md bg-zinc-950 px-3 py-2 text-[11px] leading-relaxed text-zinc-200">
+                              <code className="font-mono">{text}</code>
+                            </pre>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      );
+                    }
+                    return inline
+                      ? <code className={className}>{children}</code>
+                      : <pre className="my-2 overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs"><code className={className}>{children}</code></pre>;
+                  },
                 }}
               >
                 {content}
