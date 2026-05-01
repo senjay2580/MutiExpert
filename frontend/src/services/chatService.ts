@@ -69,6 +69,45 @@ type StreamCallbacks = {
   onFileAttachment?: (data: { filename: string; path: string; size: number; mime_type: string; url: string }) => void;
 };
 
+/** 解析单个 SSE event 块（"event: xxx\ndata: yyy"） */
+function processEvent(eventBlock: string, callbacks: StreamCallbacks) {
+  let eventType = '';
+  let dataStr = '';
+  for (const line of eventBlock.split('\n')) {
+    if (line.startsWith('event: ')) {
+      eventType = line.slice(7).trim();
+    } else if (line.startsWith('data: ')) {
+      // 多行 data 用换行拼接（SSE 标准支持，但我们 backend 不会这么发）
+      dataStr += (dataStr ? '\n' : '') + line.slice(6);
+    }
+  }
+  if (!eventType || !dataStr) return;
+  let data: any;
+  try {
+    data = JSON.parse(dataStr);
+  } catch (e) {
+    // 跳过解析失败的 event，不要中断整个流
+    console.warn('[SSE] JSON parse failed', { eventType, dataStr: dataStr.slice(0, 200), error: e });
+    return;
+  }
+  if (eventType === 'chunk') callbacks.onChunk(data.content);
+  else if (eventType === 'thinking') callbacks.onThinking(data.content);
+  else if (eventType === 'sources') callbacks.onSources(data.sources);
+  else if (eventType === 'tool_start') callbacks.onToolStart?.(data);
+  else if (eventType === 'tool_result') callbacks.onToolResult?.(data);
+  else if (eventType === 'web_search') callbacks.onWebSearch?.(data);
+  else if (eventType === 'file_attachment') callbacks.onFileAttachment?.(data);
+  else if (eventType === 'done') callbacks.onDone(data.message_id, {
+    latency_ms: data.latency_ms,
+    tokens_used: data.tokens_used ?? null,
+    prompt_tokens: data.prompt_tokens ?? null,
+    completion_tokens: data.completion_tokens ?? null,
+    cost_usd: data.cost_usd ?? null,
+    tool_calls: data.tool_calls ?? undefined,
+  });
+  else if (eventType === 'error') callbacks.onError(data.error);
+}
+
 function streamConversationRequest(
   url: string,
   body: unknown,
@@ -97,34 +136,23 @@ function streamConversationRequest(
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        // 处理流结束时还在 buffer 里的最后一个 event（如果有）
+        if (buffer.trim()) {
+          processEvent(buffer, callbacks);
+        }
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      // SSE 标准：event 之间用 \n\n 分隔。按 event 边界切，不要按单 \n 切，
+      // 避免 event 内的多行被拆散导致 type/data 错位。
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || ''; // 最后一个不完整的 event 留作 buffer
 
-      let eventType = '';
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
-          if (eventType === 'chunk') callbacks.onChunk(data.content);
-          else if (eventType === 'thinking') callbacks.onThinking(data.content);
-          else if (eventType === 'sources') callbacks.onSources(data.sources);
-          else if (eventType === 'tool_start') callbacks.onToolStart?.(data);
-          else if (eventType === 'tool_result') callbacks.onToolResult?.(data);
-          else if (eventType === 'web_search') callbacks.onWebSearch?.(data);
-          else if (eventType === 'file_attachment') callbacks.onFileAttachment?.(data);
-          else if (eventType === 'done') callbacks.onDone(data.message_id, {
-            latency_ms: data.latency_ms,
-            tokens_used: data.tokens_used ?? null,
-            prompt_tokens: data.prompt_tokens ?? null,
-            completion_tokens: data.completion_tokens ?? null,
-            cost_usd: data.cost_usd ?? null,
-            tool_calls: data.tool_calls ?? undefined,
-          });
-          else if (eventType === 'error') callbacks.onError(data.error);
+      for (const eventBlock of events) {
+        if (eventBlock.trim()) {
+          processEvent(eventBlock, callbacks);
         }
       }
     }

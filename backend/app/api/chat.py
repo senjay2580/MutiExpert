@@ -450,6 +450,9 @@ def _stream_pipeline_response(
                 attachments=attachments or [],
             )
 
+            # 心跳计数：每 N 个 event 之间至少发一次 SSE comment 防止
+            # 反向代理或浏览器 fetch 在长时间 silent 后 buffer/超时
+            yield ":\n\n"  # 立刻发一个 comment，让前端 fetch 更早开始读
             async for event in pipeline_run_stream(request, db):
                 if event.type == "text_chunk":
                     chunk = event.data.get("content", "")
