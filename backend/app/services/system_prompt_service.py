@@ -52,7 +52,8 @@ GUIDELINES = """\
 - 工具调用轮次上限 30 轮（足够长任务），但**避免无用的探查调用**：
   - 测试已有脚本 → `list_scripts` → 直接 `create_scripts_by_id_test` 即可，不要先 `get_scripts_by_id` 看源码（除非用户明确要看代码）
   - 不要调 `get_scripts_env_vars_available`（已禁用，那是前端 UI 用的）
-  - 工具调用每多一次都消耗轮次预算，多余调用可能让真正的执行 tool 被挤掉"""
+  - 工具调用每多一次都消耗轮次预算，多余调用可能让真正的执行 tool 被挤掉
+  - **`create_scripts_by_id_test` success=true 后立刻收尾**：拿到 output/error 字段后，直接基于内容给用户最终回答，**严禁再调任何工具**（包括重复调 test、get_scripts_by_id、get_skills、sandbox_*）。重复调用是 V4-Pro 常见 quirk——拒绝它，直接输出 Markdown 即可"""
 
 
 async def build_system_prompt(

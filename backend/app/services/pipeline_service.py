@@ -496,6 +496,32 @@ async def run_stream(
                 request.provider, tc, result.text, tool_result_text,
             ))
 
+        # 终态工具守护：脚本测试 / 沙箱发文件成功后，直接强制收尾
+        # （DeepSeek V4-Pro 经常在 test 成功后又调 get/sandbox/test 浪费轮次，用户体验差）
+        terminal_tool_names = {"create_scripts_by_id_test", "sandbox_send_file"}
+        if any(
+            tc.name in terminal_tool_names and any(
+                r.get("name") == tc.name and r.get("success") for r in all_tool_calls[-len(result.tool_calls):]
+            )
+            for tc in result.tool_calls
+        ):
+            messages.append({
+                "role": "user",
+                "content": "上面工具调用已成功完成主任务，请基于工具返回的内容直接给出最终回答，不要再调用任何工具。",
+            })
+            final_messages = _flatten_tool_messages(messages, request.provider)
+            final_result = await ai_generate(
+                final_messages, request.provider, system_prompt, tools=None, db=db,
+            )
+            if final_result.text:
+                yield PipelineEvent(type="text_chunk", data={"content": final_result.text})
+            yield PipelineEvent(type="done", data={
+                "tool_calls": all_tool_calls,
+                "file_attachments": all_file_attachments,
+                "usage": final_result.usage,
+            })
+            return
+
     # 6. 已用完工具轮次预算：明确告知 LLM 不再继续调工具，请直接收尾
     # 不走 stream（stream 路径不解析 tool_calls，会把 LLM 想调的最后一个 tool_call 吞掉，
     # 表现为"AI 说要执行 X 但实际没发出请求"）。改用 generate 拿最后一轮 text。
