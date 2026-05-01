@@ -220,6 +220,9 @@ export default function AIAssistantChatPage() {
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // 流完成时高亮的 conversation id（侧边栏边缘动画）
+  const [flashConvId, setFlashConvId] = useState<string | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [modes, setModes] = useState<Set<ChatMode>>(() => {
     const state = location.state as LocationState | null;
@@ -448,7 +451,29 @@ export default function AIAssistantChatPage() {
             }
           });
         } else {
-          // 流已在后台完成：API 返回的 mapped 已包含完整消息，直接清理
+          // 流已在后台完成：先确认 mapped 含最新 message，否则用 entry 内容兜底
+          // （avoid 空白窗口：DB 刚保存 + API 缓存未刷新时，mapped 里可能没有最新 assistant message）
+          const finalId = entry.finalMessageId;
+          const lastIsAssistant = mapped.length > 0 && mapped[mapped.length - 1].role === 'assistant';
+          const exists = (finalId && mapped.some((m) => m.id === finalId)) || lastIsAssistant;
+          if (!exists && entry.content) {
+            const tempMsg: ChatMessage = {
+              id: entry.finalMessageId || entry.assistantMessageId,
+              role: 'assistant',
+              content: entry.content,
+              thinking: entry.thinking || undefined,
+              sources: entry.sources,
+              isStreaming: false,
+              model_used: entry.modelUsed,
+              tokens_used: entry.meta?.tokens_used ?? null,
+              prompt_tokens: entry.meta?.prompt_tokens ?? null,
+              completion_tokens: entry.meta?.completion_tokens ?? null,
+              cost_usd: entry.meta?.cost_usd ?? null,
+              latency_ms: entry.meta?.latency_ms ?? null,
+            };
+            const hasUser = mapped.some((m) => m.id === entry.userMessage.id || (m.role === 'user' && m.content === entry.userMessage.content));
+            setMessages(hasUser ? [...mapped, tempMsg] : [...mapped, entry.userMessage, tempMsg]);
+          }
           streamRegistry.removeStream(activeConvId);
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
         }
@@ -621,9 +646,12 @@ export default function AIAssistantChatPage() {
   const buildMarkdownExport = () => {
     const title = activeConversation?.title || '未命名会话';
     const lines: string[] = [`# ${title}`, '', `导出时间：${new Date().toLocaleString()}`, ''];
-    dedupedMessages.forEach((msg) => {
+    // 用 messages（含流式中正在写的 assistant message），不用 dedupedMessages
+    // —— dedupedMessages 在某些边界情况会比 messages 短，导致 silently return
+    const exportable = messages.length ? messages : dedupedMessages;
+    exportable.forEach((msg) => {
       lines.push(`## ${msg.role === 'user' ? '用户' : '助手'}`);
-      lines.push(msg.content || '');
+      lines.push(msg.content || '_（无内容）_');
       if (msg.sources?.length) { lines.push('', '来源：'); msg.sources.forEach((s) => lines.push(`- ${s.document_name}：${s.content_preview}`)); }
       lines.push('');
     });
@@ -631,22 +659,40 @@ export default function AIAssistantChatPage() {
   };
 
   const handleExportMarkdown = () => {
-    if (!dedupedMessages.length) return;
-    const md = buildMarkdownExport();
-    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${activeConversation?.title || 'conversation'}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const exportable = messages.length ? messages : dedupedMessages;
+    if (!exportable.length) {
+      toast.error('当前会话没有消息可导出');
+      return;
+    }
+    try {
+      const md = buildMarkdownExport();
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${activeConversation?.title || 'conversation'}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`已导出 ${exportable.length} 条消息`);
+    } catch (e: any) {
+      toast.error(`导出失败：${e?.message || e}`);
+    }
   };
 
   const handleCopyMarkdown = async () => {
-    if (!dedupedMessages.length) return;
-    try { await copyToClipboard(buildMarkdownExport()); } catch { /* ignore */ }
+    const exportable = messages.length ? messages : dedupedMessages;
+    if (!exportable.length) {
+      toast.error('当前会话没有消息可复制');
+      return;
+    }
+    try {
+      await copyToClipboard(buildMarkdownExport());
+      toast.success('已复制 Markdown 到剪贴板');
+    } catch (e: any) {
+      toast.error(`复制失败：${e?.message || e}`);
+    }
   };
 
   const registryCallbacks = (assistantId: string, convId: string, userMsg: ChatMessage) => {
@@ -678,6 +724,10 @@ export default function AIAssistantChatPage() {
         streamRegistry.removeStream(convId);
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
         if (updated.error) setSendError(updated.error);
+        // 触发侧边栏对应 item 边缘高亮动画
+        if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+        setFlashConvId(convId);
+        flashTimerRef.current = window.setTimeout(() => setFlashConvId(null), 3000);
       }
     });
     return {
@@ -936,7 +986,7 @@ export default function AIAssistantChatPage() {
                         <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100">
                           <TooltipProvider>
                             <Tooltip><TooltipTrigger asChild>
-                              <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
+                              <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                                 <Icon icon={copiedMessageId === msg.id ? 'lucide:check' : 'lucide:copy'} width={13} height={13} />
                               </button>
                             </TooltipTrigger><TooltipContent side="bottom" className="text-xs">{copiedMessageId === msg.id ? '已复制' : '复制'}</TooltipContent></Tooltip>
@@ -1010,7 +1060,7 @@ export default function AIAssistantChatPage() {
                         <div className="mt-2 flex flex-wrap items-center gap-1">
                           <TooltipProvider>
                             <Tooltip><TooltipTrigger asChild>
-                              <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" disabled={isSending}>
+                              <button onClick={() => handleCopyMessage(msg.id, msg.content)} className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                                 <Icon icon={copiedMessageId === msg.id ? 'lucide:check' : 'lucide:copy'} width={13} height={13} />
                               </button>
                             </TooltipTrigger><TooltipContent side="bottom" className="text-xs">{copiedMessageId === msg.id ? '已复制' : '复制'}</TooltipContent></Tooltip>
@@ -1265,6 +1315,7 @@ export default function AIAssistantChatPage() {
                   className={cn(
                     'group flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors hover:bg-muted/50',
                     activeConvId === conv.id ? 'border-primary/30 bg-muted/50' : 'border-transparent',
+                    flashConvId === conv.id && 'animate-flash-ring',
                   )}
                   onClick={() => { if (renamingId !== conv.id) handleSelectConversation(conv.id); }}
                 >
