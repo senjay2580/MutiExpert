@@ -29,6 +29,8 @@ ENV_VAR_REGISTRY: list[dict[str, str]] = [
     {"name": "FEISHU_CHAT_ID", "source": "飞书配置 → 默认群 Chat ID", "group": "feishu"},
     {"name": "EMBEDDING_API_KEY", "source": "系统环境变量 → Embedding API Key", "group": "embedding"},
     {"name": "EMBEDDING_API_BASE", "source": "系统环境变量 → Embedding Base URL", "group": "embedding"},
+    {"name": "TAVILY_API_KEY", "source": "站点设置 → Tavily API Key（搜索）", "group": "search"},
+    {"name": "GITHUB_TOKEN", "source": "站点设置 → GitHub Token（提升 API 配额，可选）", "group": "search"},
 ]
 
 # ── 明文密钥检测正则 ──
@@ -127,6 +129,24 @@ async def resolve_env_vars(db: AsyncSession) -> dict[str, str]:
         env["EMBEDDING_API_KEY"] = settings.embedding_api_key
     if settings.embedding_api_base:
         env["EMBEDDING_API_BASE"] = settings.embedding_api_base
+
+    # ── 搜索类 keys（site_settings 表 key/value）──
+    from app.models.extras import SiteSetting
+    ss_result = await db.execute(
+        select(SiteSetting.key, SiteSetting.value).where(
+            SiteSetting.key.in_(["tavily_api_key", "github_token"])
+        )
+    )
+    for k, v in ss_result.all():
+        if not v:
+            continue
+        if k == "tavily_api_key":
+            env["TAVILY_API_KEY"] = v
+        elif k == "github_token":
+            env["GITHUB_TOKEN"] = v
+    # .env 兜底
+    if "TAVILY_API_KEY" not in env and getattr(settings, "tavily_api_key", ""):
+        env["TAVILY_API_KEY"] = settings.tavily_api_key
 
     return env
 
