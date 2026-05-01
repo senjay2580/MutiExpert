@@ -16,6 +16,9 @@ venv/
 .env.*
 
 uploads/
+workspace/
+scripts/
+=*
 *.log
 
 .git/
