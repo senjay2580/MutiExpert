@@ -496,15 +496,15 @@ async def run_stream(
                 request.provider, tc, result.text, tool_result_text,
             ))
 
-        # 终态工具守护：脚本测试 / 沙箱发文件成功后，直接强制收尾
-        # （DeepSeek V4-Pro 经常在 test 成功后又调 get/sandbox/test 浪费轮次，用户体验差）
+        # 终态工具守护：历史上只要有终态工具成功执行过，立即结束循环
+        # （V4-Pro 在 test 成功后跨多轮 sandbox_write/python/list/find 重复造轮子。
+        #  之前 guard 只看当轮 tool_calls 漏掉了跨轮场景，改成扫全历史。）
         terminal_tool_names = {"create_scripts_by_id_test", "sandbox_send_file"}
         if any(
-            tc.name in terminal_tool_names and any(
-                r.get("name") == tc.name and r.get("success") for r in all_tool_calls[-len(result.tool_calls):]
-            )
-            for tc in result.tool_calls
+            r.get("name") in terminal_tool_names and r.get("success")
+            for r in all_tool_calls
         ):
+            logger.info("[guard] 终态工具已成功，强制结束循环（共 %d 个工具调用）", len(all_tool_calls))
             messages.append({
                 "role": "user",
                 "content": "上面工具调用已成功完成主任务，请基于工具返回的内容直接给出最终回答，不要再调用任何工具。",
