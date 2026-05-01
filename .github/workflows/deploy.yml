@@ -49,5 +49,7 @@ jobs:
             cd /opt/mutiexpert
             git pull origin main
             docker compose up -d --build --remove-orphans
-            docker image prune -f
+            # 清掉 3 天前的所有 docker 缓存（镜像 + build cache + 容器 + 网络）
+            # 防止 build cache 累积到 GB 级把磁盘打满（曾经涨到 11 GB 把 build 卡死）
+            docker system prune -af --filter "until=72h"
             echo "Deploy completed at $(date)"
