@@ -333,11 +333,13 @@ class OpenAIChatCompletionsStrategy:
 
         只保留工具名称，不输出完整参数，避免 LLM 复述大段工具调用代码。
         """
+        # 与 pipeline._flatten_tool_messages 保持一致，500 太小会丢长 Markdown 转录稿
+        TOOL_RESULT_MAX = 50000
         result: list[dict] = []
         for msg in messages:
             role = msg.get("role", "")
             if role == "tool":
-                content = (msg.get("content", "") or "")[:500]
+                content = (msg.get("content", "") or "")[:TOOL_RESULT_MAX]
                 result.append({"role": "user", "content": f"[工具执行结果]\n{content}"})
             elif role == "assistant" and msg.get("tool_calls"):
                 text = msg.get("content") or ""
@@ -346,7 +348,7 @@ class OpenAIChatCompletionsStrategy:
                 combined = (text + "\n" + summary).strip() if text else summary
                 result.append({"role": "assistant", "content": combined})
             elif msg.get("type") == "function_call_output":
-                output = (msg.get("output", "") or "")[:500]
+                output = (msg.get("output", "") or "")[:TOOL_RESULT_MAX]
                 result.append({"role": "user", "content": f"[工具执行结果]\n{output}"})
             elif msg.get("type") == "function_call":
                 result.append({"role": "assistant", "content": f"已调用工具: {msg.get('name', 'unknown')}"})

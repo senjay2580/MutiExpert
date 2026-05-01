@@ -336,12 +336,15 @@ def _flatten_tool_messages(messages: list[dict], provider: str) -> list[dict]:
     if provider in ("claude", "openai"):
         return messages  # 这两个 provider 原生支持 tool 消息
 
+    # 截断长度：单个 tool 结果上限。500 太小会让 AI 看不到完整 Markdown 转录稿
+    # 等长输出，误以为"还没完/截断"。50000 足够 5-15 万字符的转录稿。
+    TOOL_RESULT_MAX = 50000
     result: list[dict] = []
     for msg in messages:
         role = msg.get("role", "")
-        # tool 角色 → 转为 user 消息（截断过长结果）
+        # tool 角色 → 转为 user 消息
         if role == "tool":
-            content = (msg.get("content", "") or "")[:500]
+            content = (msg.get("content", "") or "")[:TOOL_RESULT_MAX]
             result.append({"role": "user", "content": f"[工具执行结果]\n{content}"})
         # assistant 带 tool_calls → 只保留工具名
         elif role == "assistant" and msg.get("tool_calls"):
@@ -352,7 +355,7 @@ def _flatten_tool_messages(messages: list[dict], provider: str) -> list[dict]:
             result.append({"role": "assistant", "content": combined})
         # function_call_output (Responses API 格式) → 转为 user
         elif msg.get("type") == "function_call_output":
-            output = (msg.get("output", "") or "")[:500]
+            output = (msg.get("output", "") or "")[:TOOL_RESULT_MAX]
             result.append({"role": "user", "content": f"[工具执行结果]\n{output}"})
         # function_call (Responses API 格式) → 只保留工具名
         elif msg.get("type") == "function_call":
