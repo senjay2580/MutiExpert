@@ -220,10 +220,23 @@ def format_result(result: dict[str, Any]) -> str:
         if "output" in data and "timed_out" in data:
             if "file" in data:
                 return json.dumps(data, ensure_ascii=False, indent=2)
+            output = data.get("output") or ""
+            stderr = data.get("error") or ""
             if data.get("success", True):
-                return data["output"] if data["output"] else "(空结果)"
+                main = output or "(空结果)"
+                # 把 stderr（脚本进度日志：[supabase]/[下载]/[转录] 等）作为
+                # 可折叠的"执行日志"附在主结果后，让用户能看到执行过程
+                if stderr.strip():
+                    main += f"\n\n<details>\n<summary>📋 执行日志</summary>\n\n```\n{stderr.strip()}\n```\n\n</details>"
+                return main
             else:
-                return f"操作失败: {data.get('error', '未知错误')}"
+                err_msg = stderr or "未知错误"
+                # 失败时如果有部分 stdout 也带上（超时保留输出）
+                if output.strip():
+                    err_msg = f"{output.strip()}\n\n---\n\n操作失败: {err_msg}"
+                else:
+                    err_msg = f"操作失败: {err_msg}"
+                return err_msg
         if "message" in data:
             return str(data["message"])
         return json.dumps(data, ensure_ascii=False, indent=2)
