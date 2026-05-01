@@ -1,6 +1,9 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+// 1024 = lg 断点。中等屏宽（笔记本分屏 / 浏览器窗口被压缩）下也让左侧主
+// 导航走 Sheet overlay 模式（覆盖而非挤压主内容），只有 ≥1024px 大屏才
+// 让 sidebar inline 占位
+const MOBILE_BREAKPOINT = 1024
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState(() => {

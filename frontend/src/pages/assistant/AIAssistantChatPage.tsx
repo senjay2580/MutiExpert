@@ -856,9 +856,9 @@ export default function AIAssistantChatPage() {
 
   /* ── JSX ── */
   return (
-    <div className="flex h-[calc(100svh-var(--topbar-height))]">
+    <div className="relative flex h-[calc(100svh-var(--topbar-height))]">
       {/* ── Main chat area ── */}
-      <div className="relative flex flex-1 flex-col overflow-hidden">
+      <div className="relative flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Grid background */}
         <div className="grid-bg" />
         {/* Header */}
@@ -1251,10 +1251,19 @@ export default function AIAssistantChatPage() {
         </div>
       </div>
 
-      {/* ── Right sidebar ── */}
+      {/* ── Right sidebar （overlay 模式：覆盖在主内容上，不挤压）── */}
+      {/* 半透明 backdrop（点击关闭，避免挡住主区域操作）*/}
+      {sidebarOpen && (
+        <div
+          className="absolute inset-0 z-30 bg-black/20 backdrop-blur-[2px] xl:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       <div className={cn(
-        'h-full w-[300px] shrink-0 border-l border-border/40 bg-background/50 backdrop-blur-sm transition-all duration-300',
-        sidebarOpen ? 'translate-x-0' : 'hidden',
+        // 默认 absolute overlay；xl (≥1280px) 以上恢复 inline 占位（宽屏不挤压主内容）
+        'h-full w-[300px] border-l border-border/40 bg-background/95 backdrop-blur-md shadow-xl xl:shadow-none',
+        'absolute right-0 top-0 z-40 transition-transform duration-300 xl:relative xl:z-auto xl:bg-background/50',
+        sidebarOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none xl:hidden xl:translate-x-0',
       )}>
         <div className="flex h-full flex-col p-4">
           {/* Sidebar header */}
