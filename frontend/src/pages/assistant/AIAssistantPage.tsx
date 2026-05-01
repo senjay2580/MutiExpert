@@ -198,9 +198,9 @@ export default function AIAssistantPage() {
     || (loadingModels ? '加载模型中...' : '请选择模型');
 
   return (
-    <div className="flex h-full bg-background">
+    <div className="relative flex h-full bg-background">
       {/* ── Main content ── */}
-      <div className="relative flex flex-1 flex-col overflow-hidden">
+      <div className="relative flex flex-1 flex-col overflow-hidden min-w-0">
         <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-white via-amber-50/50 to-orange-50/30 dark:from-slate-950/70 dark:via-slate-900/40 dark:to-slate-950/80" />
         <div className="pointer-events-none absolute inset-0 -z-10 opacity-50 [background:radial-gradient(circle_at_15%_12%,rgba(251,191,36,0.18),transparent_58%),radial-gradient(circle_at_82%_18%,rgba(255,237,213,0.25),transparent_58%),radial-gradient(circle_at_78%_60%,rgba(252,211,77,0.12),transparent_60%),radial-gradient(circle_at_52%_85%,rgba(254,243,199,0.20),transparent_60%)] dark:opacity-40" />
 
@@ -419,13 +419,22 @@ export default function AIAssistantPage() {
       </div>
 
       {/* ── Right sidebar: conversation history ── */}
+      {/* 半透明 backdrop（点击关闭，xl 以下都展示） */}
+      {sidebarOpen && (
+        <div
+          className="absolute inset-0 z-30 bg-black/20 backdrop-blur-[2px] xl:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       <div className={cn(
-        'ai-sidebar-weather relative h-full shrink-0 overflow-hidden border-l border-border/40 transition-all duration-500 ease-[cubic-bezier(0.15,0.83,0.66,1)]',
-        sidebarOpen ? 'w-[300px] opacity-100' : 'w-0 opacity-0',
+        'ai-sidebar-weather h-full overflow-hidden border-l border-border/40 bg-background/95 backdrop-blur-md shadow-xl xl:shadow-none xl:bg-transparent',
+        // 默认 absolute overlay；xl (≥1280px) 以上恢复 inline 占位
+        'absolute right-0 top-0 z-40 w-[300px] transition-transform duration-500 ease-[cubic-bezier(0.15,0.83,0.66,1)]',
+        'xl:relative xl:z-auto',
+        sidebarOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none xl:hidden xl:translate-x-0',
       )}>
         <div className={cn(
           'relative z-10 flex h-full w-[300px] flex-col p-4 transition-transform duration-500 ease-[cubic-bezier(0.15,0.83,0.66,1)]',
-          sidebarOpen ? 'translate-x-0' : 'translate-x-full',
         )}>
           <div className="flex items-center justify-between gap-3">
             <div>

@@ -250,9 +250,9 @@ export default function KnowledgeDetailPage() {
       : documents.filter((d) => d.file_type === docFilter);
 
   return (
-    <div className="flex h-full">
+    <div className="relative flex h-full">
       {/* ══════════ Left Column: KB Info + Actions ══════════ */}
-      <div className="w-[280px] shrink-0 border-r border-border overflow-y-auto">
+      <div className="hidden md:block w-[260px] lg:w-[280px] shrink-0 border-r border-border overflow-y-auto">
         <div className="p-4 space-y-4">
           {/* Back + KB Name */}
           <div className="flex items-start gap-2">
@@ -474,10 +474,24 @@ export default function KnowledgeDetailPage() {
       </div>
 
       {/* ══════════ Right Column: AI Chat Panel (VSCode-style resizable) ══════════ */}
+      {/* < lg 时 backdrop（点击关闭） */}
+      {chatOpen && (
+        <div
+          className="absolute inset-0 z-30 bg-black/20 backdrop-blur-[2px] lg:hidden"
+          onClick={() => setChatOpen(false)}
+        />
+      )}
       {chatOpen ? (
         <div
-          className="hidden lg:flex shrink-0 h-full"
-          style={{ width: panel.width }}
+          className={cn(
+            "flex shrink-0 h-full",
+            // ≥ lg：inline 占位，可拖拽 resize
+            "lg:relative lg:z-auto",
+            // < lg：absolute overlay 覆盖在主内容上，固定宽度避免挤压
+            "absolute right-0 top-0 bottom-0 z-40 w-[min(420px,90vw)] bg-background shadow-2xl border-l-2 border-border",
+            "lg:w-auto lg:bg-transparent lg:shadow-none lg:border-l-0"
+          )}
+          style={{ width: typeof window !== 'undefined' && window.innerWidth >= 1024 ? panel.width : undefined }}
         >
           {/* ── Resize handle ── */}
           <div
@@ -501,7 +515,7 @@ export default function KnowledgeDetailPage() {
         /* ── Collapsed strip ── */
         <button
           onClick={() => setChatOpen(true)}
-          className="hidden lg:flex shrink-0 w-9 h-full flex-col items-center gap-2 pt-3 border-l border-border bg-muted/20 text-muted-foreground hover:text-primary hover:bg-muted/40 transition-colors"
+          className="flex shrink-0 w-9 h-full flex-col items-center gap-2 pt-3 border-l border-border bg-muted/20 text-muted-foreground hover:text-primary hover:bg-muted/40 transition-colors"
           title="展开 AI 助手"
         >
           <Icon icon="lucide:sparkles" width={15} height={15} className="text-primary" />
