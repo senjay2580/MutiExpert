@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  frontend-check:
+  # ─── Frontend：在 runner 上 build 出 dist，上传为 artifact 供 deploy 下载 ───
+  frontend-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +22,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: cd frontend && npm ci
-      - run: cd frontend && npm run build
+      - name: Build frontend (with VITE_API_KEY injected)
+        run: cd frontend && npm run build
+        env:
+          VITE_API_KEY: ${{ secrets.API_KEY }}
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 1
+          if-no-files-found: error
 
   backend-check:
     runs-on: ubuntu-latest
@@ -34,10 +45,42 @@ jobs:
       - run: cd backend && ruff check app/
 
   deploy:
-    needs: [frontend-check, backend-check]
+    needs: [frontend-build, backend-check]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+
+      - name: Show dist contents (debug)
+        run: ls -la dist/ && du -sh dist/
+
+      # 服务器先确保 dist 目录存在并清空旧文件
+      - name: Ensure clean target dir on server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            mkdir -p /opt/mutiexpert/frontend/dist
+            rm -rf /opt/mutiexpert/frontend/dist/*
+
+      # 把 dist 内容推到服务器（用 strip_components: 1 去掉前缀的 dist/ 一层）
+      - name: Copy frontend dist to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          source: "dist/*"
+          target: "/opt/mutiexpert/frontend/dist/"
+          strip_components: 1
+
+      # 服务器上拉新代码 + rebuild backend（前端镜像现在只是 COPY dist + nginx，秒级）
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
         with:
@@ -48,8 +91,8 @@ jobs:
           script: |
             cd /opt/mutiexpert
             git pull origin main
+            ls -la frontend/dist/ | head -5
             docker compose up -d --build --remove-orphans
-            # 清掉 3 天前的所有 docker 缓存（镜像 + build cache + 容器 + 网络）
-            # 防止 build cache 累积到 GB 级把磁盘打满（曾经涨到 11 GB 把 build 卡死）
+            # 保留近 72 小时活跃缓存，清掉旧的，防止 build cache 累积涨爆磁盘
             docker system prune -af --filter "until=72h"
             echo "Deploy completed at $(date)"

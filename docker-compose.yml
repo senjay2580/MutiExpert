@@ -42,11 +42,11 @@ services:
           memory: 1G
 
   frontend:
+    # frontend/dist 由 GitHub Actions 在 runner 上 build 完通过 scp 投递到 ./frontend/dist/
+    # 此处的 docker build 只是把 dist + nginx.conf 装进 nginx:alpine（秒级，~30MB）
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_KEY: ${API_KEY:-}
     container_name: mutiexpert-web
     restart: always
     depends_on:
