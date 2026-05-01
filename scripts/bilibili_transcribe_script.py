@@ -36,11 +36,6 @@ SUPABASE_URL = "https://slddpmqvawlqlqggcbfe.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNsZGRwbXF2YXdscWxxZ2djYmZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNjc3MjgsImV4cCI6MjA4MDk0MzcyOH0.Vni6mgtPZTKO6t-BhG2C7LQgXGZUNFySkdLKrRSYDdU"
 SUPABASE_USER_ID = "b3cc2a9b-b50b-4684-aad1-c1e4c6d1e29f"  # senjay 用户
 
-# ── DeepSeek（校对，硬编码） ──
-DEEPSEEK_API_KEY = "sk-PLACEHOLDER_REPLACE_BEFORE_UPLOAD"
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-v4-pro"  # 实测 flash 推理深度不够：跟着谐音表反而过度改写，输出大量 🎼 符号 + 把 "Haiku/Sonnet/Opus" 全删了。pro 慢但稳。
-
 # ── SiliconFlow 语音识别（境内服务，替代 Groq——Groq 在国内 IP 直连 403） ──
 # 模型 FunAudioLLM/SenseVoiceSmall：阿里达摩院开源的中文语音识别，速度快质量好
 SILICONFLOW_API_KEY = "sk-PLACEHOLDER_SILICONFLOW"
@@ -277,68 +272,6 @@ def transcribe_with_rotation(chunks: list[str]) -> str:
     return "\n\n".join(all_text)
 
 
-def polish(raw: str) -> str:
-    # 加速选项：传 SKIP_POLISH=1 时跳过 DeepSeek 校对（节省 30-90 秒）
-    # 适合长视频或不在意术语精确性的场景
-    if os.environ.get("SKIP_POLISH") in ("1", "true", "yes"):
-        log("[校对] SKIP_POLISH=1，跳过校对直接输出 Whisper 原稿")
-        return raw
-    log("[校对] DeepSeek 修正中...")
-    # 用显式映射表代替"靠模型推理判断"，让 v4-flash 不靠思考也能修对
-    # （v4-flash 推理深度不足，单纯描述任务它判断不出 "CloudOps" 是 "Claude Opus"，
-    #  但给它一张表让它做查找替换就能精准修复）
-    prompt = f"""你是 Whisper 语音转录后处理编辑。Whisper 把英文术语听成的中文谐音必须按下表替换：
-
-| Whisper 误识 | 正确术语 |
-|---|---|
-| Cloud / 克劳德 | Claude |
-| CloudOps / 克劳德 Ops | Claude Opus |
-| Hiku / 嗨库 / 海库 | Haiku |
-| Sonic / 索尼克 / 索奈特 | Sonnet |
-| Genimini / 杰明尼 / 杰米尼 | Gemini |
-| Open AI 的 | OpenAI |
-| GPT-five / GPT 五 | GPT-5 |
-| 卡德 / 卡尔德 | Cursor |
-
-任务：
-1. 严格按上表替换所有出现的谐音词（重要！这是必修项）
-2. 其它技术产品名按官方写法（JavaScript / GitHub / Python / VSCode 等）
-3. 长段无标点文本根据语义断句、加标点、按话题自然分段
-4. 精简重复的语气词（"就是说""然后然后"），但保留自然表达
-5. 绝不增删实质内容、不改变原意
-
-直接输出修正后的正文，不要前言/标题/解释。段间空一行。
-
-## 原文
-{raw}"""
-    transport = httpx.HTTPTransport(proxy=PROXY) if PROXY else None
-    client_kwargs = {"timeout": 180.0}
-    if transport:
-        client_kwargs["transport"] = transport
-    try:
-        with httpx.Client(**client_kwargs) as client:
-            resp = client.post(
-                DEEPSEEK_BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": DEEPSEEK_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 8192,
-                },
-            )
-        if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"]
-        log(f"[校对] DeepSeek {resp.status_code}，跳过校对")
-        return raw
-    except Exception as e:
-        log(f"[校对] 异常: {e}，跳过")
-        return raw
-
-
 def main():
     if not is_url(BILIBILI_URL):
         print("ERROR: BILIBILI_URL 不是合法链接", file=sys.stderr)
@@ -350,8 +283,7 @@ def main():
         media_path, title = download_audio(BILIBILI_URL, tmp)
         audio = extract_audio(media_path, tmp)
         chunks = split_audio(audio, tmp)
-        raw = transcribe_with_rotation(chunks)
-        polished = polish(raw)
+        polished = transcribe_with_rotation(chunks)
 
     # ── 输出 Markdown 到 stdout（scheduler 会捕获并送飞书） ──
     print(f"# {title}")
