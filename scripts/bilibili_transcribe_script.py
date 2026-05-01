@@ -183,6 +183,7 @@ def download_audio(url: str, tmp_dir: str) -> tuple[str, str]:
         "outtmpl": output_template,
         "quiet": True,
         "no_warnings": True,
+        "no_progress": True,  # 关掉下载进度条，避免污染 stdout（最终 Markdown）
         # B 站反爬三件套：Referer + 合法 UA + cookies（buvid3 / SESSDATA / bili_jct）
         # 缺 cookie 经常 412 Precondition Failed
         "http_headers": {

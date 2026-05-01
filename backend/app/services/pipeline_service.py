@@ -524,7 +524,10 @@ async def run_stream(
                     full_output = msg.get("output") or full_output
                     break
             if full_output:
-                yield PipelineEvent(type="text_chunk", data={"content": full_output})
+                # 分块 yield 模拟流式（单个 11K+ 字符 chunk 前端渲染会丢帧/延迟）
+                CHUNK = 400
+                for i in range(0, len(full_output), CHUNK):
+                    yield PipelineEvent(type="text_chunk", data={"content": full_output[i:i + CHUNK]})
             yield PipelineEvent(type="done", data={
                 "tool_calls": all_tool_calls,
                 "file_attachments": all_file_attachments,
