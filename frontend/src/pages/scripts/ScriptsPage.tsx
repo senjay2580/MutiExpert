@@ -51,6 +51,86 @@ const EMPTY_FORM: FormData = {
   script_type: 'typescript',
 };
 
+// ======================== Terminal Block (macOS 风格) ========================
+
+interface TerminalBlockProps {
+  title?: string;          // 顶部标题（如 "stdout" / "stderr" / "script.py"）
+  variant?: 'output' | 'error' | 'code';
+  children: React.ReactNode;
+  height?: string;         // tailwind h-* 类
+  className?: string;
+}
+
+/** macOS 终端样式容器：红黄绿圆点 + 暗背景 + 等宽字体 */
+function TerminalBlock({ title, variant = 'output', children, height = 'h-[420px]', className }: TerminalBlockProps) {
+  const titleColor =
+    variant === 'error' ? 'text-rose-300'
+    : variant === 'code' ? 'text-sky-300'
+    : 'text-zinc-300';
+  return (
+    <div className={cn(
+      'overflow-hidden rounded-xl border border-zinc-700/60 bg-[#1e1e1f] shadow-lg shadow-black/30',
+      className
+    )}>
+      {/* 标题栏 */}
+      <div className="flex items-center gap-2 border-b border-zinc-700/60 bg-gradient-to-b from-[#3a3a3c] to-[#2c2c2e] px-3 py-2">
+        <div className="flex gap-1.5">
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57] shadow-inner shadow-black/20" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e] shadow-inner shadow-black/20" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840] shadow-inner shadow-black/20" />
+        </div>
+        <span className={cn('mx-auto select-none text-[11px] font-medium tracking-wide', titleColor)}>
+          {title ?? (variant === 'error' ? '— stderr —' : variant === 'code' ? '— script —' : '— stdout —')}
+        </span>
+        <span className="w-12" /> {/* 平衡左侧圆点 */}
+      </div>
+      {/* 内容区 */}
+      <div className={cn('overflow-auto bg-[#1e1e1f] px-4 py-3 font-mono text-[12.5px] leading-[1.55] text-zinc-100', height)}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** 给 Python traceback / 普通日志着色：File 行蓝、ErrorType 红、[xxx] 标签紫 */
+function FormattedLog({ text, isError = false }: { text: string; isError?: boolean }) {
+  // 按行处理，命中模式时套不同颜色
+  const lines = text.split('\n');
+  return (
+    <pre className="whitespace-pre-wrap break-all">
+      {lines.map((line, idx) => {
+        // Python "File ... line N, in func"
+        if (/^\s*File\s+".*",\s*line\s+\d+/.test(line)) {
+          return <div key={idx} className="text-sky-400">{line}</div>;
+        }
+        // 错误类型行：以 SomeError: 开头（Python 异常）
+        if (/^[A-Z][A-Za-z]*Error:\s/.test(line) || /^\w+Exception:\s/.test(line)) {
+          return <div key={idx} className="font-semibold text-rose-400">{line}</div>;
+        }
+        // Traceback header
+        if (/^Traceback\s/.test(line)) {
+          return <div key={idx} className="text-amber-400">{line}</div>;
+        }
+        // 脚本里的 [xxx] 标签
+        const tag = line.match(/^(\[[^\]]+\])(.*)/);
+        if (tag) {
+          return (
+            <div key={idx}>
+              <span className="text-violet-400">{tag[1]}</span>
+              <span className={isError ? 'text-rose-200' : 'text-zinc-100'}>{tag[2]}</span>
+            </div>
+          );
+        }
+        // WARNING / ERROR 关键字
+        if (/WARNING:|ERROR:/.test(line)) {
+          return <div key={idx} className="text-amber-300">{line}</div>;
+        }
+        return <div key={idx} className={isError ? 'text-rose-200' : 'text-zinc-100'}>{line || ' '}</div>;
+      })}
+    </pre>
+  );
+}
+
 // ======================== Test Result Dialog ========================
 
 interface TestResultDialogProps {
@@ -63,7 +143,9 @@ interface TestResultDialogProps {
 function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResultDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent
+        className="w-[95vw] !max-w-[1400px] h-[88vh] flex flex-col p-6"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {result?.success ? (
@@ -81,43 +163,39 @@ function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResult
           </DialogTitle>
         </DialogHeader>
 
-        {result?.timed_out && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-            脚本执行超时
-          </div>
-        )}
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
+          {result?.timed_out && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+              脚本执行超时
+            </div>
+          )}
 
-        {result?.warnings && result.warnings.length > 0 && (
-          <div className="space-y-1">
-            {result.warnings.map((w, i) => (
-              <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-                {w}
-              </div>
-            ))}
-          </div>
-        )}
+          {result?.warnings && result.warnings.length > 0 && (
+            <div className="space-y-1">
+              {result.warnings.map((w, i) => (
+                <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                  {w}
+                </div>
+              ))}
+            </div>
+          )}
 
-        {result?.output && (
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-muted-foreground">输出</p>
-            <pre className="max-h-60 overflow-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">
-              {result.output}
-            </pre>
-          </div>
-        )}
+          {result?.output && (
+            <TerminalBlock title="stdout" variant="output" height="h-[36vh]">
+              <FormattedLog text={result.output} />
+            </TerminalBlock>
+          )}
 
-        {result?.error && (
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-destructive">错误</p>
-            <pre className="max-h-60 overflow-auto rounded-lg border border-destructive/20 bg-destructive/5 p-3 font-mono text-xs leading-relaxed text-destructive whitespace-pre-wrap break-all">
-              {result.error}
-            </pre>
-          </div>
-        )}
+          {result?.error && (
+            <TerminalBlock title="stderr / traceback" variant="error" height="h-[36vh]">
+              <FormattedLog text={result.error} isError />
+            </TerminalBlock>
+          )}
 
-        {!result?.output && !result?.error && (
-          <p className="text-sm text-muted-foreground">无输出</p>
-        )}
+          {!result?.output && !result?.error && (
+            <p className="text-sm text-muted-foreground">无输出</p>
+          )}
+        </div>
 
         <DialogFooter>
           <SolidButton color="secondary" onClick={() => onOpenChange(false)}>
@@ -599,12 +677,12 @@ export default function ScriptsPage() {
 
       {/* ======================== Create / Edit Dialog ======================== */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-[95vw] !max-w-[1400px] h-[88vh] flex flex-col p-6">
           <DialogHeader>
             <DialogTitle>{editingScript ? '编辑脚本' : '新建脚本'}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
             <div>
               <label className="mb-1 block text-xs text-muted-foreground">脚本名称 *</label>
               <Input
@@ -680,14 +758,27 @@ export default function ScriptsPage() {
                   </div>
                 </div>
               )}
-              <Textarea
-                placeholder="在此编写脚本内容..."
-                value={form.script_content}
-                onChange={(e) => setForm({ ...form, script_content: e.target.value })}
-                rows={16}
-                className="font-mono text-xs leading-relaxed h-[320px] min-h-0 resize-none overflow-y-auto"
-                spellCheck={false}
-              />
+              <div className="overflow-hidden rounded-xl border border-zinc-700/60 bg-[#1e1e1f] shadow-lg shadow-black/30">
+                {/* macOS 风格标题栏 */}
+                <div className="flex items-center gap-2 border-b border-zinc-700/60 bg-gradient-to-b from-[#3a3a3c] to-[#2c2c2e] px-3 py-2">
+                  <div className="flex gap-1.5">
+                    <span className="h-3 w-3 rounded-full bg-[#ff5f57] shadow-inner shadow-black/20" />
+                    <span className="h-3 w-3 rounded-full bg-[#febc2e] shadow-inner shadow-black/20" />
+                    <span className="h-3 w-3 rounded-full bg-[#28c840] shadow-inner shadow-black/20" />
+                  </div>
+                  <span className="mx-auto select-none text-[11px] font-medium tracking-wide text-sky-300">
+                    {form.script_type === 'python' ? '— script.py —' : '— script.ts —'}
+                  </span>
+                  <span className="w-12" />
+                </div>
+                <Textarea
+                  placeholder="# 在此编写脚本内容..."
+                  value={form.script_content}
+                  onChange={(e) => setForm({ ...form, script_content: e.target.value })}
+                  className="!h-[52vh] min-h-0 resize-none overflow-y-auto rounded-none border-0 bg-[#1e1e1f] px-4 py-3 font-mono text-[12.5px] leading-[1.55] text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  spellCheck={false}
+                />
+              </div>
             </div>
           </div>
 
