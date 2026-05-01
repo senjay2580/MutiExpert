@@ -195,12 +195,17 @@ def format_result(result: dict[str, Any]) -> str:
         lines = []
         for i, item in enumerate(data[:20], 1):
             if isinstance(item, dict):
-                name = item.get("name") or item.get("title") or item.get("id", "")
+                name = item.get("name") or item.get("title") or ""
+                item_id = item.get("id", "")
                 status = item.get("status") or item.get("enabled")
+                parts = [f"{i}."]
+                if name:
+                    parts.append(str(name))
+                if item_id:
+                    parts.append(f"id={item_id}")
                 if status is not None:
-                    lines.append(f"{i}. {name} [{status}]")
-                else:
-                    lines.append(f"{i}. {name}")
+                    parts.append(f"[{status}]")
+                lines.append(" ".join(parts))
             else:
                 lines.append(f"{i}. {item}")
         header = f"共 {len(data)} 条结果"
