@@ -42,15 +42,25 @@ BILIBILI_PATTERN = re.compile(r"(bilibili\.com|b23\.tv|BV[a-zA-Z0-9]+)")
 
 
 # ── 启动时自装依赖（容器无预装） ──
+# 注意：sandbox 是 root 容器，直接装全局 site-packages，不要用 --user。
+# 因为 sys.path 在解释器启动时已固定，pip install --user 装到 ~/.local/...
+# 但 sys.path 不会自动重新加载，导致 install 完仍然 ImportError。
 def ensure_pkg(pkg: str, import_name: str | None = None):
+    name = import_name or pkg.replace("-", "_")
     try:
-        __import__(import_name or pkg.replace("-", "_"))
+        __import__(name)
+        return
     except ImportError:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "--user",
-             "-i", "https://mirrors.aliyun.com/pypi/simple/", pkg],
-            check=True,
-        )
+        pass
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet",
+         "-i", "https://mirrors.aliyun.com/pypi/simple/", pkg],
+        check=True,
+    )
+    # 装到全局 site-packages 后让 importlib 看到新包
+    import importlib
+    importlib.invalidate_caches()
+    __import__(name)
 
 ensure_pkg("yt-dlp", "yt_dlp")
 ensure_pkg("imageio-ffmpeg", "imageio_ffmpeg")
@@ -82,6 +92,11 @@ def download_audio(url: str, tmp_dir: str) -> tuple[str, str]:
         "outtmpl": output_template,
         "quiet": True,
         "no_warnings": True,
+        # B 站反爬：必须带 Referer + 合法 User-Agent，否则 412 Precondition Failed
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://www.bilibili.com/",
+        },
     }
     if PROXY:
         ydl_opts["proxy"] = PROXY

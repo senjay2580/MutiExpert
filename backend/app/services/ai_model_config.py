@@ -34,11 +34,14 @@ DEFAULT_MODEL_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "DeepSeek",
         "provider": "deepseek",
         "base_url": "https://api.deepseek.com",
-        "model": "deepseek-chat",
+        # 默认 V4 Pro：49B 激活，工具调用循环稳定。
+        # 注：legacy alias deepseek-chat / deepseek-reasoner 已映射到 V4-flash 思考模式，
+        # 工具调用容易"准备完就停"，且 2026-07-24 弃用，故不再列入默认选项。
+        "model": "deepseek-v4-pro",
         "extras": {
             "available_models": [
-                {"id": "deepseek-chat", "name": "DeepSeek-V3"},
-                {"id": "deepseek-reasoner", "name": "DeepSeek-R1"},
+                {"id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro"},
+                {"id": "deepseek-v4-flash", "name": "DeepSeek-V4-Flash"},
             ],
         },
     },
