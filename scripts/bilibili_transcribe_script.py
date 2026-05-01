@@ -36,8 +36,13 @@ DEEPSEEK_API_KEY = "sk-PLACEHOLDER_REPLACE_BEFORE_UPLOAD"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-v4-pro"
 
-WHISPER_MODEL = "whisper-large-v3"
-MAX_FILE_SIZE = 24 * 1024 * 1024  # Groq 25MB 限制留 1MB 余量
+# ── SiliconFlow 语音识别（境内服务，替代 Groq——Groq 在国内 IP 直连 403） ──
+# 模型 FunAudioLLM/SenseVoiceSmall：阿里达摩院开源的中文语音识别，速度快质量好
+SILICONFLOW_API_KEY = "sk-PLACEHOLDER_SILICONFLOW"
+SILICONFLOW_TRANSCRIBE_URL = "https://api.siliconflow.cn/v1/audio/transcriptions"
+SILICONFLOW_MODEL = "FunAudioLLM/SenseVoiceSmall"
+
+MAX_FILE_SIZE = 24 * 1024 * 1024  # 单文件转录上限（多分段）
 BILIBILI_PATTERN = re.compile(r"(bilibili\.com|b23\.tv|BV[a-zA-Z0-9]+)")
 
 # 运行时填充
@@ -46,38 +51,49 @@ BILIBILI_COOKIE: str = ""
 
 
 # ── 启动时自装依赖（容器无预装） ──
-# 历史坑 1：之前用 --user 装到 ~/.local/...，但当前进程 sys.path 不会重新
-#         加载 user site-packages，导致 install 完仍然 ImportError。
-# 历史坑 2：之前 --user 留下的 yt-dlp 旧版本即使我装新版到 global，sys.path
-#         里 user 路径优先，仍然 import 旧版（B站 412 修不掉）→ 主动从
-#         sys.path 移除 user 路径，并 --upgrade 强制升级 yt-dlp 到最新版。
-import site as _site
-_user_site = _site.getusersitepackages()
-sys.path = [p for p in sys.path if _user_site not in p]
+# 历史坑：B站反爬随版本更新，必须用最新 yt-dlp。但之前 --user 装的旧版
+# 残留在 ~/.local/...，即使 pip install --upgrade，新版也可能装回 user 路径。
+# 解决：force_reinstall 模式 = 先 pip uninstall -y 清所有位置的旧版，
+# 再用 --break-system-packages 强制装到全局 site-packages，确保 import 新版。
+def _pip_run(args: list[str]) -> tuple[int, str]:
+    cmd = [sys.executable, "-m", "pip", *args, "-i", "https://mirrors.aliyun.com/pypi/simple/"]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    return r.returncode, (r.stderr or r.stdout)
 
 
-def ensure_pkg(pkg: str, import_name: str | None = None, upgrade: bool = False):
+def ensure_pkg(pkg: str, import_name: str | None = None, force_reinstall: bool = False):
     name = import_name or pkg.replace("-", "_")
-    if not upgrade:
+    if not force_reinstall:
         try:
             __import__(name)
             return
         except ImportError:
             pass
-    cmd = [sys.executable, "-m", "pip", "install", "--quiet",
-           "-i", "https://mirrors.aliyun.com/pypi/simple/"]
-    if upgrade:
-        cmd.append("--upgrade")
-    cmd.append(pkg)
-    subprocess.run(cmd, check=True)
+    if force_reinstall:
+        # 静默卸所有位置的旧版（user / global / venv），不报错
+        subprocess.run(
+            [sys.executable, "-m", "pip", "uninstall", "-y", pkg],
+            capture_output=True,
+        )
+    # 装最新版。--break-system-packages 兜底 PEP 668 容器（Debian 12+ 的 EXTERNALLY-MANAGED）
+    rc, out = _pip_run(["install", "--break-system-packages", pkg])
+    if rc != 0:
+        # 兜底再试不带 --break-system-packages（老版 pip 不认这个 flag）
+        rc, out = _pip_run(["install", pkg])
+        if rc != 0:
+            raise RuntimeError(f"pip install {pkg} failed: {out[-500:]}")
+
+    # 装完后让 site / sys.modules 都重新加载
     import importlib
+    import site as _site
+    importlib.reload(_site)
     importlib.invalidate_caches()
     if name in sys.modules:
         del sys.modules[name]
     __import__(name)
 
-# yt-dlp 必须 --upgrade：B 站反爬规则经常变，老版本会 412
-ensure_pkg("yt-dlp", "yt_dlp", upgrade=True)
+# yt-dlp 必须 force_reinstall：B 站反爬规则经常变，且要清掉之前 --user 装的旧版
+ensure_pkg("yt-dlp", "yt_dlp", force_reinstall=True)
 ensure_pkg("imageio-ffmpeg", "imageio_ffmpeg")
 ensure_pkg("httpx")
 
@@ -132,8 +148,8 @@ def fetch_supabase_secrets():
         else:
             log("[supabase] 警告：未拉到 B站 cookie，B 站下载可能 412")
 
-    if not GROQ_API_KEYS:
-        raise RuntimeError("Groq key 池为空，请在 FluxFilter 的 supabase ai_config 添加 whisper-large-v3 类型 key")
+    # Groq 在国内 IP 直连 403，已切换到 SiliconFlow（境内）。
+    # GROQ_API_KEYS 为空也不报错——保留 supabase 拉取仅作历史兼容。
 
 
 def cookie_str_to_netscape_file(cookie_str: str, out_path: str):
@@ -224,47 +240,35 @@ def split_audio(audio_path: str, tmp_dir: str, chunk_seconds: int = 600) -> list
     return [str(c) for c in chunks]
 
 
-def call_groq(audio_path: str, api_key: str) -> tuple[int, object]:
+def call_siliconflow(audio_path: str) -> tuple[int, object]:
+    """SiliconFlow 兼容 OpenAI Whisper API 接口。
+    境内服务，避开 Groq 在国内 IP 被 403 Forbidden 的地理限制。"""
     transport = httpx.HTTPTransport(proxy=PROXY) if PROXY else None
     with open(audio_path, "rb") as f:
         files = {"file": (os.path.basename(audio_path), f, "audio/wav")}
-        data = {
-            "model": WHISPER_MODEL,
-            "response_format": "verbose_json",
-            "language": LANG,
-            "temperature": "0",
-        }
+        data = {"model": SILICONFLOW_MODEL}
         client_kwargs = {"timeout": 300.0}
         if transport:
             client_kwargs["transport"] = transport
         with httpx.Client(**client_kwargs) as client:
             resp = client.post(
-                "https://api.groq.com/openai/v1/audio/transcriptions",
-                headers={"Authorization": f"Bearer {api_key}"},
+                SILICONFLOW_TRANSCRIBE_URL,
+                headers={"Authorization": f"Bearer {SILICONFLOW_API_KEY}"},
                 files=files, data=data,
             )
     return resp.status_code, resp
 
 
 def transcribe_with_rotation(chunks: list[str]) -> str:
+    """SiliconFlow 单 key 即可，函数名保持兼容旧调用。"""
     all_text = []
-    idx = 0
     for i, chunk in enumerate(chunks):
         log(f"[转录] {i+1}/{len(chunks)}")
-        tried = 0
-        while tried < len(GROQ_API_KEYS):
-            status, resp = call_groq(chunk, GROQ_API_KEYS[idx])
-            if status == 200:
-                all_text.append(resp.json().get("text", ""))
-                break
-            if status == 429:
-                log(f"[轮询] Key{idx+1} 限速，切下一个")
-                idx = (idx + 1) % len(GROQ_API_KEYS)
-                tried += 1
-                continue
-            raise RuntimeError(f"Groq {status}: {resp.text[:300]}")
+        status, resp = call_siliconflow(chunk)
+        if status == 200:
+            all_text.append(resp.json().get("text", ""))
         else:
-            raise RuntimeError("所有 Key 都已耗尽")
+            raise RuntimeError(f"SiliconFlow {status}: {resp.text[:300]}")
     return "\n\n".join(all_text)
 
 

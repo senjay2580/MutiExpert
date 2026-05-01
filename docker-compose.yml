@@ -42,13 +42,17 @@ services:
           memory: 1G
 
   frontend:
-    # frontend/dist 由 GitHub Actions 在 runner 上 build 完通过 scp 投递到 ./frontend/dist/
-    # 此处的 docker build 只是把 dist + nginx.conf 装进 nginx:alpine（秒级，~30MB）
+    # frontend/dist 由 GitHub Actions runner build 完通过 scp 投递到 ./frontend/dist/，
+    # 通过 bind mount 直接给 nginx serve（不再 COPY 进镜像，避免 BuildKit cache
+    # 命中让新 dist 上不了线）。改前端 = scp 完立即生效，不需要 docker build。
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: mutiexpert-web
     restart: always
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
     deploy:
