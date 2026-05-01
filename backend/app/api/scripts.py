@@ -110,13 +110,14 @@ async def delete_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 @router.post("/{script_id}/test")
 async def test_script(
     script_id: uuid.UUID,
-    timeout: int = 30,
+    timeout: int = 600,
     body: ScriptTestBody | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """测试运行用户脚本。
 
-    - **timeout** (query 参数, 秒): 默认 30，最大 900。长任务（视频转录、爬虫）建议 600。
+    - **timeout** (query 参数, 秒): 默认 600（10 分钟，兼顾长任务），最大 900。
+      想跑超长任务（30 分钟视频转录）传 timeout=900。
     - **env** (body 字段): 注入到脚本进程的环境变量字典，脚本用 `os.environ.get("键")`
       读取。例如 B站视频转录脚本可传 `{"env": {"BILIBILI_URL": "https://..."}}` 切换视频。
     """

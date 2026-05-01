@@ -114,11 +114,16 @@ async def _run_process(
         )
     except asyncio.TimeoutError:
         proc.kill()
-        await proc.communicate()
+        # 超时也尽量读取已写入 buffer 的 stdout/stderr，方便定位卡在哪一步
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
+        except asyncio.TimeoutError:
+            stdout, stderr = b"", b""
+        timeout_marker = f"\n\n[脚本执行超时（{timeout_seconds}秒）被强制终止 — 上面是超时前的输出]"
         return ScriptResult(
             success=False,
-            output="",
-            error=f"脚本执行超时（{timeout_seconds}秒）",
+            output=stdout.decode("utf-8", errors="replace").strip(),
+            error=(stderr.decode("utf-8", errors="replace").strip() + timeout_marker),
             timed_out=True,
         )
 

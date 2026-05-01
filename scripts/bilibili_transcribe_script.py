@@ -278,6 +278,11 @@ def transcribe_with_rotation(chunks: list[str]) -> str:
 
 
 def polish(raw: str) -> str:
+    # 加速选项：传 SKIP_POLISH=1 时跳过 DeepSeek 校对（节省 30-90 秒）
+    # 适合长视频或不在意术语精确性的场景
+    if os.environ.get("SKIP_POLISH") in ("1", "true", "yes"):
+        log("[校对] SKIP_POLISH=1，跳过校对直接输出 Whisper 原稿")
+        return raw
     log("[校对] DeepSeek 修正中...")
     # 用显式映射表代替"靠模型推理判断"，让 v4-flash 不靠思考也能修对
     # （v4-flash 推理深度不足，单纯描述任务它判断不出 "CloudOps" 是 "Claude Opus"，
