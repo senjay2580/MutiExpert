@@ -103,13 +103,20 @@ async def delete_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/{script_id}/test")
-async def test_script(script_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def test_script(
+    script_id: uuid.UUID,
+    timeout: int = 30,
+    db: AsyncSession = Depends(get_db),
+):
+    """timeout (query 参数)：单次执行超时秒数，默认 30，最大 900。
+    长任务（视频转录、爬虫等）建议传 timeout=600。"""
     script = await _get_script_or_404(script_id, db)
+    timeout = max(1, min(timeout, 900))  # 限制 1-900 秒
     # 预处理：解析系统配置环境变量 + 检测硬编码密钥
     env_result = await prepare_script_env(db, script.script_content)
     result = await execute_script(
         script.script_content,
-        timeout_seconds=30,
+        timeout_seconds=timeout,
         script_type=script.script_type or "typescript",
         extra_env=env_result.env_vars,
     )

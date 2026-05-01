@@ -92,8 +92,8 @@ def ensure_pkg(pkg: str, import_name: str | None = None, force_reinstall: bool =
         del sys.modules[name]
     __import__(name)
 
-# yt-dlp 必须 force_reinstall：B 站反爬规则经常变，且要清掉之前 --user 装的旧版
-ensure_pkg("yt-dlp", "yt_dlp", force_reinstall=True)
+# 这些包已预装在 backend 容器（pyproject.toml 里），ensure_pkg 会立刻 import 跳过 install
+ensure_pkg("yt-dlp", "yt_dlp")
 ensure_pkg("imageio-ffmpeg", "imageio_ffmpeg")
 ensure_pkg("httpx")
 

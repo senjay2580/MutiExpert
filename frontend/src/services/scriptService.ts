@@ -23,8 +23,14 @@ export const scriptService = {
   update: (id: string, data: Partial<UserScript>) =>
     api.put<UserScript & { warnings?: string[] }>(`/scripts/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/scripts/${id}`),
-  test: (id: string) =>
-    api.post<ScriptTestResult>(`/scripts/${id}/test`).then((r) => r.data),
+  /** 测试脚本。timeout 单位秒，默认 600（适配长任务如视频转录）。
+   * axios timeout 也设 timeout+30 秒留余量，确保前端等够 */
+  test: (id: string, timeout: number = 600) =>
+    api
+      .post<ScriptTestResult>(`/scripts/${id}/test?timeout=${timeout}`, undefined, {
+        timeout: (timeout + 30) * 1000,
+      })
+      .then((r) => r.data),
   listEnvVars: () =>
     api.get<EnvVarInfo[]>('/scripts/env-vars/available').then((r) => r.data),
 };

@@ -29,6 +29,9 @@ dependencies = [
     "pgvector>=0.3.0",
     "croniter>=2.0.5",
     "cryptography>=42.0.0",
+    # 用户脚本沙箱常用依赖（预装避免每次 pip install --break-system-packages 拖延）
+    "yt-dlp>=2024.10.7",
+    "imageio-ffmpeg>=0.5.0",
 ]
 
 [project.optional-dependencies]
