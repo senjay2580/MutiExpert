@@ -9,7 +9,6 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models.extras import ScheduledTask
 from app.models.knowledge import KnowledgeBase
-from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.ai_service import stream_chat
 from app.services.feishu_service import get_feishu_service, build_stream_card
 from app.services.skill_executor import execute_skill
