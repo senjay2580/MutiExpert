@@ -1,7 +1,9 @@
 import asyncio
+import logging
 from contextlib import suppress
 from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 from croniter import croniter
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
@@ -13,6 +15,11 @@ from app.services.feishu_service import get_feishu_service, build_stream_card
 from app.services.skill_executor import execute_skill
 from app.services.script_executor import execute_script
 
+logger = logging.getLogger(__name__)
+
+TZ_UTC = ZoneInfo("UTC")
+TZ_LOCAL = ZoneInfo("Asia/Shanghai")
+
 
 async def _generate_text(messages: list[dict], provider: str, system_prompt: str, db) -> str:
     full_response = ""
@@ -22,14 +29,23 @@ async def _generate_text(messages: list[dict], provider: str, system_prompt: str
     return full_response
 
 
-def _is_due(task: ScheduledTask, now: datetime) -> bool:
-    base = task.last_run_at or task.created_at or now
+def _is_due(task: ScheduledTask, now_utc: datetime) -> bool:
+    base_utc = task.last_run_at or task.created_at or now_utc
+    # DB 里 last_run_at / created_at 是 naive UTC（utcnow() 写入），先标注成 aware UTC
+    if base_utc.tzinfo is None:
+        base_utc = base_utc.replace(tzinfo=TZ_UTC)
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=TZ_UTC)
+    # cron 表达式按用户期望的本地时区（Asia/Shanghai）解读
+    base_local = base_utc.astimezone(TZ_LOCAL)
+    now_local = now_utc.astimezone(TZ_LOCAL)
     try:
-        itr = croniter(task.cron_expression, base)
+        itr = croniter(task.cron_expression, base_local)
         next_run = itr.get_next(datetime)
-    except Exception:
+    except Exception as e:
+        logger.warning("Invalid cron for task %s (%s): %s", task.name, task.cron_expression, e)
         return False
-    return next_run <= now
+    return next_run <= now_local
 
 
 def _format_status(status: str) -> str:
@@ -62,14 +78,23 @@ async def _execute_task(task: ScheduledTask, db) -> tuple[bool, str]:
             if not kb_ids:
                 result = await db.execute(select(KnowledgeBase.id))
                 kb_ids = [row[0] for row in result.all()]
-            context, sources = await retrieve_context(db, prompt, kb_ids) if kb_ids else ("", [])
-            from app.services.system_prompt_service import build_system_prompt
-            system_prompt = await build_system_prompt(db, provider=provider, compact=True, include_scripts=False, include_tasks=False)
-            if context:
-                system_prompt += "\n\n" + build_rag_context(context, prompt)
-            response = await _generate_text([
-                {"role": "user", "content": prompt},
-            ], provider, system_prompt, db)
+
+            # 走和前端 AI 问答同一个 pipeline，支持工具调用 / RAG / 网络搜索循环。
+            # 之前直接 stream_chat() 会让模型产出的 <function_calls> XML 没人解析，
+            # 字面量推到飞书。
+            from app.services.pipeline_service import PipelineRequest, run_stream as pipeline_run_stream
+            request = PipelineRequest(
+                message=prompt,
+                channel="scheduled",
+                provider=provider,
+                modes={"knowledge"} if kb_ids else set(),
+                knowledge_base_ids=kb_ids,
+                history=[],
+            )
+            response = ""
+            async for event in pipeline_run_stream(request, db):
+                if event.type == "text_chunk":
+                    response += event.data.get("content", "")
 
             if config.get("push_to_feishu"):
                 svc = await get_feishu_service(db)
@@ -176,9 +201,17 @@ class SchedulerService:
             return await _execute_task(task, db)
 
     async def _loop(self) -> None:
+        logger.info("Scheduler loop started (tz=Asia/Shanghai, tick=30s)")
         while self._running:
-            await self._run_pending()
+            try:
+                await self._run_pending()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # 任何一次 tick 出错都不能让整个调度器死掉
+                logger.exception("Scheduler tick failed, will retry next cycle")
             await asyncio.sleep(30)
+        logger.info("Scheduler loop stopped")
 
     async def _run_pending(self) -> None:
         async with AsyncSessionLocal() as db:
@@ -186,5 +219,12 @@ class SchedulerService:
             result = await db.execute(select(ScheduledTask).where(ScheduledTask.enabled.is_(True)))
             tasks = result.scalars().all()
             for task in tasks:
-                if _is_due(task, now):
-                    await _execute_task(task, db)
+                try:
+                    if _is_due(task, now):
+                        logger.info("Executing scheduled task: %s (cron=%s)", task.name, task.cron_expression)
+                        await _execute_task(task, db)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # 单个任务失败不影响其他任务调度
+                    logger.exception("Scheduled task execution failed: %s", task.name)

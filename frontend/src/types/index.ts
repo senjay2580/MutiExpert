@@ -143,12 +143,23 @@ export interface ScheduledTask {
   updated_at: string;
 }
 
+export interface ScriptParameter {
+  name: string;
+  type: 'string' | 'integer' | 'number' | 'boolean' | 'enum';
+  description?: string | null;
+  required?: boolean;
+  default?: string | number | boolean | null;
+  options?: string[];
+}
+
 export interface UserScript {
   id: string;
   name: string;
   description: string | null;
   script_content: string;
   script_type: string;
+  parameters: ScriptParameter[];
+  expose_as_tool: boolean;
   created_by: string;
   last_test_at: string | null;
   last_test_status: string | null;

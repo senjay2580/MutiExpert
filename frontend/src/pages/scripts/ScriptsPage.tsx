@@ -32,16 +32,27 @@ import type { UserScript } from '@/types';
 
 type ScriptType = 'typescript' | 'python';
 
+type ScriptParamDraft = {
+  name: string;
+  type: 'string' | 'integer' | 'number' | 'boolean' | 'enum';
+  description: string;
+  required: boolean;
+  default: string;       // 表单内统一用 string 储存，提交时按 type 转换
+  optionsCsv: string;    // enum 类型时用逗号分隔
+};
+
 type FormData = {
   name: string;
   description: string;
   script_content: string;
   script_type: ScriptType;
+  parameters: ScriptParamDraft[];
+  expose_as_tool: boolean;
 };
 
 const SCRIPT_TEMPLATES: Record<ScriptType, string> = {
-  typescript: '// 在此编写你的 TypeScript 脚本\n// 脚本由 Deno 沙箱执行，支持 fetch 等 API\n// 使用 Deno.env.get("CLAUDE_API_KEY") 引用系统配置\n\nconsole.log("Hello, World!");\n',
-  python: '# 在此编写你的 Python 脚本\n# 使用 os.environ.get("CLAUDE_API_KEY") 引用系统配置\nimport os\n\nprint("Hello, World!")\n',
+  typescript: '// 在此编写你的 TypeScript 脚本\n// 脚本由 Deno 沙箱执行，支持 fetch 等 API\n// 使用 Deno.env.get("CLAUDE_API_KEY") 引用系统配置\n// 命名参数：Deno.env.get("SCRIPT_<NAME_UPPER>") 或 {{name}} 占位符\n\nconsole.log("Hello, World!");\n',
+  python: '# 在此编写你的 Python 脚本\n# 使用 os.environ.get("CLAUDE_API_KEY") 引用系统配置\n# 命名参数：os.environ.get("SCRIPT_<NAME_UPPER>") 或 {{name}} 占位符\nimport os\n\nprint("Hello, World!")\n',
 };
 
 const EMPTY_FORM: FormData = {
@@ -49,7 +60,45 @@ const EMPTY_FORM: FormData = {
   description: '',
   script_content: SCRIPT_TEMPLATES.typescript,
   script_type: 'typescript',
+  parameters: [],
+  expose_as_tool: false,
 };
+
+/** 把表单里的参数草稿转成 API 期望的 payload。 */
+function paramsDraftToPayload(drafts: ScriptParamDraft[]) {
+  return drafts
+    .filter((p) => p.name.trim())
+    .map((p) => {
+      const out: Record<string, unknown> = {
+        name: p.name.trim(),
+        type: p.type,
+        required: !!p.required,
+      };
+      if (p.description.trim()) out.description = p.description.trim();
+      if (p.default !== '' && p.default !== undefined) {
+        if (p.type === 'integer') out.default = parseInt(p.default, 10);
+        else if (p.type === 'number') out.default = parseFloat(p.default);
+        else if (p.type === 'boolean') out.default = p.default === 'true';
+        else out.default = p.default;
+      }
+      if (p.type === 'enum' && p.optionsCsv.trim()) {
+        out.options = p.optionsCsv.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+      return out;
+    });
+}
+
+/** 把后端返回的 parameters 转成表单草稿。 */
+function paramsToDraft(params: UserScript['parameters'] | undefined): ScriptParamDraft[] {
+  return (params || []).map((p) => ({
+    name: p.name,
+    type: p.type || 'string',
+    description: p.description || '',
+    required: !!p.required,
+    default: p.default === undefined || p.default === null ? '' : String(p.default),
+    optionsCsv: (p.options || []).join(', '),
+  }));
+}
 
 // ======================== Terminal Block (macOS 风格) ========================
 
@@ -69,11 +118,11 @@ function TerminalBlock({ title, variant = 'output', children, height = 'h-[420px
     : 'text-zinc-300';
   return (
     <div className={cn(
-      'overflow-hidden rounded-xl border border-zinc-700/60 bg-[#1e1e1f] shadow-lg shadow-black/30',
+      'flex flex-col overflow-hidden rounded-xl border border-zinc-700/60 bg-[#1e1e1f] shadow-lg shadow-black/30',
       className
     )}>
       {/* 标题栏 */}
-      <div className="flex items-center gap-2 border-b border-zinc-700/60 bg-gradient-to-b from-[#3a3a3c] to-[#2c2c2e] px-3 py-2">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-zinc-700/60 bg-gradient-to-b from-[#3a3a3c] to-[#2c2c2e] px-3 py-2">
         <div className="flex gap-1.5">
           <span className="h-3 w-3 rounded-full bg-[#ff5f57] shadow-inner shadow-black/20" />
           <span className="h-3 w-3 rounded-full bg-[#febc2e] shadow-inner shadow-black/20" />
@@ -144,10 +193,11 @@ function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResult
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex flex-col p-6"
+        showWindowDots={false}
+        className="flex flex-col gap-4 p-6"
         style={{ width: '95vw', maxWidth: '1400px', height: '88vh' }}
       >
-        <DialogHeader>
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             {result?.success ? (
               <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
@@ -164,15 +214,15 @@ function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResult
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
+        <div className="flex flex-1 min-h-0 flex-col gap-3 pr-1">
           {result?.timed_out && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+            <div className="flex-shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
               脚本执行超时
             </div>
           )}
 
           {result?.warnings && result.warnings.length > 0 && (
-            <div className="space-y-1">
+            <div className="flex-shrink-0 space-y-1">
               {result.warnings.map((w, i) => (
                 <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
                   {w}
@@ -182,13 +232,23 @@ function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResult
           )}
 
           {result?.output && (
-            <TerminalBlock title="stdout" variant="output" height="h-[36vh]">
+            <TerminalBlock
+              title="stdout"
+              variant="output"
+              height="flex-1 min-h-0"
+              className="flex-1 min-h-0"
+            >
               <FormattedLog text={result.output} />
             </TerminalBlock>
           )}
 
           {result?.error && (
-            <TerminalBlock title="stderr / traceback" variant="error" height="h-[36vh]">
+            <TerminalBlock
+              title="stderr / traceback"
+              variant="error"
+              height="flex-1 min-h-0"
+              className="flex-1 min-h-0"
+            >
               <FormattedLog text={result.error} isError />
             </TerminalBlock>
           )}
@@ -198,7 +258,7 @@ function TestResultDialog({ open, onOpenChange, scriptName, result }: TestResult
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           <SolidButton color="secondary" onClick={() => onOpenChange(false)}>
             关闭
           </SolidButton>
@@ -244,7 +304,9 @@ export default function ScriptsPage() {
             description: payload.data.description ?? undefined,
             script_content: payload.data.script_content!,
             script_type: payload.data.script_type || 'typescript',
-          }),
+            parameters: payload.data.parameters ?? [],
+            expose_as_tool: payload.data.expose_as_tool ?? false,
+          } as Parameters<typeof scriptService.create>[0]),
     onSuccess: (_data, payload) => {
       queryClient.invalidateQueries({ queryKey: ['scripts'] });
       setShowForm(false);
@@ -294,16 +356,55 @@ export default function ScriptsPage() {
     onError: () => toast.error('批量删除失败'),
   });
 
-  const handleTest = async (script: UserScript) => {
+  // 测试运行时如果脚本有参数定义，先弹窗收值；否则直接跑。
+  const [paramsDialog, setParamsDialog] = useState<{ script: UserScript; values: Record<string, string> } | null>(null);
+
+  const runScriptTest = async (script: UserScript, params?: Record<string, unknown>) => {
     setTestingId(script.id);
     try {
-      const result = await scriptService.test(script.id);
+      const result = await scriptService.test(script.id, 600, params ? { params } : undefined);
       setTestResult({ scriptName: script.name, result });
       setTestResultOpen(true);
     } finally {
       setTestingId(null);
       queryClient.invalidateQueries({ queryKey: ['scripts'] });
     }
+  };
+
+  const handleTest = async (script: UserScript) => {
+    if (script.parameters && script.parameters.length > 0) {
+      // 用 default 预填，让用户在弹窗里调整
+      const initial: Record<string, string> = {};
+      for (const p of script.parameters) {
+        initial[p.name] = p.default !== undefined && p.default !== null ? String(p.default) : '';
+      }
+      setParamsDialog({ script, values: initial });
+      return;
+    }
+    await runScriptTest(script);
+  };
+
+  const submitParamsDialog = async () => {
+    if (!paramsDialog) return;
+    const { script, values } = paramsDialog;
+    // 按 type 转换
+    const coerced: Record<string, unknown> = {};
+    for (const p of script.parameters) {
+      const v = values[p.name];
+      if (v === '' || v === undefined) {
+        if (p.required) {
+          toast.error(`参数 "${p.name}" 必填`);
+          return;
+        }
+        continue;
+      }
+      if (p.type === 'integer') coerced[p.name] = parseInt(v, 10);
+      else if (p.type === 'number') coerced[p.name] = parseFloat(v);
+      else if (p.type === 'boolean') coerced[p.name] = v === 'true';
+      else coerced[p.name] = v;
+    }
+    setParamsDialog(null);
+    await runScriptTest(script, coerced);
   };
 
   const openCreate = () => {
@@ -319,6 +420,8 @@ export default function ScriptsPage() {
       description: script.description ?? '',
       script_content: script.script_content,
       script_type: (script.script_type as ScriptType) || 'typescript',
+      parameters: paramsToDraft(script.parameters),
+      expose_as_tool: !!script.expose_as_tool,
     });
     setShowForm(true);
   };
@@ -332,6 +435,8 @@ export default function ScriptsPage() {
         description: form.description || null,
         script_content: form.script_content,
         script_type: form.script_type,
+        parameters: paramsDraftToPayload(form.parameters) as unknown as UserScript['parameters'],
+        expose_as_tool: form.expose_as_tool,
       },
     });
   };
@@ -733,6 +838,145 @@ export default function ScriptsPage() {
               </div>
             </div>
 
+            {/* ============ 参数定义（脚本可被 AI 调用 / 测试时填值） ============ */}
+            <div className="rounded-xl border border-violet-200 bg-violet-50/30 p-3 dark:border-violet-800 dark:bg-violet-950/20">
+              <div className="mb-2 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium text-foreground">参数定义（可选）</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    脚本里用 <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{form.script_type === 'python' ? 'os.environ["SCRIPT_<NAME_UPPER>"]' : 'Deno.env.get("SCRIPT_<NAME_UPPER>")'}</code> 取值，或在脚本里用 <code className="rounded bg-violet-100 px-1 py-0.5 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{`{{name}}`}</code> 占位符
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md border border-violet-300 px-2.5 py-1 text-[11px] text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/40"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      parameters: [
+                        ...f.parameters,
+                        { name: '', type: 'string', description: '', required: false, default: '', optionsCsv: '' },
+                      ],
+                    }))
+                  }
+                >
+                  + 添加参数
+                </button>
+              </div>
+              {form.parameters.length === 0 ? (
+                <div className="rounded-md border border-dashed border-violet-200 bg-background/50 px-3 py-2 text-[11px] text-muted-foreground dark:border-violet-800">
+                  暂无参数。脚本不需要外部输入则可不加；若想让 AI 自动调用此脚本，建议定义参数。
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {form.parameters.map((p, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 rounded-md border border-border bg-background/60 p-2">
+                      <Input
+                        className="col-span-3 h-8 text-xs"
+                        placeholder="参数名（英文）"
+                        value={p.name}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setForm((f) => {
+                            const params = [...f.parameters];
+                            params[idx] = { ...params[idx], name: v };
+                            return { ...f, parameters: params };
+                          });
+                        }}
+                      />
+                      <select
+                        className="col-span-2 h-8 rounded-md border border-border bg-background px-2 text-xs"
+                        value={p.type}
+                        onChange={(e) => {
+                          const v = e.target.value as ScriptParamDraft['type'];
+                          setForm((f) => {
+                            const params = [...f.parameters];
+                            params[idx] = { ...params[idx], type: v };
+                            return { ...f, parameters: params };
+                          });
+                        }}
+                      >
+                        <option value="string">string</option>
+                        <option value="integer">integer</option>
+                        <option value="number">number</option>
+                        <option value="boolean">boolean</option>
+                        <option value="enum">enum</option>
+                      </select>
+                      <Input
+                        className="col-span-3 h-8 text-xs"
+                        placeholder="描述（给 AI 看的）"
+                        value={p.description}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setForm((f) => {
+                            const params = [...f.parameters];
+                            params[idx] = { ...params[idx], description: v };
+                            return { ...f, parameters: params };
+                          });
+                        }}
+                      />
+                      <Input
+                        className="col-span-2 h-8 text-xs"
+                        placeholder={p.type === 'enum' ? '选项,逗号分隔' : '默认值（可空）'}
+                        value={p.type === 'enum' ? p.optionsCsv : p.default}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setForm((f) => {
+                            const params = [...f.parameters];
+                            params[idx] = p.type === 'enum'
+                              ? { ...params[idx], optionsCsv: v }
+                              : { ...params[idx], default: v };
+                            return { ...f, parameters: params };
+                          });
+                        }}
+                      />
+                      <label className="col-span-1 flex items-center gap-1 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={p.required}
+                          onChange={(e) => {
+                            const v = e.target.checked;
+                            setForm((f) => {
+                              const params = [...f.parameters];
+                              params[idx] = { ...params[idx], required: v };
+                              return { ...f, parameters: params };
+                            });
+                          }}
+                        />
+                        必填
+                      </label>
+                      <button
+                        type="button"
+                        className="col-span-1 rounded-md border border-rose-300 px-2 py-1 text-[11px] text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            parameters: f.parameters.filter((_, i) => i !== idx),
+                          }))
+                        }
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ============ 暴露给 AI 作为工具 ============ */}
+            <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
+              <div>
+                <div className="text-xs font-medium text-foreground">暴露给 AI 作为工具</div>
+                <div className="text-[11px] text-muted-foreground">开启后，AI 问答中会自动注册此脚本，并根据用户意图填参数调用</div>
+              </div>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={form.expose_as_tool}
+                onChange={(e) => setForm({ ...form, expose_as_tool: e.target.checked })}
+              />
+            </div>
+
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-muted-foreground">脚本内容 *</label>
@@ -822,6 +1066,63 @@ export default function ScriptsPage() {
         scriptName={testResult?.scriptName ?? ''}
         result={testResult?.result ?? null}
       />
+
+      {/* ======================== Test Params Dialog ======================== */}
+      <Dialog open={!!paramsDialog} onOpenChange={(open) => { if (!open) setParamsDialog(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>测试运行参数 — {paramsDialog?.script.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {paramsDialog?.script.parameters.map((p) => (
+              <div key={p.name}>
+                <label className="mb-1 block text-xs text-muted-foreground">
+                  {p.name}
+                  <span className="ml-2 text-[10px] text-violet-600 dark:text-violet-400">{p.type}</span>
+                  {p.required && <span className="ml-1 text-rose-500">*</span>}
+                  {p.description && <span className="ml-2 text-[10px] text-muted-foreground">— {p.description}</span>}
+                </label>
+                {p.type === 'enum' && p.options && p.options.length > 0 ? (
+                  <select
+                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                    value={paramsDialog!.values[p.name] || ''}
+                    onChange={(e) =>
+                      setParamsDialog((d) => d ? { ...d, values: { ...d.values, [p.name]: e.target.value } } : d)
+                    }
+                  >
+                    <option value="">(请选择)</option>
+                    {p.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : p.type === 'boolean' ? (
+                  <select
+                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                    value={paramsDialog!.values[p.name] || ''}
+                    onChange={(e) =>
+                      setParamsDialog((d) => d ? { ...d, values: { ...d.values, [p.name]: e.target.value } } : d)
+                    }
+                  >
+                    <option value="">(请选择)</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                ) : (
+                  <Input
+                    placeholder={p.default !== undefined && p.default !== null ? `默认: ${p.default}` : ''}
+                    value={paramsDialog!.values[p.name] || ''}
+                    onChange={(e) =>
+                      setParamsDialog((d) => d ? { ...d, values: { ...d.values, [p.name]: e.target.value } } : d)
+                    }
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <SolidButton color="secondary" onClick={() => setParamsDialog(null)}>取消</SolidButton>
+            <SolidButton color="violet" onClick={submitParamsDialog}>运行</SolidButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

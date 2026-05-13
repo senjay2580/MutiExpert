@@ -21,28 +21,42 @@ router = APIRouter()
 
 # ── UserScript schemas ──
 
+class ScriptParameter(BaseModel):
+    """脚本参数定义。脚本内通过 `SCRIPT_<NAME>` 环境变量或 `{{name}}` 占位符取值。"""
+    name: str
+    type: str = "string"  # string | integer | number | boolean | enum
+    description: str | None = None
+    required: bool = False
+    default: object | None = None
+    options: list[str] | None = None  # enum 类型时的可选值
+
+
 class ScriptCreate(BaseModel):
     name: str
     description: str | None = None
     script_content: str
     script_type: str = "typescript"
+    parameters: list[ScriptParameter] = []
+    expose_as_tool: bool = False
 
 class ScriptUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     script_content: str | None = None
     enabled: bool | None = None
+    parameters: list[ScriptParameter] | None = None
+    expose_as_tool: bool | None = None
 
 
 class ScriptTestBody(BaseModel):
-    """测试脚本时的运行时参数（可选）。两种传参方式可单独/组合用：
+    """测试脚本时的运行时参数（可选）：
 
-    - **args** (推荐): 命令行参数列表，脚本里用 `argparse` 或 `sys.argv` 读取。
-      示例：传 `{"args": ["--url", "https://www.bilibili.com/video/BVxxx/"]}`
-      脚本里 `parser.add_argument("--url"); url = parser.parse_args().url`
-    - **env**: 注入到子进程的环境变量字典，脚本里 `os.environ.get("键")` 读取。
-      args 优先（更标准），env 适合配置类参数（key/path/flag）。
+    - **params** (推荐, v2): 命名参数 dict，对应脚本 parameters 定义。
+      后端会自动注入为 `SCRIPT_<NAME>` 环境变量，同时替换脚本里的 `{{name}}` 占位符。
+    - **args**: 命令行参数列表，脚本里用 argparse / sys.argv 读取。
+    - **env**: 原始环境变量 dict（兼容旧用法），优先级最高。
     """
+    params: dict[str, object] | None = None
     args: list[str] | None = None
     env: dict[str, str] | None = None
 
@@ -69,6 +83,8 @@ async def create_script(data: ScriptCreate, db: AsyncSession = Depends(get_db)):
         description=data.description,
         script_content=data.script_content,
         script_type=data.script_type,
+        parameters=[p.model_dump(exclude_none=True) for p in data.parameters],
+        expose_as_tool=data.expose_as_tool,
     )
     db.add(script)
     await db.commit()
@@ -96,6 +112,10 @@ async def update_script(script_id: uuid.UUID, data: ScriptUpdate, db: AsyncSessi
         script.script_content = data.script_content
     if data.enabled is not None:
         script.enabled = data.enabled
+    if data.parameters is not None:
+        script.parameters = [p.model_dump(exclude_none=True) for p in data.parameters]
+    if data.expose_as_tool is not None:
+        script.expose_as_tool = data.expose_as_tool
     script.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(script)
@@ -143,6 +163,8 @@ async def test_script(
         script_type=script.script_type or "typescript",
         extra_env=merged_env,
         extra_args=extra_args,
+        params=body.params,
+        parameters_schema=script.parameters or [],
     )
     script.last_test_at = datetime.utcnow()
     script.last_test_status = "success" if result.success else "failed"
@@ -172,6 +194,8 @@ def _script_to_dict(s: UserScript) -> dict:
         "description": s.description,
         "script_content": s.script_content,
         "script_type": s.script_type,
+        "parameters": s.parameters or [],
+        "expose_as_tool": s.expose_as_tool,
         "created_by": s.created_by,
         "last_test_at": s.last_test_at.isoformat() if s.last_test_at else None,
         "last_test_status": s.last_test_status,

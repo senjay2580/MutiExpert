@@ -23,6 +23,7 @@ from app.services.intent.tools import load_tools, to_openai_tools
 from app.services.intent.router import IntentResult
 from app.services.rag_service import retrieve_context, build_rag_context
 from app.services.system_prompt_service import build_system_prompt
+from app.models.knowledge import KnowledgeBase
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,41 @@ class PipelineEvent:
 
 
 
+# ── KB 聚焦提示词 ─────────────────────────────────────────────
+
+async def _build_kb_focus_prompt(db: AsyncSession, kb_ids: list[UUID]) -> str:
+    """当会话绑定到一个或多个 KB 时，注入 KB 聚焦提示词，让 LLM 把回答锚定在该知识库上。"""
+    if not kb_ids:
+        return ""
+    result = await db.execute(
+        select(KnowledgeBase.name, KnowledgeBase.description).where(KnowledgeBase.id.in_(kb_ids))
+    )
+    rows = result.all()
+    if not rows:
+        return ""
+
+    if len(rows) == 1:
+        name, desc = rows[0]
+        header = f"## 当前会话聚焦知识库：『{name}』"
+        if desc:
+            header += f"\n> 知识库简介：{desc}"
+        return (
+            f"{header}\n\n"
+            "本次对话用户在该知识库内提问，请遵守以下规则：\n"
+            f"- 优先基于『{name}』的文档内容回答，引用具体来源\n"
+            "- 知识库无相关内容时，**先明确说明检索不到**，再基于通用知识补充\n"
+            "- 不要跑题到其它知识库；用户提到外部话题时，礼貌地把回答拉回当前知识库语境\n"
+            "- 自我介绍时说明你是当前知识库的专属助手"
+        )
+
+    names = "、".join(f"『{r.name}』" for r in rows)
+    return (
+        f"## 当前会话聚焦知识库：{names}\n\n"
+        "本次对话用户在以上知识库内提问，请优先基于这些知识库的文档回答，"
+        "引用具体来源；检索不到时先说明再用通用知识补充。"
+    )
+
+
 # ── 工具收集 ──────────────────────────────────────────────────
 
 async def _collect_tools(db: AsyncSession) -> tuple[list[dict], dict[str, dict]]:
@@ -73,7 +109,7 @@ async def _collect_tools(db: AsyncSession) -> tuple[list[dict], dict[str, dict]]
         }
 
     # 2. Skills（enabled + 有 description）
-    from app.models.extras import Skill
+    from app.models.extras import Skill, UserScript
     result = await db.execute(
         select(Skill).where(Skill.enabled.is_(True), Skill.description.isnot(None))
     )
@@ -98,7 +134,68 @@ async def _collect_tools(db: AsyncSession) -> tuple[list[dict], dict[str, dict]]
             "skill_id": str(skill.id),
         }
 
+    # 3. UserScripts（expose_as_tool + enabled）
+    scripts_result = await db.execute(
+        select(UserScript).where(
+            UserScript.enabled.is_(True),
+            UserScript.expose_as_tool.is_(True),
+        )
+    )
+    for script in scripts_result.scalars().all():
+        tool_name = _script_to_tool_name(script.name)
+        props, required = _params_to_json_schema(script.parameters or [])
+        openai_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool_name,
+                "description": script.description or f"执行用户脚本 {script.name}",
+                "parameters": {
+                    "type": "object",
+                    "properties": props,
+                    "required": required,
+                },
+            },
+        })
+        tool_index[tool_name] = {
+            "source": "user_script",
+            "script_id": str(script.id),
+        }
+
     return openai_tools, tool_index
+
+
+def _script_to_tool_name(name: str) -> str:
+    """脚本名 → 合法 tool 名（OpenAI: ^[a-zA-Z0-9_-]+$，<=64）"""
+    import re as _re
+    safe = _re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_") or "user_script"
+    return f"user_script_{safe.lower()}"[:64]
+
+
+def _params_to_json_schema(parameters: list[dict]) -> tuple[dict, list[str]]:
+    """参数定义 → OpenAI/Claude JSON schema."""
+    props: dict[str, dict] = {}
+    required: list[str] = []
+    type_map = {
+        "string": "string",
+        "integer": "integer",
+        "number": "number",
+        "boolean": "boolean",
+        "enum": "string",
+    }
+    for p in parameters:
+        name = p.get("name")
+        if not name:
+            continue
+        ptype = p.get("type", "string")
+        schema: dict = {"type": type_map.get(ptype, "string")}
+        if p.get("description"):
+            schema["description"] = p["description"]
+        if ptype == "enum" and p.get("options"):
+            schema["enum"] = p["options"]
+        props[name] = schema
+        if p.get("required"):
+            required.append(name)
+    return props, required
 
 
 # ── 附件处理 ──────────────────────────────────────────────────
@@ -192,7 +289,42 @@ async def _execute_tool_call(
     if tool_def["source"] == "skill":
         return await _execute_skill(tool_def, tc.arguments, db)
 
+    if tool_def["source"] == "user_script":
+        return await _execute_user_script(tool_def, tc.arguments, db)
+
     return f"不支持的工具来源: {tool_def['source']}", False
+
+
+async def _execute_user_script(
+    tool_def: dict, arguments: dict, db: AsyncSession,
+) -> tuple[str, bool]:
+    """AI 调用用户脚本：拿 LLM 给的参数 → 注入 env/占位符 → 执行 → 返回输出。"""
+    from app.models.extras import UserScript
+    from app.services.script_executor import execute_script
+    from app.services.script_env_resolver import prepare_script_env
+
+    script_id = tool_def["script_id"]
+    result = await db.execute(select(UserScript).where(UserScript.id == script_id))
+    script = result.scalar_one_or_none()
+    if not script:
+        return "用户脚本未找到", False
+
+    env_result = await prepare_script_env(db, script.script_content)
+    exec_result = await execute_script(
+        script.script_content,
+        timeout_seconds=300,  # AI 触发的脚本超时给宽点（不超过 test 端点上限）
+        script_type=script.script_type or "typescript",
+        extra_env=dict(env_result.env_vars),
+        params=arguments or {},
+        parameters_schema=script.parameters or [],
+    )
+    if exec_result.success:
+        output = exec_result.output or "(脚本无输出)"
+        # 防止过长拖累后续 LLM 调用
+        if len(output) > 8000:
+            output = output[:8000] + "\n...(输出已截断)"
+        return output, True
+    return f"脚本执行失败: {exec_result.error or '未知错误'}", False
 
 
 async def _execute_skill(
@@ -398,6 +530,12 @@ async def run_stream(
     """
     # 1. 构建系统提示词
     system_prompt = await build_system_prompt(db)
+
+    # 1.5 KB-scoped 对话 → 注入聚焦提示词
+    if request.knowledge_base_ids:
+        kb_focus = await _build_kb_focus_prompt(db, request.knowledge_base_ids)
+        if kb_focus:
+            system_prompt += "\n\n" + kb_focus
 
     # 2. knowledge 模式 → RAG 上下文
     sources: list[dict] = []

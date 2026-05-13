@@ -17,8 +17,9 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as db:
         await ensure_default_tools(db)
         await ensure_supabase_service(db)
-    scheduler = SchedulerService()
-    await scheduler.start()
+    # 挂到 app.state 防止 asyncio.create_task 的 fire-and-forget 引用被 GC
+    app.state.scheduler = SchedulerService()
+    await app.state.scheduler.start()
     # 启动飞书 WebSocket 长连接
     from app.services.feishu_ws import start_feishu_ws, stop_feishu_ws
     from app.api.feishu import _handle_feishu_question
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     stop_feishu_ws()
-    await scheduler.stop()
+    await app.state.scheduler.stop()
 
 
 app = FastAPI(

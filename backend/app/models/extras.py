@@ -168,6 +168,11 @@ class UserScript(Base):
     description: Mapped[str | None] = mapped_column(Text)
     script_content: Mapped[str] = mapped_column(Text, nullable=False)
     script_type: Mapped[str] = mapped_column(String(20), default="typescript")
+    # 参数定义：list of {name, type, description, required, default, options?}
+    # type ∈ {string, integer, number, boolean, enum}
+    parameters = mapped_column(JSONB, nullable=False, default=list)
+    # 是否暴露给 AI 作为可调用工具
+    expose_as_tool: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[str] = mapped_column(String(100), default="web")
     last_test_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     last_test_status: Mapped[str | None] = mapped_column(String(20))

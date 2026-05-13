@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 import tempfile
 from dataclasses import dataclass, field
 from app.config import get_settings
@@ -17,6 +19,49 @@ class ScriptResult:
     warnings: list[str] = field(default_factory=list)
 
 
+def apply_script_params(
+    script_content: str,
+    params: dict[str, object] | None,
+    parameters_schema: list[dict] | None = None,
+) -> tuple[str, dict[str, str]]:
+    """把命名参数注入到脚本里，返回 (rewritten_script, env_overrides)。
+
+    - 占位符 `{{name}}` → 替换为参数值（JSON 序列化，保证 string 加引号、bool/数字字面量）
+    - 环境变量 `SCRIPT_<UPPER_NAME>` → 加到子进程 env，脚本里 os.environ.get(...) 取
+    - parameters_schema 用于补全缺失字段的默认值（如果 schema 里有 default）
+    """
+    if not params:
+        params = {}
+    # 用 schema 的 default 补齐缺失值
+    if parameters_schema:
+        for p in parameters_schema:
+            name = p.get("name")
+            if name and name not in params and p.get("default") is not None:
+                params[name] = p["default"]
+
+    env_overrides: dict[str, str] = {}
+    rewritten = script_content
+    for name, value in params.items():
+        if not isinstance(name, str) or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+            continue
+        # env: SCRIPT_NAME（保留原值的字符串形式，None/容器类型走 JSON）
+        if isinstance(value, (str, int, float, bool)):
+            env_overrides[f"SCRIPT_{name.upper()}"] = str(value)
+        else:
+            env_overrides[f"SCRIPT_{name.upper()}"] = json.dumps(value, ensure_ascii=False)
+
+        # 占位符替换：{{ name }} 或 {{name}}（支持周围空格）
+        placeholder = re.compile(r"\{\{\s*" + re.escape(name) + r"\s*\}\}")
+        # JSON 序列化值，保证代码语法合法
+        literal = json.dumps(value, ensure_ascii=False)
+        rewritten = placeholder.sub(lambda _m, lit=literal: lit, rewritten)
+
+    # 把所有参数 JSON 也注入 SCRIPT_PARAMS_JSON，方便脚本一次性拿全
+    if params:
+        env_overrides["SCRIPT_PARAMS_JSON"] = json.dumps(params, ensure_ascii=False)
+    return rewritten, env_overrides
+
+
 async def execute_script(
     script_content: str,
     timeout_seconds: int = 30,
@@ -24,9 +69,22 @@ async def execute_script(
     allow_net_hosts: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
     extra_args: list[str] | None = None,
+    params: dict[str, object] | None = None,
+    parameters_schema: list[dict] | None = None,
 ) -> ScriptResult:
     """根据 script_type 分发到对应执行器。
-    extra_args 作为命令行参数追加到子进程（脚本里 sys.argv / argparse 读取）。"""
+    - extra_args 作为命令行参数追加到子进程（脚本里 sys.argv / argparse 读取）
+    - params 是命名参数 dict（脚本 parameters 定义对应的实际值）
+    - parameters_schema 是脚本的参数定义列表（用于补 default）
+    """
+    if params is not None or parameters_schema:
+        script_content, param_env = apply_script_params(script_content, params, parameters_schema)
+        merged_env = dict(extra_env or {})
+        # 调用方显式传入的 extra_env 优先级最高，覆盖参数注入
+        for k, v in param_env.items():
+            merged_env.setdefault(k, v)
+        extra_env = merged_env
+
     if script_type == "python":
         return await _execute_python(script_content, timeout_seconds, extra_env, extra_args)
     return await _execute_deno(script_content, timeout_seconds, allow_net_hosts, extra_env, extra_args)
